@@ -1,0 +1,4 @@
+twitchio
+markovify
+colorama
+termcolor
