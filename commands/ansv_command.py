@@ -1,5 +1,6 @@
 import markovify
 import configparser
+import json
 from twitchio.ext import commands
 YELLOW = "\x1b[33m" #xterm colors. dunno why tbh
 RESET = "\x1b[0m"
@@ -32,17 +33,24 @@ async def ansv_command(self, ctx, setting, new_value=None):
         except Exception as e:
             self.my_logger.log_error(f"{RED}Failed to send message due to: {e}{RESET}")
 
-    if setting == "start":
+    elif setting == "start":
+        # Enable the Markov chain specifically
         if not self.channel_manager.is_markov_enabled(ctx.channel.name):
-            message = self.channel_manager.toggle_markov(ctx.channel.name)
-            await ctx.send(message)
+            self.channel_manager.markov_enabled[ctx.channel.name] = True  # Set to True explicitly
+            with open('markov_enabled.json', 'w') as f:
+                json.dump(self.channel_manager.markov_enabled, f)
+            await ctx.send(f"Markov chain outputs have been enabled for channel {ctx.channel.name}.")
         else:
             await ctx.send("Markov chain is already enabled.")
 
+
     elif setting == "stop":
+        # Disable the Markov chain specifically
         if self.channel_manager.is_markov_enabled(ctx.channel.name):
-            message = self.channel_manager.toggle_markov(ctx.channel.name)
-            await ctx.send(message)
+            self.channel_manager.markov_enabled[ctx.channel.name] = False  # Set to False explicitly
+            with open('markov_enabled.json', 'w') as f:
+                json.dump(self.channel_manager.markov_enabled, f)
+            await ctx.send(f"Markov chain outputs have been disabled for channel {ctx.channel.name}.")
         else:
             await ctx.send("Markov chain is already disabled.")
         
@@ -65,16 +73,23 @@ async def ansv_command(self, ctx, setting, new_value=None):
             config.write(f)
 
     elif setting == "reload":
-        print("Reload Brain Received")  # Debug print
+        # Reload the text model
         self.text = self.load_text()
-
-        # Check if text is empty
         if not self.text:
             await ctx.send("No text data available.")
             return
         self.text_model = markovify.Text(self.text)
+        
+        # Reload channel manager state from markov_enabled.json
+        try:
+            with open('markov_enabled.json', 'r') as f:
+                self.channel_manager.markov_enabled = json.load(f)
+            await ctx.send("Bot and Markov chain settings reloaded.")
+        except Exception as e:
+            await ctx.send("Failed to reload Markov chain settings.")
+            self.my_logger.log_error(f"Failed to reload Markov chain settings: {e}")
 
-        await ctx.send("Brain reloaded.")
+        self.my_logger.info("Brain reloaded.")
 
     elif setting == "join":
         if ctx.author.name != self.owner:
@@ -111,6 +126,6 @@ async def ansv_command(self, ctx, setting, new_value=None):
             await ctx.send(f"{new_value} is not in channels.")
         colored_channels = [f"\x1b[38;5;{self.color_manager.get_channel_color(channel)}m#{channel}\x1b[0m" for channel in self.channels]
         self.my_logger.print_message(f"{YELLOW}Current channels: {', '.join(colored_channels)}{RESET}")  # print to console
-    
+
     # Build the model
     self.text_model = markovify.Text(self.text)

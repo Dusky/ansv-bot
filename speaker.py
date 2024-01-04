@@ -47,7 +47,6 @@ class Bot(commands.Bot):
         initial_channels,
         time_between_messages,
         lines_between_messages,
-        post_trigger,
         trusted_users,
         owner,
         ignored_users,
@@ -66,7 +65,6 @@ class Bot(commands.Bot):
         self.my_logger.setup_logger() 
         self.owner = owner
         self.channels = initial_channels
-        self.post_trigger = post_trigger
         self.trusted_users = trusted_users
         self.chat_line_count = 0
         self.last_message_time = time.time()
@@ -130,7 +128,7 @@ class Bot(commands.Bot):
     def build_model(self):
         return markovify.Text(self.text)
     
-    
+
     #################
     # Event Handling#
     #################
@@ -198,24 +196,18 @@ class Bot(commands.Bot):
 
 
 
-
+    
     @commands.command(name="ansv")
     async def ansv_wrapper(self, ctx, setting, new_value=None):
         # Use the command from the other file
         await ansv_command(self, ctx, setting, new_value)
 
     async def event_message(self, message):
-        #print("Received a message.")  # Debug print
-        # Don't process messages without an author
-        
         if message.author is None:
             return
 
         # Log the user's message
         self.my_logger.log_message(message.channel.name, message.author.name, message.content)
-
-        # Process the user's message and generate a response
-        response = self.generate_message(message)
 
         # Writing the message content to log file
         try:
@@ -233,40 +225,34 @@ class Bot(commands.Bot):
         current_time = time.time()
         elapsed_time = current_time - self.last_message_time
 
+        # Check if Markov chain is enabled for this channel
+        if not self.channel_manager.is_markov_enabled(message.channel.name):
+            return
+
         # Flag to control whether to send a response
         send_response = False
 
         # Check for line-based trigger and Markov chain enabled
-        if self.chat_line_count >= self.lines_between_messages and self.channel_manager.is_markov_enabled(message.channel.name):
+        if self.chat_line_count >= self.lines_between_messages:
             send_response = True
+            self.chat_line_count = 0  # Reset line count
 
         # Check time-based trigger and Markov chain enabled
-        elif elapsed_time >= self.time_between_messages * 60 and self.channel_manager.is_markov_enabled(message.channel.name):
+        elif elapsed_time >= self.time_between_messages * 60:
             send_response = True
+            self.last_message_time = current_time  # Reset time
 
         if send_response:
             response = self.generate_message()  # Generate response
             if response:
                 try:
-                    #print(f"{GREEN}Bot is able to post again!{RESET}")
                     await self.send_message(message.channel.name, response)
-                    # Reset counters and time after sending a message
-                    self.chat_line_count = 0
-                    self.last_message_time = current_time
                     self.my_logger.log_message(message.channel.name, self.nick, response)  # Log the bot's response
                 except Exception as e:
                     print(f"{RED}Failed to send message: {str(e)}{RESET}")
 
         # Handle any commands if present
         await self.handle_commands(message)
-
-        # Check if Markov chain is enabled for the channel
-        if self.channel_manager.is_markov_enabled(message.channel.name):
-            # Generate and send Markov chain output...
-            # Implement your logic to generate a response using markovify
-            response = self.generate_message() # Assuming generate_message generates a response
-            if response:  # Ensure response is not None or empty
-                await message.channel.send(response)
 
 if __name__ == "__main__":
     config = configparser.ConfigParser()
@@ -282,9 +268,7 @@ if __name__ == "__main__":
         ],
         time_between_messages=int(config.get("settings", "time_between_messages")),
         lines_between_messages=int(config.get("settings", "lines_between_messages")),
-        post_trigger=config.get(
-            "settings", "post_trigger"
-        ),
+        
         trusted_users=config.get("settings", "trusted_users").split(","),
         ignored_users=config.get("settings", "ignored_users").split(","),
         owner=config.get("auth", "owner"),
