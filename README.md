@@ -30,10 +30,14 @@ cd twitch-chatbot
 # 1. Install `pyenv` (if not already installed)
 # [Pyenv Installation Guide](https://github.com/pyenv/pyenv#installation).
 
-# 2. Install Python 3.x using pyenv
-#Replace `3.x.x` with the specific version you want to use.
-pyenv install 3.x.x
-pyenv local 3.x.x
+# 2. Install Python 3 using pyenv
+
+pyenv install 3.11
+pyenv local 3.11
+
+or
+
+apt install pyton3.11-venv
 
 # 3. Create a virtual environment
 python -m venv env
