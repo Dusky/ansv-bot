@@ -254,18 +254,21 @@ class Bot(commands.Bot):
 
         conn.close()
 
-        self.general_model = markovify.Text(self.text)
-        general_cache_file_path = os.path.join(cache_directory, "general_markov_model.json")
-        general_cache_exists = os.path.exists(general_cache_file_path)
-        self.save_general_model_to_cache(general_cache_file_path)
+        if total_lines > 0:
+            self.general_model = markovify.Text(self.text)
+            general_cache_file_path = os.path.join(cache_directory, "general_markov_model.json")
+            general_cache_exists = os.path.exists(general_cache_file_path)
+            self.save_general_model_to_cache(general_cache_file_path)
 
-        total_label = f"{YELLOW}Total{RESET}"
-        total_lines_formatted = f"\x1b[38;5;45m{total_lines:,}\x1b[0m"
-        general_cache_status = f"{GREEN}✓{RESET}" if general_cache_exists else f"{RED}-{RESET}"
-        files_data.append([total_label, total_lines_formatted, general_cache_status, "", ""])
+            total_label = f"{YELLOW}Total{RESET}"
+            total_lines_formatted = f"\x1b[38;5;45m{total_lines:,}\x1b[0m"
+            general_cache_status = f"{GREEN}✓{RESET}" if general_cache_exists else f"{RED}-{RESET}"
+            files_data.append([total_label, total_lines_formatted, general_cache_status, "", ""])
 
-        headers = ["Channel", "Brain Size", "Brain Status", "Brain Updated?", "Brain"]
-        print(tabulate(files_data, headers=headers, tablefmt="pretty", numalign="right"))
+            headers = ["Channel", "Brain Size", "Brain Status", "Brain Updated?", "Brain"]
+            print(tabulate(files_data, headers=headers, tablefmt="pretty", numalign="right"))
+        else:
+            print(f"{RED}No text found for model building.{RESET}")
 
 
     def cache_individual_model(self, channel_name, model, cache_file_path):
@@ -579,6 +582,7 @@ class Bot(commands.Bot):
 if __name__ == "__main__":
     config = configparser.ConfigParser()
     config.read("settings.conf")
+    time_between_messages = int(config.get("settings", "time_between_messages", fallback="0"))
 
     bot = Bot(
         irc_token=config.get("auth", "tmi_token"),
