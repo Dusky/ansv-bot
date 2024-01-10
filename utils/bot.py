@@ -103,7 +103,7 @@ class Bot(commands.Bot):
                             tts_processed BOOLEAN
                         )''')
 
-            # Create the channel_configs table with the new column
+            # Create channel_configs table if it doesn't exist
             c.execute('''CREATE TABLE IF NOT EXISTS channel_configs (
                             channel_name TEXT PRIMARY KEY,
                             tts_enabled BOOLEAN NOT NULL,
@@ -112,9 +112,14 @@ class Bot(commands.Bot):
                             owner TEXT,
                             trusted_users TEXT,
                             time_between_messages INTEGER,
-                            lines_between_messages INTEGER,
-                            use_general_model BOOLEAN NOT NULL DEFAULT 1  -- New column with default value
+                            lines_between_messages INTEGER
                         )''')
+
+            # Check if the 'use_general_model' column already exists in 'channel_configs'
+            c.execute("PRAGMA table_info(channel_configs)")
+            columns = [row[1] for row in c.fetchall()]
+            if 'use_general_model' not in columns:
+                c.execute('ALTER TABLE channel_configs ADD COLUMN use_general_model BOOLEAN NOT NULL DEFAULT 1')
 
             # Read channels and trusted users from settings.conf
             config = configparser.ConfigParser()
@@ -368,27 +373,25 @@ class Bot(commands.Bot):
         p = math.pow(1024, i)
         s = round(size_bytes / p, 2)
         return f"{s} {size_name[i]}"
-
+    
     def fetch_channel_settings(self, channel_name):
         conn = sqlite3.connect(self.db_file)
         c = conn.cursor()
-        try:
-            c.execute("SELECT lines_between_messages, time_between_messages FROM channel_configs WHERE channel_name = ?", (channel_name,))
-            result = c.fetchone()
-            if result:
-                # Unpack the fetched values
-                lines_between, time_between = result
-            else:
-                # Default values if no settings found
-                lines_between, time_between = 20, 5
-        except Exception as e:
-            print(f"Error fetching channel settings: {e}")
-            # Default values in case of an error
-            lines_between, time_between = 20, 5
-        finally:
-            conn.close()
-        
-        return lines_between, time_between
+        c.execute("SELECT lines_between_messages, time_between_messages FROM channel_configs WHERE channel_name = ?", (channel_name,))
+        result = c.fetchone()
+        conn.close()
+
+        # Default values for lines_between and time_between
+        default_lines_between = 20
+        default_time_between = 5
+
+        if result:
+            # Unpack the result and return
+            lines_between, time_between = result
+            return lines_between or default_lines_between, time_between or default_time_between
+        else:
+            # Return defaults if not set
+            return default_lines_between, default_time_between
 
 
     #################
@@ -426,12 +429,19 @@ class Bot(commands.Bot):
                     colored_trusted_users = ", ".join(f"\033[38;5;{self.get_user_color(user.strip())}m{user.strip()}\033[0m" for user in trusted_users.split(","))
                 else:
                     colored_trusted_users = "None"
-
                 voice_status = GREEN + "enabled" + RESET if voice_enabled else RED + "disabled" + RESET
                 tts_status = GREEN + "enabled" + RESET if tts_enabled else RED + "disabled" + RESET
                 autojoin_status = GREEN + "enabled" + RESET if join_channel and join_success else RED + "disabled" + RESET
 
+# Ensure time_between is not None before comparison
+                if time_between is None:
+                    time_between = 0
+
                 time_status = GREEN + str(time_between) + RESET if time_between > 0 else RED + str(time_between) + RESET
+
+                if lines_between is None:
+                    lines_between = 0
+
                 lines_status = GREEN + str(lines_between) + RESET if lines_between > 0 else RED + str(lines_between) + RESET
 
                 if not join_success:
