@@ -57,25 +57,25 @@ python ansv.py
 ```
 
 - **!ansv speak**
-  - *Description:* Generates and sends a message.
+  -  Generates and sends a message.
 
 - **!ansv start**
-  - *Description:* Enables the ansv in a channel.
+  -  Enables the ansv in a channel.
 
 - **!ansv stop**
-  - *Description:* Disables ansv in a channel.
+  -  Disables ansv in a channel.
 
 - **!ansv time**
-  - *Description:* Sets the time interval between automated messages. (disabled by default)
+  -  Sets the time interval between automated messages. (disabled by default)
 
 - **!ansv lines**
-  - *Description:* Sets the number of chat lines required before the bot sends an automated message. (100 by default)
+  -  Sets the number of chat lines required before the bot sends an automated message. (100 by default)
 
 - **!ansv trust**
-  - *Description:* Adds a user to the list of trusted users for a channel. 
+  -  Adds a user to the list of trusted users for a channel. 
 
 - **!ansv join**
-  - *Description:* Makes the ansv join a new channel.
+  -  Makes the ansv join a new channel.
 
 - **!ansv part**
-  - *Description:* Makes the ansv leave a channel.
+  -  Makes the ansv leave a channel.
