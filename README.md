@@ -37,7 +37,7 @@ pyenv local 3.11
 
 or
 
-apt install pyton3.11-venv
+apt install python3.11-venv
 
 # 3. Create a virtual environment
 python -m venv env
