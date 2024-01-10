@@ -92,7 +92,7 @@ class Bot(commands.Bot):
         c = conn.cursor()
 
         try:
-            # Create the messages and channel_configs tables if they don't exist
+            # Create the messages table if it doesn't exist
             c.execute('''CREATE TABLE IF NOT EXISTS messages (
                             id INTEGER PRIMARY KEY,
                             message TEXT,
@@ -102,6 +102,8 @@ class Bot(commands.Bot):
                             message_length INTEGER,
                             tts_processed BOOLEAN
                         )''')
+
+            # Create the channel_configs table with the new column
             c.execute('''CREATE TABLE IF NOT EXISTS channel_configs (
                             channel_name TEXT PRIMARY KEY,
                             tts_enabled BOOLEAN NOT NULL,
@@ -110,7 +112,8 @@ class Bot(commands.Bot):
                             owner TEXT,
                             trusted_users TEXT,
                             time_between_messages INTEGER,
-                            lines_between_messages INTEGER
+                            lines_between_messages INTEGER,
+                            use_general_model BOOLEAN NOT NULL DEFAULT 1  -- New column with default value
                         )''')
 
             # Read channels and trusted users from settings.conf
@@ -148,9 +151,7 @@ class Bot(commands.Bot):
             self.my_logger.log_info(f"{YELLOW}Database loaded. Messages: {messages_count}, Channels: {channels_count}. {imported_channels_count} channels imported, {skipped_channels_count} channels skipped.{RESET}")
 
         except Exception as e:
-            # Log any errors encountered during database setup
             self.my_logger.log_error(f"{RED}Database setup failed: {e}{RESET}")
-
         finally:
             conn.close()
     '''legacy markov logic
@@ -209,21 +210,13 @@ class Bot(commands.Bot):
         c = conn.cursor()
         c.execute("SELECT channel_name FROM channel_configs")
         valid_channels = set(row[0] for row in c.fetchall())
+        conn.close()
 
         for filename in os.listdir(directory):
             if filename.endswith(".txt"):
                 channel_name, _ = os.path.splitext(filename)
-                channel_color = self.color_manager.get_channel_color(channel_name)
-                colored_channel = f"\x1b[38;5;{channel_color}m{channel_name}\x1b[0m"
-
-                # Skip processing if channel is not in channel_configs
-                if channel_name not in valid_channels:
-                    cache_file_path = os.path.join(cache_directory, f"{channel_name}_model.json")
-                    if os.path.exists(cache_file_path):
-                        os.remove(cache_file_path)  # Delete the cache file
-                    continue  # Skip to the next file
-
                 file_path = os.path.join(directory, filename)
+
                 if os.path.exists(file_path):
                     with open(file_path, "r") as f:
                         file_text = f.read()
@@ -231,45 +224,28 @@ class Bot(commands.Bot):
                     total_lines += line_count
                     self.text += file_text
 
-                    cache_file_name = f"{channel_name}_model.json"
-                    cache_file_path = os.path.join(cache_directory, cache_file_name)
-                    cache_exists = os.path.exists(cache_file_path)
-                    cache_status = f"{GREEN}✓{RESET}" if cache_exists else f"{RED}-{RESET}"
-                    colored_line_count = f"{YELLOW}{line_count:,}{RESET}"
-
-                    if line_count >= line_threshold and create_individual_caches:
+                    if channel_name in valid_channels and line_count >= line_threshold and create_individual_caches:
+                        # Process for individual channel model
+                        cache_file_name = f"{channel_name}_model.json"
+                        cache_file_path = os.path.join(cache_directory, cache_file_name)
                         channel_model = markovify.Text(file_text)
                         self.models[channel_name] = channel_model
                         self.cache_individual_model(channel_name, channel_model, cache_file_path)
-                        cache_created = f"{GREEN}Yes{RESET}"
-                        cache_file_display = f"\x1b[38;5;2m{cache_file_name}\x1b[0m"
+                        # Add file data to list for printing later
+                        files_data.append([channel_name, line_count, True, cache_file_name])
                     else:
-                        cache_created = f"{RED}No{RESET}"
-                        cache_file_display = f"\x1b[38;5;4mgeneral\x1b[0m" if not cache_exists else f"\x1b[38;5;2m{cache_file_name}\x1b[0m"
+                        # Add file data to general model
+                        files_data.append([channel_name, line_count, False, "general"])
 
-                    files_data.append([colored_channel, colored_line_count, cache_status, cache_created, cache_file_display])
-                else:
-                    # Handle channels with no valid log file
-                    files_data.append([colored_channel, "N/A", "N/A", "N/A", f"\x1b[38;5;4mgeneral\x1b[0m"])
-
-        conn.close()
-
+        # Build the general model with all text
         if total_lines > 0:
             self.general_model = markovify.Text(self.text)
             general_cache_file_path = os.path.join(cache_directory, "general_markov_model.json")
-            general_cache_exists = os.path.exists(general_cache_file_path)
             self.save_general_model_to_cache(general_cache_file_path)
-
-            total_label = f"{YELLOW}Total{RESET}"
-            total_lines_formatted = f"\x1b[38;5;45m{total_lines:,}\x1b[0m"
-            general_cache_status = f"{GREEN}✓{RESET}" if general_cache_exists else f"{RED}-{RESET}"
-            files_data.append([total_label, total_lines_formatted, general_cache_status, "", ""])
-
-            headers = ["Channel", "Brain Size", "Brain Status", "Brain Updated?", "Brain"]
-            print(tabulate(files_data, headers=headers, tablefmt="pretty", numalign="right"))
+            # Print the file processing summary
+            print(tabulate(files_data, headers=["Channel", "Line Count", "Individual Model", "Cache File"], tablefmt="pretty"))
         else:
             print(f"{RED}No text found for model building.{RESET}")
-
 
     def cache_individual_model(self, channel_name, model, cache_file_path):
         model_json = model.to_json()
@@ -283,7 +259,7 @@ class Bot(commands.Bot):
                 f.write(model_json)
         except Exception as e:
             print(f"Failed to save model to cache: {e}")
-            
+
     def load_model_from_cache(self, channel_name):
         cache_file_path = os.path.join("cache", f'{channel_name}_model.json')
         try:
@@ -321,7 +297,6 @@ class Bot(commands.Bot):
         #    print(f"[DEBUG] Using cache file: {cache_file_used} for channel: {channel_name}")
         #else:
         #   print("[DEBUG] No model available to generate message.")
-
         # Generate a message using the chosen model
         message = model.make_sentence()
         if message:
@@ -334,8 +309,6 @@ class Bot(commands.Bot):
             # If no message was generated, return None and add debug information
             print(f"[DEBUG] Failed to generate message for channel: {channel_name} using cache file: {cache_file_used}")
             return None
-
-
 
     def save_message(self, message, channel_name):
         conn = sqlite3.connect(self.db_file)
@@ -399,12 +372,23 @@ class Bot(commands.Bot):
     def fetch_channel_settings(self, channel_name):
         conn = sqlite3.connect(self.db_file)
         c = conn.cursor()
-        c.execute("SELECT lines_between_messages, time_between_messages FROM channel_configs WHERE channel_name = ?", (channel_name,))
-        result = c.fetchone()
-        conn.close()
-
-        # If the settings are found in the database, return them, otherwise return defaults
-        return result if result else (20, 0)  # Default values: 20 lines and 0 minutes
+        try:
+            c.execute("SELECT lines_between_messages, time_between_messages FROM channel_configs WHERE channel_name = ?", (channel_name,))
+            result = c.fetchone()
+            if result:
+                # Unpack the fetched values
+                lines_between, time_between = result
+            else:
+                # Default values if no settings found
+                lines_between, time_between = 20, 5
+        except Exception as e:
+            print(f"Error fetching channel settings: {e}")
+            # Default values in case of an error
+            lines_between, time_between = 20, 5
+        finally:
+            conn.close()
+        
+        return lines_between, time_between
 
 
     #################
@@ -447,17 +431,17 @@ class Bot(commands.Bot):
                 tts_status = GREEN + "enabled" + RESET if tts_enabled else RED + "disabled" + RESET
                 autojoin_status = GREEN + "enabled" + RESET if join_channel and join_success else RED + "disabled" + RESET
 
-                # Color code time and lines settings
                 time_status = GREEN + str(time_between) + RESET if time_between > 0 else RED + str(time_between) + RESET
                 lines_status = GREEN + str(lines_between) + RESET if lines_between > 0 else RED + str(lines_between) + RESET
 
                 if not join_success:
-                    # Update join_channel status to 0 in database if join failed
-                    c.execute("UPDATE channel_configs SET join_channel = 0 WHERE channel_name = ?", (channel,))
+                    # If join failed, remove the channel from the database
+                    c.execute("DELETE FROM channel_configs WHERE channel_name = ?", (channel,))
                     conn.commit()
-
-                # Add channel information to table data
-                table_data.append([f"\033[38;5;{self.get_channel_color(channel)}m{channel}\033[0m", colored_owner, colored_trusted_users, voice_status, tts_status, autojoin_status, time_status, lines_status])
+                    print(f"Removed {channel} from database due to join failure.")
+                else:
+                    # Add channel information to table data if join succeeded
+                    table_data.append([f"\033[38;5;{self.get_channel_color(channel)}m{channel}\033[0m", colored_owner, colored_trusted_users, voice_status, tts_status, autojoin_status, time_status, lines_status])
             else:
                 table_data.append([f"\033[38;5;1m{channel}\033[0m", "No config found", "", "", "", RED + "disabled" + RESET, RED + "N/A" + RESET, RED + "N/A" + RESET])
 
@@ -466,6 +450,7 @@ class Bot(commands.Bot):
         # Print the table
         headers = ["Channel", "Owner", "Trusted Users", "Voice", "TTS", "Autojoin", "Time", "Lines"]
         print(tabulate(table_data, headers=headers, tablefmt="pretty"))
+
     
     def get_channel_color(self, channel_name):
         """Assign a random xterm color index to a channel."""
