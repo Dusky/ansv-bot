@@ -19,7 +19,6 @@ Ansv is a robot that posts garbage based on chat history in your twitch channels
 
 ### Installation
 
-**Clone the Repository**:
 ```bash
 git clone https://github.com/dusky/ansv.git
 cd twitch-chatbot
