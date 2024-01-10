@@ -47,7 +47,7 @@ def parse_arguments():
 
 class Bot(commands.Bot):
     def __init__(self, irc_token, client_id, nick, prefix, time_between_messages,
-                 lines_between_messages, trusted_users, owner, ignored_users, initial_channels):
+                lines_between_messages, trusted_users, owner, ignored_users, initial_channels):
 
         super().__init__(
             token=irc_token,
@@ -56,7 +56,7 @@ class Bot(commands.Bot):
             prefix=prefix,
             ignored_users=ignored_users,  # Fix: Move ignored_users argument before prefix argument
             initial_channels=initial_channels,
-            
+        
         )
         self.prefix = prefix
         self.time_between_messages = time_between_messages
@@ -86,7 +86,7 @@ class Bot(commands.Bot):
         self.first_model_update = True
 #        self.update_model_periodically()      
         self.initial_channels = initial_channels
-       
+    
     def ensure_db_setup(self):
         conn = sqlite3.connect(self.db_file)
         c = conn.cursor()
@@ -99,7 +99,8 @@ class Bot(commands.Bot):
                             timestamp TEXT,
                             channel TEXT,
                             state_size INTEGER,
-                            message_length INTEGER
+                            message_length INTEGER,
+                            tts_processed BOOLEAN
                         )''')
             c.execute('''CREATE TABLE IF NOT EXISTS channel_configs (
                             channel_name TEXT PRIMARY KEY,
@@ -107,7 +108,9 @@ class Bot(commands.Bot):
                             voice_enabled BOOLEAN NOT NULL,
                             join_channel BOOLEAN NOT NULL,
                             owner TEXT,
-                            trusted_users TEXT
+                            trusted_users TEXT,
+                            time_between_messages INTEGER,
+                            lines_between_messages INTEGER
                         )''')
 
             # Read channels and trusted users from settings.conf
@@ -335,8 +338,8 @@ class Bot(commands.Bot):
         conn = sqlite3.connect(self.db_file)
         c = conn.cursor()
         c.execute('''INSERT INTO messages (message, timestamp, channel, state_size, message_length) 
-                     VALUES (?, ?, ?, ?, ?)''', 
-                  (message, datetime.now(), channel_name, self.general_model.state_size, len(message)))
+                    VALUES (?, ?, ?, ?, ?)''', 
+                (message, datetime.now(), channel_name, self.general_model.state_size, len(message)))
         conn.commit()
         conn.close()
         
@@ -396,7 +399,10 @@ class Bot(commands.Bot):
         c.execute("SELECT lines_between_messages, time_between_messages FROM channel_configs WHERE channel_name = ?", (channel_name,))
         result = c.fetchone()
         conn.close()
-        return result if result else (20, 5)  # Return defaults if not set
+
+        # If the settings are found in the database, return them, otherwise return defaults
+        return result if result else (20, 0)  # Default values: 20 lines and 0 minutes
+
 
     #################
     # Event Handling#
@@ -516,6 +522,11 @@ class Bot(commands.Bot):
         # Process any commands in the message
         await self.handle_commands(message)
 
+        # Initialize chat line count for the channel if it's not already
+        if channel_name not in self.channel_chat_line_count:
+            self.channel_chat_line_count[channel_name] = 0
+            self.channel_last_message_time[channel_name] = time.time()
+
         # Fetch channel-specific settings
         lines_between, time_between = self.fetch_channel_settings(channel_name)
 
@@ -561,6 +572,7 @@ class Bot(commands.Bot):
                             self.my_logger.error(f"Channel {channel_name} not found.")
                     except Exception as e:
                         self.my_logger.error(f"Failed to send message in {channel_name}: {str(e)}")
+
 
 
         
