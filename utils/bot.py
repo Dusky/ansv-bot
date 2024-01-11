@@ -17,6 +17,7 @@ from tabulate import tabulate
 from utils.logger import Logger
 from utils.color_control import ColorManager
 from commands.ansv_command import ansv_command
+from utils.tts import process_text
 config = configparser.ConfigParser()
 config.read('settings.conf')
 
@@ -84,15 +85,15 @@ class Bot(commands.Bot):
         self.ensure_db_setup()
         self.load_text_and_build_model()
         self.first_model_update = True
-#        self.update_model_periodically()      
+        #self.update_model_periodically()      
         self.initial_channels = initial_channels
-       
+
     def ensure_db_setup(self):
         conn = sqlite3.connect(self.db_file)
         c = conn.cursor()
 
         try:
-            # Create the messages and channel_configs tables if they don't exist
+            # Create the messages table if it doesn't exist
             c.execute('''CREATE TABLE IF NOT EXISTS messages (
                             id INTEGER PRIMARY KEY,
                             message TEXT,
@@ -101,14 +102,35 @@ class Bot(commands.Bot):
                             state_size INTEGER,
                             message_length INTEGER
                         )''')
+
+            # Create the channel_configs table if it doesn't exist
             c.execute('''CREATE TABLE IF NOT EXISTS channel_configs (
                             channel_name TEXT PRIMARY KEY,
                             tts_enabled BOOLEAN NOT NULL,
                             voice_enabled BOOLEAN NOT NULL,
                             join_channel BOOLEAN NOT NULL,
                             owner TEXT,
-                            trusted_users TEXT
+                            trusted_users TEXT,
+                            voice_preset TEXT DEFAULT 'v2/en_speaker_5'
                         )''')
+
+            # Create the voice_options table if it doesn't exist
+            c.execute('''CREATE TABLE IF NOT EXISTS voice_options (
+                            id INTEGER PRIMARY KEY,
+                            voice_code TEXT UNIQUE,
+                            language TEXT,
+                            voice_number INTEGER
+                        )''')
+
+            # Populate voice_options table if empty
+            c.execute("SELECT COUNT(*) FROM voice_options")
+            if c.fetchone()[0] == 0:
+                languages = ["EN", "ZH", "FR", "DE", "HI", "IT", "JA", "KO", "PL", "PT", "RU", "ES", "TR"]
+                for lang in languages:
+                    for num in range(10):
+                        voice_code = f"v2/{lang}_{num}"
+                        c.execute("INSERT INTO voice_options (voice_code, language, voice_number) VALUES (?, ?, ?)",
+                                (voice_code, lang, num))
 
             # Read channels and trusted users from settings.conf
             config = configparser.ConfigParser()
@@ -125,8 +147,8 @@ class Bot(commands.Bot):
                 if channel:  # Check that channel is not empty
                     c.execute("SELECT COUNT(*) FROM channel_configs WHERE channel_name = ?", (channel,))
                     if c.fetchone()[0] == 0:
-                        c.execute("INSERT INTO channel_configs (channel_name, tts_enabled, voice_enabled, join_channel, owner, trusted_users) VALUES (?, ?, ?, ?, ?, ?)",
-                                (channel, False, False, True, channel, trusted_users))
+                        c.execute("INSERT INTO channel_configs (channel_name, tts_enabled, voice_enabled, join_channel, owner, trusted_users, voice_preset) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                                (channel, False, False, True, channel, trusted_users, 'v2/en_speaker_5'))
                         imported_channels_count += 1
                     else:
                         skipped_channels_count += 1
@@ -335,8 +357,8 @@ class Bot(commands.Bot):
         conn = sqlite3.connect(self.db_file)
         c = conn.cursor()
         c.execute('''INSERT INTO messages (message, timestamp, channel, state_size, message_length) 
-                     VALUES (?, ?, ?, ?, ?)''', 
-                  (message, datetime.now(), channel_name, self.general_model.state_size, len(message)))
+                    VALUES (?, ?, ?, ?, ?)''', 
+                (message, datetime.now(), channel_name, self.general_model.state_size, len(message)))
         conn.commit()
         conn.close()
         
@@ -554,6 +576,11 @@ class Bot(commands.Bot):
                         if channel_obj:
                             await channel_obj.send(response)
                             self.my_logger.log_message(channel_name, self.nick, response)
+
+                            # TTS processing
+                            tts_output = process_text(response, voice_preset='v2/en_speaker_5')  # Modify as needed
+                            # Handle tts_output as required
+
                             # Reset counters
                             self.channel_chat_line_count[channel_name] = 0
                             self.channel_last_message_time[channel_name] = time.time()
