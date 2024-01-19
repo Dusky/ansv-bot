@@ -17,9 +17,13 @@ from tabulate import tabulate
 from utils.logger import Logger
 from utils.color_control import ColorManager
 from commands.ansv_command import ansv_command
+from utils.db_setup import ensure_db_setup
 from utils.tts import process_text
 config = configparser.ConfigParser()
 config.read('settings.conf')
+
+db_file = "messages.db"  # Replace with your actual database file path
+ensure_db_setup(db_file)
 
 
 logger = Logger()
@@ -47,29 +51,23 @@ def parse_arguments():
     return parser.parse_args()
 
 class Bot(commands.Bot):
-    def __init__(self, irc_token, client_id, nick, prefix, time_between_messages,
-                 lines_between_messages, trusted_users, owner, ignored_users, initial_channels):
-
+    def __init__(self, irc_token, client_id, nick, prefix, trusted_users, ignored_users, owner, initial_channels):
         super().__init__(
             token=irc_token,
             client_id=client_id,
             nick=nick,
             prefix=prefix,
-            ignored_users=ignored_users,  # Fix: Move ignored_users argument before prefix argument
             initial_channels=initial_channels,
-            
         )
         self.prefix = prefix
-        self.time_between_messages = time_between_messages
-        self.lines_between_messages = lines_between_messages
         self.my_logger = Logger()  
         self.my_logger.setup_logger() 
         self.owner = owner
         self.channels = initial_channels
         self.trusted_users = trusted_users
+        self.ignored_users = ignored_users
         self.chat_line_count = 0
         self.last_message_time = time.time()
-        self.ignored_users = ignored_users
         self.user_colors = {}
         self.channel_colors = {}
         self.logger = logging.getLogger('bot')
@@ -81,210 +79,104 @@ class Bot(commands.Bot):
         self.color_manager = ColorManager()
         self.channel_chat_line_count = {channel: 0 for channel in self.channels}
         self.channel_last_message_time = {channel: time.time() for channel in self.channels}
+        self.channel_settings = {}  # Initialize the channel settings dictionary
+        self.load_channel_settings()  # Populate channel settings
+
         self.db_file = 'messages.db'
-        self.ensure_db_setup()
         self.load_text_and_build_model()
         self.first_model_update = True
-        #self.update_model_periodically()      
-        self.initial_channels = initial_channels
 
-    def ensure_db_setup(self):
-        conn = sqlite3.connect(self.db_file)
+    def load_channel_settings(self):
+        self.channel_settings = {}
+        conn = sqlite3.connect(db_file)
         c = conn.cursor()
 
-        try:
-            # Create the messages table if it doesn't exist
-            c.execute('''CREATE TABLE IF NOT EXISTS messages (
-                            id INTEGER PRIMARY KEY,
-                            message TEXT,
-                            timestamp TEXT,
-                            channel TEXT,
-                            state_size INTEGER,
-                            message_length INTEGER
-                        )''')
+        # Load channel-specific settings
+        c.execute("SELECT channel_name, trusted_users, ignored_users, time_between_messages, lines_between_messages FROM channel_configs")
+        for row in c.fetchall():
+            channel, trusted, ignored, time_between, lines_between = row
+            self.channel_settings[channel] = {
+                'trusted_users': trusted.split(",") if trusted else [],
+                'ignored_users': ignored.split(",") if ignored else [],
+                'time_between_messages': time_between,
+                'lines_between_messages': lines_between
+            }
 
-            # Create the channel_configs table if it doesn't exist
-            c.execute('''CREATE TABLE IF NOT EXISTS channel_configs (
-                            channel_name TEXT PRIMARY KEY,
-                            tts_enabled BOOLEAN NOT NULL,
-                            voice_enabled BOOLEAN NOT NULL,
-                            join_channel BOOLEAN NOT NULL,
-                            owner TEXT,
-                            trusted_users TEXT,
-                            voice_preset TEXT DEFAULT 'v2/en_speaker_5'
-                        )''')
+        conn.close()
 
-            # Create the voice_options table if it doesn't exist
-            c.execute('''CREATE TABLE IF NOT EXISTS voice_options (
-                            id INTEGER PRIMARY KEY,
-                            voice_code TEXT UNIQUE,
-                            language TEXT,
-                            voice_number INTEGER
-                        )''')
-
-            # Populate voice_options table if empty
-            c.execute("SELECT COUNT(*) FROM voice_options")
-            if c.fetchone()[0] == 0:
-                languages = ["EN", "ZH", "FR", "DE", "HI", "IT", "JA", "KO", "PL", "PT", "RU", "ES", "TR"]
-                for lang in languages:
-                    for num in range(10):
-                        voice_code = f"v2/{lang}_{num}"
-                        c.execute("INSERT INTO voice_options (voice_code, language, voice_number) VALUES (?, ?, ?)",
-                                (voice_code, lang, num))
-
-            # Read channels and trusted users from settings.conf
-            config = configparser.ConfigParser()
-            config.read("settings.conf")
-            channels = config.get("settings", "channels").split(",")
-            trusted_users = ",".join(config.get("settings", "trusted_users").split(","))
-
-            # Initialize counters for imported and skipped channels
-            imported_channels_count = 0
-            skipped_channels_count = 0
-
-            # Check and insert channels into channel_configs
-            for channel in channels:
-                if channel:  # Check that channel is not empty
-                    c.execute("SELECT COUNT(*) FROM channel_configs WHERE channel_name = ?", (channel,))
-                    if c.fetchone()[0] == 0:
-                        c.execute("INSERT INTO channel_configs (channel_name, tts_enabled, voice_enabled, join_channel, owner, trusted_users, voice_preset) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                                (channel, False, False, True, channel, trusted_users, 'v2/en_speaker_5'))
-                        imported_channels_count += 1
-                    else:
-                        skipped_channels_count += 1
-                else:
-                    self.my_logger.log_warning("Skipped adding an empty channel name to the database.")
-
-            conn.commit()
-
-            # Query the number of rows in messages and channels in channel_configs
-            c.execute('SELECT COUNT(*) FROM messages')
-            messages_count = c.fetchone()[0]
-            c.execute('SELECT COUNT(*) FROM channel_configs')
-            channels_count = c.fetchone()[0]
-
-            # Log database status and counts of imported and skipped channels
-            self.my_logger.log_info(f"{YELLOW}Database loaded. Messages: {messages_count}, Channels: {channels_count}. {imported_channels_count} channels imported, {skipped_channels_count} channels skipped.{RESET}")
-
-        except Exception as e:
-            # Log any errors encountered during database setup
-            self.my_logger.log_error(f"{RED}Database setup failed: {e}{RESET}")
-
-        finally:
-            conn.close()
-    '''legacy markov logic
-    def load_text_and_build_model(self):
-        directory = "logs/"
-        self.text = ""  # Initialize the text attribute
-        total_lines = 0
-
-        print(f"{YELLOW}Loading brain...{RESET}")
-        files_data = []  # Initialize files_data as an empty list
-        for filename in os.listdir(directory):
-            if filename.endswith(".txt"):
-                with open(os.path.join(directory, filename), "r") as f:
-                    file_text = f.read()
-                    line_count = file_text.count('\n')
-                    total_lines += line_count
-                    self.text += file_text
-                    name, _ = os.path.splitext(filename)  # Split the filename into name and extension
-
-                    # Fetch color for the channel
-                    channel_color = self.color_manager.get_channel_color(name)
-                    colored_name = f"\033[38;5;{channel_color}m{name}\033[0m"  # Apply color to channel name
-
-                    files_data.append([colored_name, line_count])  # Add file data to list
-
-        # Print the table
-        print(tabulate(files_data, headers=["Channel", "Line Count"], tablefmt="pretty"))
-        
-        print(f"{YELLOW}Brain size: {total_lines}{RESET}")
-        self.model = markovify.Text(self.text)
-        self.save_model_to_cache("markov_model.json")
-        #self.my_logger.info(f"Brain reloaded {total_lines} lines.")
-    
-
-    def generate_message(self, channel_name=None):
-        message = self.model.make_sentence()
-        if message:
-            message = ''.join(char for char in message if char.isprintable())
-            self.save_message(message, channel_name)
-        return message
-    '''
     def load_text_and_build_model(self, create_individual_caches=False):
         directory = "logs/"
         cache_directory = "cache/"
         if not os.path.exists(cache_directory):
             os.makedirs(cache_directory)
-
         self.text = ""
         self.models = {}
         total_lines = 0
         line_threshold = 2000  # Threshold for individual model
         files_data = []
-
         # Connect to the SQLite database to fetch valid channels
         conn = sqlite3.connect(self.db_file)
         c = conn.cursor()
         c.execute("SELECT channel_name FROM channel_configs")
         valid_channels = set(row[0] for row in c.fetchall())
-
         for filename in os.listdir(directory):
             if filename.endswith(".txt"):
                 channel_name, _ = os.path.splitext(filename)
-                channel_color = self.color_manager.get_channel_color(channel_name)
-                colored_channel = f"\x1b[38;5;{channel_color}m{channel_name}\x1b[0m"
-
-                # Skip processing if channel is not in channel_configs
-                if channel_name not in valid_channels:
-                    cache_file_path = os.path.join(cache_directory, f"{channel_name}_model.json")
-                    if os.path.exists(cache_file_path):
-                        os.remove(cache_file_path)  # Delete the cache file
-                    continue  # Skip to the next file
-
                 file_path = os.path.join(directory, filename)
                 if os.path.exists(file_path):
                     with open(file_path, "r") as f:
                         file_text = f.read()
                     line_count = file_text.count('\n')
                     total_lines += line_count
-                    self.text += file_text
-
-                    cache_file_name = f"{channel_name}_model.json"
-                    cache_file_path = os.path.join(cache_directory, cache_file_name)
-                    cache_exists = os.path.exists(cache_file_path)
-                    cache_status = f"{GREEN}✓{RESET}" if cache_exists else f"{RED}-{RESET}"
-                    colored_line_count = f"{YELLOW}{line_count:,}{RESET}"
-
-                    if line_count >= line_threshold and create_individual_caches:
-                        channel_model = markovify.Text(file_text)
-                        self.models[channel_name] = channel_model
-                        self.cache_individual_model(channel_name, channel_model, cache_file_path)
-                        cache_created = f"{GREEN}Yes{RESET}"
-                        cache_file_display = f"\x1b[38;5;2m{cache_file_name}\x1b[0m"
+                    # Determine if file belongs to a valid channel or should be added to general model
+                    if channel_name in valid_channels:
+                        channel_color = self.color_manager.get_channel_color(channel_name)
+                        colored_channel = f"\x1b[38;5;{channel_color}m{channel_name}\x1b[0m"
+                        if line_count >= line_threshold and create_individual_caches:
+                            channel_model = markovify.Text(file_text)
+                            self.models[channel_name] = channel_model
+                            cache_file_path = os.path.join(cache_directory, f"{channel_name}_model.json")
+                            self.cache_individual_model(channel_name, channel_model, cache_file_path)
+                            cache_status = f"{GREEN}✓{RESET}"
+                            cache_created = f"{GREEN}Yes{RESET}"
+                            cache_file_display = f"\x1b[38;5;2m{channel_name}_model.json\x1b[0m"
+                        else:
+                            cache_status = f"{RED}-{RESET}"
+                            cache_created = f"{RED}No{RESET}"
+                            cache_file_display = f"\x1b[38;5;4mgeneral\x1b[0m"
                     else:
-                        cache_created = f"{RED}No{RESET}"
-                        cache_file_display = f"\x1b[38;5;4mgeneral\x1b[0m" if not cache_exists else f"\x1b[38;5;2m{cache_file_name}\x1b[0m"
+                        # Add to general model
+                        self.text += file_text
+                        colored_channel = f"\x1b[38;5;1m{channel_name}\x1b[0m (General)"
+                        cache_status = f"{RED}-{RESET}"
+                        cache_created = f"{RED}N/A{RESET}"
+                        cache_file_display = f"\x1b[38;5;4mgeneral\x1b[0m"
 
-                    files_data.append([colored_channel, colored_line_count, cache_status, cache_created, cache_file_display])
-                else:
-                    # Handle channels with no valid log file
-                    files_data.append([colored_channel, "N/A", "N/A", "N/A", f"\x1b[38;5;4mgeneral\x1b[0m"])
+                    files_data.append([colored_channel, f"{YELLOW}{line_count:,}{RESET}", cache_status, cache_created, cache_file_display])
 
         conn.close()
 
-        self.general_model = markovify.Text(self.text)
-        general_cache_file_path = os.path.join(cache_directory, "general_markov_model.json")
-        general_cache_exists = os.path.exists(general_cache_file_path)
-        self.save_general_model_to_cache(general_cache_file_path)
+        # Build general model
+        if self.text:
+            self.general_model = markovify.Text(self.text)
+            general_cache_file_path = os.path.join(cache_directory, "general_markov_model.json")
+            general_cache_exists = os.path.exists(general_cache_file_path)
+            self.save_general_model_to_cache(general_cache_file_path)
+            general_cache_status = f"{GREEN}✓{RESET}" if general_cache_exists else f"{RED}-{RESET}"
+        else:
+            general_cache_status = f"{RED}No data{RESET}"
 
+        # Add total and general model status to table
         total_label = f"{YELLOW}Total{RESET}"
         total_lines_formatted = f"\x1b[38;5;45m{total_lines:,}\x1b[0m"
-        general_cache_status = f"{GREEN}✓{RESET}" if general_cache_exists else f"{RED}-{RESET}"
         files_data.append([total_label, total_lines_formatted, general_cache_status, "", ""])
 
+        # Print the table outside the loop, after processing all files
         headers = ["Channel", "Brain Size", "Brain Status", "Brain Updated?", "Brain"]
         print(tabulate(files_data, headers=headers, tablefmt="pretty", numalign="right"))
+
+
+
 
 
     def cache_individual_model(self, channel_name, model, cache_file_path):
@@ -384,18 +276,6 @@ class Bot(commands.Bot):
     ####################################
     # Initialization and Configuration #
     ####################################
-    def reload_settings(self):
-        config = configparser.ConfigParser()
-        config.read("settings.conf")
-        self.time_between_messages = int(
-            config.get("settings", "time_between_messages")
-        )
-        self.lines_between_messages = int(
-            config.get("settings", "lines_between_messages")
-        )
-        self.trusted_users = config.get("settings", "trusted_users").split(",")
-        self.owner = config.get("auth", "owner")  # new line
-        self.channels = config.get("settings", "channels").split(",")
 
     @commands.command(name="ansv")
     async def ansv_wrapper(self, ctx, setting, new_value=None):
@@ -413,12 +293,17 @@ class Bot(commands.Bot):
         return f"{s} {size_name[i]}"
 
     def fetch_channel_settings(self, channel_name):
-        conn = sqlite3.connect(self.db_file)
-        c = conn.cursor()
-        c.execute("SELECT lines_between_messages, time_between_messages FROM channel_configs WHERE channel_name = ?", (channel_name,))
-        result = c.fetchone()
-        conn.close()
-        return result if result else (20, 5)  # Return defaults if not set
+        # Use settings from the dictionary or default if not set
+        settings = self.channel_settings.get(channel_name, {
+            'trusted_users': [],
+            'ignored_users': [],
+            'time_between_messages': 5,
+            'lines_between_messages': 20
+        })
+        return settings['lines_between_messages'], settings['time_between_messages']
+
+        
+
 
     #################
     # Event Handling#
@@ -522,7 +407,7 @@ class Bot(commands.Bot):
     
     @commands.command(name="ansv")
     async def ansv_wrapper(self, ctx, setting, new_value=None):
-        # Use the command from the other file
+
         await ansv_command(self, ctx, setting, new_value)
 
     async def event_message(self, message):
@@ -531,15 +416,16 @@ class Bot(commands.Bot):
             return
 
         channel_name = message.channel.name
-
         # Log the user's message
         self.my_logger.log_message(channel_name, message.author.name, message.content)
+        print(f"Received message in {channel_name} from {message.author.name}")
 
         # Process any commands in the message
         await self.handle_commands(message)
 
         # Fetch channel-specific settings
         lines_between, time_between = self.fetch_channel_settings(channel_name)
+        #print(f"Channel settings for {channel_name}: Lines - {lines_between}, Time - {time_between}")
 
         # Update chat line count for the channel
         self.channel_chat_line_count[channel_name] += 1
@@ -562,12 +448,10 @@ class Bot(commands.Bot):
             row = c.fetchone()
             conn.close()
 
+            print(f"Voice settings for {channel_name}: General Model - {row[0]}, Voice Enabled - {row[1]}")
+
             if row and row[1]:  # Check if voice_enabled is True
-                if row[0]:  # Use general model
-                    response = self.general_model.make_sentence()
-                else:
-                    # Use channel-specific model
-                    response = self.models.get(channel_name, self.general_model).make_sentence()
+                response = self.general_model.make_sentence() if row[0] else self.models.get(channel_name, self.general_model).make_sentence()
 
                 if response:
                     try:
@@ -578,8 +462,12 @@ class Bot(commands.Bot):
                             self.my_logger.log_message(channel_name, self.nick, response)
 
                             # TTS processing
-                            tts_output = process_text(response, voice_preset='v2/en_speaker_5')  # Modify as needed
-                            # Handle tts_output as required
+                            tts_output = process_text(response, channel_name, self.db_file)
+
+                            if tts_output:
+                                print(f"TTS audio file generated: {tts_output}")
+                            else:
+                                print("Failed to generate TTS audio file.")
 
                             # Reset counters
                             self.channel_chat_line_count[channel_name] = 0
@@ -588,73 +476,78 @@ class Bot(commands.Bot):
                             self.my_logger.error(f"Channel {channel_name} not found.")
                     except Exception as e:
                         self.my_logger.error(f"Failed to send message in {channel_name}: {str(e)}")
+                        print(f"Error sending message in {channel_name}: {str(e)}")
 
 
-        
-if __name__ == "__main__":
-    config = configparser.ConfigParser()
-    config.read("settings.conf")
 
-    bot = Bot(
-        irc_token=config.get("auth", "tmi_token"),
-        client_id=config.get("auth", "client_id"),
-        nick=config.get("auth", "nickname"),
-        prefix=config.get("settings", "command_prefix"),
-        #initial_channels=initial_channels,
-        time_between_messages=int(config.get("settings", "time_between_messages")),
-        lines_between_messages=int(config.get("settings", "lines_between_messages")),
-        
-        trusted_users=config.get("settings", "trusted_users").split(","),
-        ignored_users=config.get("settings", "ignored_users").split(","),
-        owner=config.get("auth", "owner"),
-    )
+def fetch_users(db_file):
+    # This function now fetches trusted and ignored users for a specific channel.
+    def fetch_users_for_channel(channel_name):
+        trusted_users = []
+        ignored_users = []
+        try:
+            conn = sqlite3.connect(db_file)
+            c = conn.cursor()
+            c.execute("SELECT trusted_users, ignored_users FROM channel_configs WHERE channel_name = ?", (channel_name,))
+            row = c.fetchone()
+            if row:
+                trusted_users = row[0].split(",") if row[0] else []
+                ignored_users = row[1].split(",") if row[1] else []
+        except Exception as e:
+            print(f"Error fetching users for channel {channel_name}: {e}")
+        finally:
+            conn.close()
+        return trusted_users, ignored_users
 
-    bot.run()
-db_file = 'messages.db'
+    return fetch_users_for_channel
+
+
 def fetch_initial_channels(db_file):
-    #logger.debug("Fetching initial channels from database...")
     channels = []
     try:
         conn = sqlite3.connect(db_file)
-        #logger.debug(f"Connected to database: {db_file}")
         c = conn.cursor()
         c.execute("SELECT channel_name FROM channel_configs WHERE join_channel = 1")
-        #logger.debug("Executed SQL query to fetch channels where join_channel = 1")
-        
         for row in c.fetchall():
-            channel_name = row[0]
-            channels.append(channel_name)
-            #logger.debug(f"Added channel: {channel_name}")
+            channels.append(row[0])
     except Exception as e:
-        logger.error(f"Error fetching initial channels: {e}")
+        print(f"Error fetching initial channels: {e}")
     finally:
         conn.close()
-        #logger.debug("Closed database connection")
-
     return channels
 
-
-def setup_bot():
+def setup_bot(db_file):
     logger = Logger()
     logger.setup_logger()
 
-    # Fetch initial_channels from the database
-    initial_channels = fetch_initial_channels('messages.db')
+    fetch_users_for_channel = fetch_users(db_file)
+
+    initial_channels = fetch_initial_channels(db_file)
 
     config = configparser.ConfigParser()
     config.read('settings.conf')
 
-    bot = Bot(
-        irc_token=config.get("auth", "tmi_token"),
-        client_id=config.get("auth", "client_id"),
-        nick=config.get("auth", "nickname"),
-        prefix=config.get("settings", "command_prefix"),
-        initial_channels=initial_channels,
-        time_between_messages=int(config.get("settings", "time_between_messages")),
-        lines_between_messages=int(config.get("settings", "lines_between_messages")),
-        trusted_users=config.get("settings", "trusted_users").split(","),
-        ignored_users=config.get("settings", "ignored_users").split(","),
-        owner=config.get("auth", "owner"),
-    )
+    bots = []
+    for channel in initial_channels:
+        trusted_users, ignored_users = fetch_users_for_channel(channel)
 
-    return bot
+        bot = Bot(
+            irc_token=config.get("auth", "tmi_token"),
+            client_id=config.get("auth", "client_id"),
+            nick=config.get("auth", "nickname"),
+            prefix=config.get("settings", "command_prefix"),
+            trusted_users=trusted_users,
+            ignored_users=ignored_users,
+            owner=config.get("auth", "owner"),
+            initial_channels=[channel]
+        )
+
+        bot.db_file = db_file
+        bots.append(bot)
+
+    return bots
+
+# In your main script
+bot_instances = setup_bot(db_file)
+for bot_instance in bot_instances:
+    bot_instance.run()

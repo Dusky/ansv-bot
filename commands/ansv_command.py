@@ -4,6 +4,7 @@ import json
 from twitchio.ext import commands
 import sqlite3
 from tabulate import tabulate
+from utils.tts import process_text
 
 YELLOW = "\x1b[33m" #xterm colors. dunno why tbh
 RESET = "\x1b[0m"
@@ -21,7 +22,6 @@ async def ansv_command(self, ctx, setting, new_value=None):
         
         
     if setting == "speak":
-        # Get the bot owner's name from the configuration file
         config = configparser.ConfigParser()
         config.read("settings.conf")
         bot_owner = config.get("auth", "owner")
@@ -29,12 +29,12 @@ async def ansv_command(self, ctx, setting, new_value=None):
         conn = sqlite3.connect(self.db_file)
         c = conn.cursor()
 
-        # Check if Markov chain (voice) is enabled for this channel
+        # Check if voice (TTS) is enabled for this channel
         c.execute("SELECT voice_enabled, owner, trusted_users FROM channel_configs WHERE channel_name = ?", (ctx.channel.name,))
         channel_config = c.fetchone()
 
         if channel_config is None or not channel_config[0]:
-            await ctx.send("Markov chain is not enabled for this channel.")
+            await ctx.send("Voice (TTS) is not enabled for this channel.")
             conn.close()
             return
 
@@ -48,6 +48,25 @@ async def ansv_command(self, ctx, setting, new_value=None):
             return
 
         conn.close()
+
+        # Generate a Markov chain message
+        response = self.generate_message(ctx.channel.name)
+        if response:
+            try:
+                await ctx.send(response)
+                self.my_logger.log_message(ctx.channel.name, self.nick, response)
+
+                # Trigger TTS processing
+                tts_output = process_text(response, ctx.channel.name, self.db_file)
+                if tts_output:
+                    print(f"TTS audio file generated: {tts_output}")
+                else:
+                    print("Failed to generate TTS audio file.")
+
+            except Exception as e:
+                self.my_logger.log_error(f"Failed to send message due to: {e}")
+        else:
+            await ctx.send("Unable to generate a message at this time.")
 
         # Generate and send the Markov chain message
         response = self.generate_message(channel_name=ctx.channel.name)
@@ -224,6 +243,86 @@ async def ansv_command(self, ctx, setting, new_value=None):
                 await ctx.send(f"The bot is not in channel: {new_value} or it's not in the database.")
 
                 
+    elif setting == "voice_preset":
+        # Get the bot owner's name from the configuration file
+        config = configparser.ConfigParser()
+        config.read("settings.conf")
+        bot_owner = config.get("auth", "owner")
 
+        # Fetch the channel's owner and trusted users
+        conn = sqlite3.connect(self.db_file)
+        c = conn.cursor()
+        c.execute("SELECT owner, trusted_users FROM channel_configs WHERE channel_name = ?", (ctx.channel.name,))
+        result = c.fetchone()
+
+        if result is None:
+            await ctx.send("Channel not found in database.")
+            return
+
+        channel_owner, trusted_users = result
+        trusted_users_list = trusted_users.split(",") if trusted_users else []
+
+        # Check if the user has permission
+        if ctx.author.name != bot_owner and ctx.author.name != channel_owner and ctx.author.name not in trusted_users_list:
+            await ctx.send("You do not have permission to change the voice preset.")
+            return
+
+        # Validate and update the voice preset
+        c.execute("SELECT COUNT(*) FROM voice_options WHERE voice_code = ?", (new_value,))
+        if c.fetchone()[0] == 0:
+            await ctx.send("Invalid voice preset.")
+        else:
+            c.execute("UPDATE channel_configs SET voice_preset = ? WHERE channel_name = ?", (new_value, ctx.channel.name))
+            conn.commit()
+            await ctx.send(f"Voice preset updated to {new_value} for channel {ctx.channel.name}.")
+
+    elif setting == "tts":
+        # Only the bot owner or channel owner can change TTS status
+        config = configparser.ConfigParser()
+        config.read("settings.conf")
+        bot_owner = config.get("auth", "owner")
+
+        conn = sqlite3.connect(self.db_file)
+        c = conn.cursor()
+
+        # Determine the target channel
+        target_channel = ctx.channel.name
+
+        # Retrieve the owner of the target channel from the database
+        c.execute("SELECT owner FROM channel_configs WHERE channel_name = ?", (target_channel,))
+        channel_config = c.fetchone()
+
+        if channel_config is None:
+            await ctx.send(f"Channel {target_channel} not found in database.")
+            conn.close()
+            return
+
+        channel_owner = channel_config[0]
+
+        # Check if the user is the bot owner or the channel owner
+        if ctx.author.name != bot_owner and ctx.author.name != channel_owner:
+            await ctx.send("You do not have permission to change TTS settings for this channel.")
+            conn.close()
+            return
+
+        # Determine the new TTS status based on the command
+        if new_value.lower() == "on":
+            new_tts_status = True
+        elif new_value.lower() == "off":
+            new_tts_status = False
+        else:
+            await ctx.send("Invalid command. Use '!ansv tts on' or '!ansv tts off'.")
+            conn.close()
+            return
+
+        # Update the TTS status in the database
+        c.execute("UPDATE channel_configs SET tts_enabled = ? WHERE channel_name = ?", (new_tts_status, target_channel))
+        conn.commit()
+        conn.close()
+
+        status_text = "enabled" if new_tts_status else "disabled"
+        await ctx.send(f"TTS {status_text} for channel {target_channel}.")
+
+        conn.close()
         # Build the model
     #self.text_model = markovify.Text(self.text)
