@@ -1,0 +1,72 @@
+
+    body {
+        background-color: #002b36; /* Base03 */
+        color: #839496; /* Base0 */
+        font-family: Arial, sans-serif;
+    }
+
+    h1 {
+        color: #93a1a1; /* Base1 */
+    }
+
+    .table {
+        border-collapse: collapse;
+        width: 100%;
+    }
+
+    .table th {
+        background-color: #073642; /* Base02 */
+        color: #eee8d5; /* Base2 */
+        text-align: left;
+        padding: 8px;
+    }
+
+    .table td {
+        border: 1px solid #073642; /* Base02 */
+        padding: 8px;
+    }
+
+    .table-striped tr:nth-child(even) {
+        background-color: #073642; /* Base02 */
+    }
+
+    .table-striped tr:nth-child(odd) {
+        background-color: #002b36; /* Base03 */
+    }
+
+    .table-hover tbody tr:hover {
+        background-color: #586e75; /* Base01 */
+    }
+
+    .pagination-controls {
+        margin: 20px 0;
+    }
+
+    button {
+        background-color: #268bd2; /* Blue */
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        margin: 5px;
+        border-radius: 5px;
+        cursor: pointer;
+    }
+
+    button:hover {
+        background-color: #2aa198; /* Cyan */
+    }
+
+    select {
+        padding: 10px;
+        border-radius: 5px;
+        border: 1px solid #586e75; /* Base01 */
+    }
+/* Targeting odd rows */
+.table-striped tr:nth-child(odd) {
+    color: lightgray; /* Light gray font for odd rows */
+}
+
+/* Targeting even rows */
+.table-striped tr:nth-child(even) {
+    color: lightyellow; /* Light yellow font for even rows */
+}

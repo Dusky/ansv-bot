@@ -418,7 +418,7 @@ class Bot(commands.Bot):
         channel_name = message.channel.name
         # Log the user's message
         self.my_logger.log_message(channel_name, message.author.name, message.content)
-        print(f"Received message in {channel_name} from {message.author.name}")
+        #print(f"Received message in {channel_name} from {message.author.name}")
 
         # Process any commands in the message
         await self.handle_commands(message)

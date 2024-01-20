@@ -68,13 +68,6 @@ async def ansv_command(self, ctx, setting, new_value=None):
         else:
             await ctx.send("Unable to generate a message at this time.")
 
-        # Generate and send the Markov chain message
-        response = self.generate_message(channel_name=ctx.channel.name)
-        try:
-            await ctx.send(response)
-            self.my_logger.log_message(ctx.channel.name, self.nick, response)
-        except Exception as e:
-            self.my_logger.log_error(f"{RED}Failed to send message due to: {e}{RESET}")
 
 
     elif setting in ["start", "stop"]:

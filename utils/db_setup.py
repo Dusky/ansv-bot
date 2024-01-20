@@ -43,7 +43,8 @@ def ensure_db_setup(db_file):
                         channel TEXT,
                         timestamp TEXT,
                         file_path TEXT,
-                        voice_preset TEXT
+                        voice_preset TEXT,
+                        message TEXT
                     )''')
 
         # Check and add missing columns in 'channel_configs'
