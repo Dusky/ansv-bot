@@ -6,6 +6,12 @@ import time
 import warnings
 from datetime import datetime
 import sqlite3
+import warnings
+
+# Suppress specific warnings from TTS libraries
+warnings.filterwarnings('ignore', message='The BetterTransformer implementation does not support padding during training*')
+warnings.filterwarnings('ignore', message='The attention mask and the pad token id were not set*')
+warnings.filterwarnings('ignore', message='Setting `pad_token_id` to `eos_token_id`*')
 
 # Configure warning filters
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -29,22 +35,25 @@ def fetch_latest_message():
 
 def get_voice_preset(channel_name, db_file):
     try:
-        print(f"Getting voice preset for channel: {channel_name}")
+        #print(f"Getting voice preset for channel: {channel_name}")
         conn = sqlite3.connect(db_file)
         c = conn.cursor()
         c.execute("SELECT voice_preset FROM channel_configs WHERE channel_name = ?", (channel_name,))
         result = c.fetchone()
-        print(f"Voice preset for channel {channel_name}: {result[0] if result else 'v2/en_speaker_5'}")
+        #print(f"Voice preset for channel {channel_name}: {result[0] if result else 'v2/en_speaker_5'}")
         return result[0] if result else 'v2/en_speaker_5'
     finally:
         conn.close()
-
-def log_tts_file(message_id, channel_name, timestamp, file_path, voice_preset, db_file):
+        
+def log_tts_file(message_id, channel_name, timestamp, file_path, voice_preset, input_text, db_file):
+    file_path = file_path.replace('static/', '', 1)
+    if not voice_preset:
+        voice_preset = 'v2/en_speaker_5'
     try:
         conn = sqlite3.connect(db_file)
         c = conn.cursor()
-        c.execute("INSERT INTO tts_logs (message_id, channel, timestamp, file_path, voice_preset) VALUES (?, ?, ?, ?, ?)",
-                (message_id, channel_name, timestamp, file_path, voice_preset))
+        c.execute("INSERT INTO tts_logs (message_id, channel, timestamp, file_path, voice_preset, message) VALUES (?, ?, ?, ?, ?, ?)",
+                (message_id, channel_name, timestamp, file_path, voice_preset, input_text))
         conn.commit()
     finally:
         conn.close()
@@ -59,7 +68,7 @@ def process_text(input_text, channel_name, db_file='./messages.db'):
     # Generate file name and output directory
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     filename = f"{channel_name}-{timestamp}.wav"
-    channel_directory = os.path.join("outputs", channel_name)
+    channel_directory = os.path.join("static/outputs", channel_name)
     if not os.path.exists(channel_directory):
     #    print(f"[TTS] Creating output directory: {channel_directory}")
         os.makedirs(channel_directory)
@@ -87,9 +96,9 @@ def process_text(input_text, channel_name, db_file='./messages.db'):
 
         # Logging the TTS file
         message_id = int(time.time())
-        log_tts_file(message_id, channel_name, timestamp, full_path, voice_preset, db_file)
+        log_tts_file(message_id, channel_name, timestamp, full_path, voice_preset, input_text, db_file)
     #    print(f"[TTS] TTS file logged: {full_path}")
         return full_path
     except Exception as e:
-    #    print(f"[TTS] An error occurred during TTS processing: {e}")
+        print(f"[TTS] An error occurred during TTS processing: {e}")
         return None

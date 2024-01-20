@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>ANSV TTS Module</title>
+    <style>
+      /* Your existing styles */
+    </style>
+    <link
+      rel="stylesheet"
+      href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
+    />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='style.css') }}"
+    />
+
+    <script>
+      let currentPage = 1; // Current page number
+      let lastId = 0; // Initialize with the ID of the last known entry
+      let originalChannelData = {};
+      
+      function saveChannelSettings() {
+        var selectedChannel = document.getElementById('channelSelect').value;
+        var updatedData = {
+          channel_name: selectedChannel,
+          tts_enabled: document.getElementById('ttsEnabled').checked ? 1 : 0,
+          voice_enabled: document.getElementById('voiceEnabled').checked ? 1 : 0,
+          join_channel: document.getElementById('joinChannel').checked ? 1 : 0,
+          owner: document.getElementById('owner').value,
+          trusted_users: document.getElementById('trustedUsers').value,
+          ignored_users: document.getElementById('ignoredUsers').value,
+          use_general_model: document.getElementById('useGeneralModel').checked ? 1 : 0,
+          lines_between_messages: parseInt(document.getElementById('linesBetweenMessages').value),
+          time_between_messages: parseInt(document.getElementById('timeBetweenMessages').value)
+      };
+    
+        console.log("Saving channel settings:", updatedData);
+    
+        fetch('/save-channel-settings', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(updatedData)
+        })
+        .then(response => response.json())
+        .then(data => {
+            console.log("Response from server:", data);
+            if(data.success) {
+                alert("Settings saved successfully.");
+            } else {
+                alert("Failed to save settings.");
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert("An error occurred while saving settings.");
+        });
+      }
+
+      
+      // Function to fetch paginated data
+      function fetchPaginatedData(page) {
+        fetch(`/messages/${page}`)
+          .then((response) => response.json())
+          .then((data) => {
+            if (page === 1) {
+              initializeTable(data);
+            } else {
+              updateTable(data);
+            }
+          })
+          .catch((error) => console.error("Error:", error));
+      }
+      // Function to initialize the table with first page of data
+      function initializeTable(data) {
+        let tableBody = document.getElementById("ttsFilesBody");
+        tableBody.innerHTML = ""; // Clear the table
+        data.forEach((file) => {
+          addRowToTable(file);
+        });
+      }
+
+      
+      function updateTable(data) {
+        let tableBody = document.getElementById("ttsFilesBody");
+        let isNewData = false;
+
+        data.forEach((file) => {
+          // Convert message ID to integer for comparison
+          let messageIdInt = parseInt(file[1]);
+
+          if (messageIdInt > lastId) {
+            addRowToTable(file, true); // Prepend new row
+            lastId = messageIdInt; // Update lastId
+            isNewData = true;
+          }
+        });
+
+        return isNewData; // Return true if new data was added
+      }
+
+
+
+
+
+
+      // Function to add a row to the table
+      function addRowToTable(file, prepend = false) {
+        let tableBody = document.getElementById("ttsFilesBody");
+        let row = `<tr>
+                           <td>${file[0]}</td>
+                           <td>${file[1]}</td>
+                           <td>${file[2]}</td>
+                           <td>${file[3]}</td>
+                           <td>${file[5]}</td>
+                           <td>
+                               <audio controls id="audio-${file[1]}">
+                                   <source src="/static/${file[4]}" type="audio/wav">
+                                   Your browser does not support the audio element.
+                               </audio>
+                           </td>
+                       </tr>`;
+        if (prepend) {
+          tableBody.innerHTML = row + tableBody.innerHTML;
+        } else {
+          tableBody.innerHTML += row;
+        }
+      }
+
+      // Function to check if autoplay is enabled and play the latest file
+      function checkAutoplay(data) {
+        let autoplayEnabled = document.getElementById("autoplay").checked;
+        if (autoplayEnabled && data.length > 0) {
+          let latestAudio = document.getElementById(`audio-${data[0][1]}`);
+          if (latestAudio) {
+            latestAudio.play();
+          }
+        }
+      }
+
+      // Function to check for updates and refresh the table if needed
+      function checkForUpdates() {
+        fetch(`/check-updates/${lastId}`)
+          .then((response) => response.json())
+          .then((data) => {
+            if (data.newData) {
+              let isNewDataAdded = updateTable(data.entries);
+              if (isNewDataAdded) {
+                checkAutoplay(data.entries);
+              }
+            }
+          })
+          .catch((error) => console.error("Error:", error));
+      }
+
+      function checkAutoplay(data) {
+        let autoplayEnabled = document.getElementById("autoplay").checked;
+        if (autoplayEnabled && data.length > 0) {
+          let latestAudio = document.getElementById(`audio-${data[0][1]}`);
+          if (latestAudio && !latestAudio.ended && latestAudio.paused) {
+            latestAudio.play();
+          }
+        }
+      }
+
+      // Check for updates every 30 seconds
+      setInterval(checkForUpdates, 30000);
+
+      document.addEventListener("DOMContentLoaded", function () {
+        // Initial fetch and table update
+        fetchPaginatedData(currentPage);
+      });
+      document.addEventListener('DOMContentLoaded', function() {
+    
+        var settingsTab = document.getElementById('settingsTab');
+
+        settingsTab.addEventListener('click', function() {
+          // Fetch channel settings when the Settings tab is clicked
+          fetch('/get-channels')
+            .then(response => response.json())
+            .then(data => {
+              var channelSelect = document.getElementById('channelSelect');
+              channelSelect.innerHTML = ''; // Clear existing options
+      
+              data.forEach(function(channel) {
+                var option = document.createElement('option');
+                option.value = channel[0]; // Assuming channel_name is the first element
+                option.text = channel[0];
+                channelSelect.appendChild(option);
+              });
+      
+              // Load settings for the first channel on initial load
+              if (data.length > 0) {
+                displayChannelConfig(data, channelSelect.value);
+              }
+      
+              // Event listener for when a different channel is selected
+              channelSelect.addEventListener('change', function() {
+                displayChannelConfig(data, this.value);
+              });
+            })
+            .catch(error => console.error('Error fetching channels:', error));
+        });
+      
+        // Rest of your DOMContentLoaded event listener...
+      });
+    
+    function displayChannelConfig(channels, selectedChannel) {
+        var channelData = channels.find(c => c[0] === selectedChannel);
+        if (channelData) {
+            document.getElementById('ttsEnabled').checked = channelData[1] === 1;
+            document.getElementById('voiceEnabled').checked = channelData[2] === 1;
+            document.getElementById('joinChannel').checked = channelData[3] === 1;
+            document.getElementById('owner').value = channelData[4] || '';
+            document.getElementById('trustedUsers').value = channelData[5] || '';
+            document.getElementById('ignoredUsers').value = channelData[6] || '';
+            document.getElementById('useGeneralModel').checked = channelData[7] === 1;
+            document.getElementById('linesBetweenMessages').value = channelData[8] || 0;
+            document.getElementById('timeBetweenMessages').value = channelData[9] || 0;
+    
+            document.getElementById('channelConfig').style.display = 'block';
+        } else {
+            document.getElementById('channelConfig').style.display = 'none';
+        }
+    }
+    setInterval(checkForUpdates, 30000);
+      
+    document.addEventListener("DOMContentLoaded", function () {
+      var mainTab = document.getElementById("mainTab");
+      var settingsTab = document.getElementById("settingsTab");
+      var mainContent = document.getElementById("mainContent");
+      var settingsContent = document.getElementById("settingsContent");
+
+      mainTab.addEventListener("click", function () {
+        mainContent.style.display = "block";
+        settingsContent.style.display = "none";
+        mainTab.classList.add("active");
+        settingsTab.classList.remove("active");
+      });
+
+      settingsTab.addEventListener("click", function () {
+        settingsContent.style.display = "block";
+        mainContent.style.display = "none";
+        settingsTab.classList.add("active");
+        mainTab.classList.remove("active");
+  
+        fetch('/get-channels')
+          .then(response => response.json())
+          .then(data => {
+            var channelSelect = document.getElementById('channelSelect');
+            channelSelect.innerHTML = ''; // Clear existing options
+  
+            data.forEach(function(channel) {
+              var option = document.createElement('option');
+              option.value = channel[0]; // Assuming channel_name is the first element
+              option.text = channel[0];
+              channelSelect.appendChild(option);
+            });
+  
+            if (data.length > 0) {
+              displayChannelConfig(data, channelSelect.value);
+            }
+  
+            channelSelect.addEventListener('change', function() {
+              displayChannelConfig(data, this.value);
+            });
+          })
+          .catch(error => console.error('Error fetching channels:', error));
+          var saveButton = document.getElementById('saveSettings');
+          saveButton.addEventListener('click', function(event) {
+            event.preventDefault(); // Prevent form submission
+            console.log('Save button clicked'); // Debug log
+            saveChannelSettings();
+          });
+      });
+  
+      // Fetch paginated data for the main tab
+      fetchPaginatedData(currentPage);
+    });
+  </script>
+  </head>
+  <body>
+    <div class="container mt-4">
+      <h1 class="mb-4 text-center">ANSV TTS Module</h1>
+      <ul class="nav nav-tabs">
+        <li class="nav-item">
+          <a class="nav-link active" id="mainTab" href="#">Main</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" id="settingsTab" href="#">Settings</a>
+        </li>
+      </ul>
+
+
+      <div id="settingsContent" style="display: none">
+        <br><label> <input type="checkbox" id="autoplay" /> Autoplay </label>
+        <div class="channel-settings">
+            <label for="channelSelect">Select Channel:</label>
+            <select id="channelSelect"></select>
+        </div>
+
+        <form id="channelConfig" style="display: none;">
+            <div class="form-group">
+                <label>TTS Enabled:</label>
+                <input type="checkbox" id="ttsEnabled">
+            </div>
+            <div class="form-group">
+                <label>Voice Enabled:</label>
+                <input type="checkbox" id="voiceEnabled">
+            </div>
+            <div class="form-group">
+                <label>Join Channel:</label>
+                <input type="checkbox" id="joinChannel">
+            </div>
+            <div class="form-group">
+                <label>Owner:</label>
+                <input type="text" id="owner">
+            </div>
+            <div class="form-group">
+                <label>Trusted Users:</label>
+                <input type="text" id="trustedUsers">
+            </div>
+            <div class="form-group">
+                <label>Ignored Users:</label>
+                <input type="text" id="ignoredUsers">
+            </div>
+            <div class="form-group">
+                <label>Use General Model:</label>
+                <input type="checkbox" id="useGeneralModel">
+            </div>
+            <div class="form-group">
+                <label>Lines Between Messages:</label>
+                <input type="number" id="linesBetweenMessages">
+            </div>
+            <div class="form-group">
+                <label>Time Between Messages:</label>
+                <input type="number" id="timeBetweenMessages">
+            </div>
+            <!-- Save Button -->
+<button id="saveSettings" class="btn btn-primary">Save</button>
+
+<!-- Confirmation Modal -->
+<div class="modal" id="confirmationModal" tabindex="-1" role="dialog">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Confirm Save</h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to save these settings?</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="confirmSave">Save Changes</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+        </form>
+      </div>
+
+
+      <div id="mainContent">
+        <div class="table-responsive">
+          <table
+            class="table table-striped table-bordered table-hover table table-striped"
+          >
+            <thead class="thead-dark">
+              <tr>
+                <th>Channel</th>
+                <th>Message ID</th>
+                <th>Timestamp</th>
+                <th>Voice Used</th>
+                <th>Text</th>
+                <th>Audio Player</th>
+              </tr>
+            </thead>
+            <tbody id="ttsFilesBody">
+              <!-- Table rows will be added here by JavaScript -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <script src="https://code.jquery.com/jquery-3.3.1.slim.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.7/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js"></script>
+  </body>
+</html>

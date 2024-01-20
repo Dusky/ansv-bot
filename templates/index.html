@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>ass fart</title>
+    <style>
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            border: 1px solid black;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+    </style>
+</head>
+<body>
+    <h1>Last 10 TTS Files</h1>
+    <table>
+        <tr>
+            <th>Channel</th>
+            <th>Message ID</th>
+            <th>Timestamp</th>
+            <th>Voice Used</th>
+            <th>Text</th>
+            <th>Audio Player</th>
+        </tr>
+        {% for file in tts_files %}
+            <tr>
+                <td>{{ file[0] }}</td> <!-- Channel -->
+                <td>{{ file[1] }}</td> <!-- Message ID -->
+                <td>{{ file[2] }}</td> <!-- Timestamp -->
+                <td>{{ file[3] }}</td> <!-- Voice Used -->
+                <td>{{ file[5] }}</td> <!-- Text -->
+                <td>
+                    <audio controls>
+                        <source src="{{ url_for('static', filename='/' + file[4]) }}" type="audio/wav">
+                        Your browser does not support the audio element.
+                    </audio>
+                </td>
+            </tr>
+        {% endfor %}
+    </table>
+</body>
+</html>
