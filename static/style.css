@@ -16,14 +16,15 @@
 
     .table th {
         background-color: #073642; /* Base02 */
-        color: #eee8d5; /* Base2 */
         text-align: left;
         padding: 8px;
+        color: lightgray;
     }
 
     .table td {
         border: 1px solid #073642; /* Base02 */
         padding: 8px;
+        color: lightgray;
     }
 
     .table-striped tr:nth-child(even) {
