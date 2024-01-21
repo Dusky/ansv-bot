@@ -44,6 +44,32 @@ def get_paginated_tts_files(db_file, page, per_page):
         conn.close()
         
 
+@app.route('/update-channel-settings', methods=['POST'])
+def update_channel_settings():
+    data = request.json
+    channel_name = data.get('channel_name')
+    
+    # Validation to ensure channel_name is provided
+    if not channel_name:
+        return jsonify({'success': False, 'message': 'Channel name is required'})
+
+    try:
+        conn = sqlite3.connect(db_file)
+        c = conn.cursor()
+        c.execute("""
+            UPDATE channel_configs
+            SET tts_enabled = ?, voice_enabled = ?, join_channel = ?, owner = ?, trusted_users = ?, ignored_users = ?, use_general_model = ?, lines_between_messages = ?, time_between_messages = ?
+            WHERE channel_name = ?""",
+            (data['tts_enabled'], data['voice_enabled'], data['join_channel'], data['owner'], data['trusted_users'], data['ignored_users'], data['use_general_model'], data['lines_between_messages'], data['time_between_messages'], channel_name))
+        conn.commit()
+        return jsonify({'success': True, 'message': 'Channel settings updated successfully'})
+    except sqlite3.Error as e:
+        print(f"[ERROR] SQLite error in update_channel_settings: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+    finally:
+        conn.close()
+
+
 @app.route('/save-channel-settings', methods=['POST'])
 def save_channel_settings():
     data = request.json
@@ -52,14 +78,14 @@ def save_channel_settings():
     try:
         conn = sqlite3.connect(db_file)
         c = conn.cursor()
-        # Update the query to include all the fields that need to be updated
         c.execute("""
             UPDATE channel_configs 
             SET tts_enabled = ?, voice_enabled = ?, join_channel = ?, owner = ?, trusted_users = ?, ignored_users = ?, use_general_model = ?, lines_between_messages = ?, time_between_messages = ?
             WHERE channel_name = ?""",
             (data['tts_enabled'], data['voice_enabled'], data['join_channel'], data['owner'], data['trusted_users'], data['ignored_users'], data['use_general_model'], data['lines_between_messages'], data['time_between_messages'], data['channel_name']))
+        rows_affected = conn.total_changes
         conn.commit()
-        print("Channel settings updated in database.")
+        print(f"{rows_affected} rows updated in database.")
         return jsonify({'success': True})
     except sqlite3.Error as e:
         print(f"SQLite error in save_channel_settings: {e}")
@@ -78,7 +104,48 @@ def get_channels():
         print(f"SQLite error in get_channels: {e}")
         return jsonify([])
 
+@app.route('/add-channel', methods=['POST'])
+def add_channel():
+    data = request.json
+    channel_name = data.get('channel_name')
     
+    # Debug: Print the received data
+    print("Received data for adding channel:", data)
+
+    if not channel_name:
+        print("No channel name provided.")
+        return jsonify({'success': False, 'message': 'No channel name provided'})
+
+    try:
+        conn = sqlite3.connect(db_file)
+        c = conn.cursor()
+
+        # Check if the channel already exists
+        c.execute("SELECT COUNT(*) FROM channel_configs WHERE channel_name = ?", (channel_name,))
+        count = c.fetchone()[0]
+        print(f"Existing count for channel '{channel_name}': {count}")
+
+        if count == 0:
+            # Insert new channel as it does not exist
+            c.execute("""
+                INSERT INTO channel_configs (channel_name, tts_enabled, voice_enabled, join_channel, owner, trusted_users, ignored_users, use_general_model, lines_between_messages, time_between_messages)
+                VALUES (?, 0, 0, 1, ?, '', '', 1, 100, 0)""", 
+                (channel_name, channel_name))
+            conn.commit()
+            print(f"Channel '{channel_name}' added successfully.")
+            return jsonify({'success': True, 'message': f"Channel {channel_name} added."})
+        else:
+            print(f"Channel '{channel_name}' already exists.")
+            return jsonify({'success': False, 'message': f"Channel {channel_name} already exists."})
+    except Exception as e:
+        print(f"Exception occurred in add_channel: {e}")
+        return jsonify({'success': False, 'message': str(e)})
+    finally:
+        conn.close()
+
+
+
+
     
 @app.route('/latest-messages')
 def latest_messages():
