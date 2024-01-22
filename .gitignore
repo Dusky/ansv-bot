@@ -1,0 +1,6 @@
+
+*.wav
+*.pyc
+app.log
+messages.db
+colors.json
