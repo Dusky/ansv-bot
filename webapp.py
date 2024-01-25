@@ -6,6 +6,21 @@ from datetime import datetime
 app = Flask(__name__)
 db_file = "messages.db"
 
+new_audio_available = False  # Flag to indicate new audio availability
+
+@app.route('/new-audio-notification', methods=['POST'])
+def new_audio_notification():
+    global new_audio_available
+    new_audio_available = True
+    return jsonify({'success': True})
+
+@app.route('/check-new-audio', methods=['GET'])
+def check_new_audio():
+    global new_audio_available
+    response = {'newAudioAvailable': new_audio_available}
+    new_audio_available = False  # Reset flag after checking
+    return jsonify(response)
+
 def format_timestamp(timestamp):
     dt = datetime.strptime(timestamp, '%Y%m%d-%H%M%S')
     return dt.strftime('%b %d %I:%M %p').upper()  # Format like 'JAN 1 04:51 PM'
@@ -38,10 +53,14 @@ def get_paginated_tts_files(db_file, page, per_page):
         return []
     finally:
         conn.close()
+        
 @app.route('/')
 def index():
+    
     tts_files, last_id = get_last_10_tts_files_with_last_id(db_file)
     return render_template('files_list.html', tts_files=tts_files, last_id=last_id)
+
+
 
 def get_paginated_tts_files(db_file, page, per_page):
     try:
@@ -179,7 +198,7 @@ def add_channel():
     
 @app.route('/latest-messages')
 def latest_messages():
-    tts_files = get_last_10_tts_files(db_file)
+    tts_files = get_last_10_tts_files_with_last_id(db_file)
     return jsonify(format_data_for_frontend(tts_files))
 
 @app.route('/check-updates/<int:last_id>')
@@ -215,7 +234,7 @@ def get_last_10_tts_files_with_last_id(db_file):
         conn.close()
 
 def run_flask_app():
-    app.run(debug=True, host='0.0.0.0', port=5001)
+    app.run(debug=True, host='0.0.0.0', port=5000)
 
 if __name__ == '__main__':
     run_flask_app()

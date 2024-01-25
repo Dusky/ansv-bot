@@ -1,7 +1,7 @@
 from twitchio.ext import commands
 import logging
 import markovify
-
+import asyncio
 import configparser
 import time
 import sqlite3
@@ -56,6 +56,8 @@ class Bot(commands.Bot):
         owner,
         initial_channels,
         rebuild_cache=False,
+        enable_tts=False
+
     ):
         super().__init__(
             token=irc_token,
@@ -93,6 +95,7 @@ class Bot(commands.Bot):
         self.load_text_and_build_model()
         self.first_model_update = True
         self.update_model_periodically() 
+        self.enable_tts = enable_tts
 
     def load_channel_settings(self):
         self.channel_settings = {}
@@ -136,7 +139,7 @@ class Bot(commands.Bot):
     def start_periodic_channel_check(self, interval=3600):
         """Start a periodic check for new channels."""
         def channel_check():
-            self.check_and_join_new_channels()
+            asyncio.run(self.check_and_join_new_channels())
             threading.Timer(interval, channel_check).start()
 
         threading.Timer(interval, channel_check).start()
@@ -396,17 +399,25 @@ class Bot(commands.Bot):
         return f"{s} {size_name[i]}"
 
     def fetch_channel_settings(self, channel_name):
-        # Use settings from the dictionary or default if not set
-        settings = self.channel_settings.get(
-            channel_name,
-            {
-                "trusted_users": [],
-                "ignored_users": [],
-                "time_between_messages": 5,
-                "lines_between_messages": 20,
-            },
-        )
-        return settings["lines_between_messages"], settings["time_between_messages"]
+        try:
+            conn = sqlite3.connect(self.db_file)
+            c = conn.cursor()
+            c.execute(
+                "SELECT lines_between_messages, time_between_messages, tts_enabled, voice_enabled FROM channel_configs WHERE channel_name = ?",
+                (channel_name,)
+            )
+            row = c.fetchone()
+            conn.close()
+            if row:
+                return row[0], row[1], row[2], row[3]  # returns lines_between, time_between, tts_enabled, voice_enabled
+            else:
+                return 0, 0, False, False  # Default values if channel settings not found
+        except sqlite3.Error as e:
+            print(f"SQLite error in fetch_channel_settings: {e}")
+            return 0, 0, False, False
+
+
+
 
 
     async def try_join_channel(self, channel_name):
@@ -574,87 +585,55 @@ class Bot(commands.Bot):
 
     async def event_message(self, message):
         if message.author is None or message.author.name == self.nick:
-            # Ignore messages from the bot itself or if the author is unknown
             return
 
         channel_name = message.channel.name
-        # Log the user's message
         self.my_logger.log_message(channel_name, message.author.name, message.content)
 
-
-        # Process any commands in the message
         await self.handle_commands(message)
 
-        # Fetch channel-specific settings
-        lines_between, time_between = self.fetch_channel_settings(channel_name)
-
-        # Update chat line count for the channel
+        lines_between, time_between, tts_enabled, voice_enabled = self.fetch_channel_settings(channel_name)
         self.channel_chat_line_count[channel_name] += 1
-
-        # Calculate elapsed time since the last Markov message for the channel
         elapsed_time = time.time() - self.channel_last_message_time.get(channel_name, 0)
 
-        # Determine if it's time to send a Markov message
         should_send_message = False
-        if (
-            lines_between > 0
-            and self.channel_chat_line_count[channel_name] >= lines_between
-        ):
+        if lines_between > 0 and self.channel_chat_line_count[channel_name] >= lines_between:
             should_send_message = True
         elif time_between > 0 and elapsed_time >= time_between * 60:
             should_send_message = True
 
-        if should_send_message:
-            # Check which model to use and if voice is enabled
+        if should_send_message and voice_enabled:
             conn = sqlite3.connect(self.db_file)
             c = conn.cursor()
-            c.execute(
-                "SELECT use_general_model, voice_enabled FROM channel_configs WHERE channel_name = ?",
-                (channel_name,),
-            )
+            c.execute("SELECT use_general_model FROM channel_configs WHERE channel_name = ?", (channel_name,))
             row = c.fetchone()
             conn.close()
 
-            if row and row[1]:  # Check if voice_enabled is True
-                response = (
-                    self.general_model.make_sentence()
-                    if row[0]
-                    else self.models.get(
-                        channel_name, self.general_model
-                    ).make_sentence()
-                )
+            if row:
+                response = (self.general_model.make_sentence() if row[0] else self.models.get(channel_name, self.general_model).make_sentence())
 
                 if response:
                     try:
-                        # Get the channel object and send the message
                         channel_obj = self.get_channel(channel_name)
                         if channel_obj:
                             await channel_obj.send(response)
-                            self.my_logger.log_message(
-                                channel_name, self.nick, response
-                            )
+                            self.my_logger.log_message(channel_name, self.nick, response)
 
-                            # TTS processing
-                            if self.enable_tts:
-                                tts_output = process_text(
-                                    response, channel_name, self.db_file
-                                )
+                            if self.enable_tts and tts_enabled:
+                                tts_output = process_text(response, channel_name, self.db_file)
+                                if tts_output:
+                                    print(f"TTS audio file generated: {tts_output}")
+                                else:
+                                    print("Failed to generate TTS audio file.")
 
-                            if tts_output:
-                                print(f"TTS audio file generated: {tts_output}")
-                            else:
-                                print("Failed to generate TTS audio file.")
-
-                            # Reset counters
                             self.channel_chat_line_count[channel_name] = 0
                             self.channel_last_message_time[channel_name] = time.time()
-                        else:
-                            self.my_logger.error(f"Channel {channel_name} not found.")
                     except Exception as e:
-                        self.my_logger.error(
-                            f"Failed to send message in {channel_name}: {str(e)}"
-                        )
+                        self.my_logger.error(f"Failed to send message in {channel_name}: {str(e)}")
                         print(f"Error sending message in {channel_name}: {str(e)}")
+
+
+
 
 
 def fetch_users(db_file):
@@ -697,7 +676,7 @@ def fetch_initial_channels(db_file):
     return channels
 
 
-def setup_bot(db_file, rebuild_cache):
+def setup_bot(db_file, rebuild_cache, enable_tts=False):
     logger = Logger()
     logger.setup_logger()
 
@@ -716,7 +695,8 @@ def setup_bot(db_file, rebuild_cache):
         ignored_users=[],
         owner=config.get("auth", "owner"),
         initial_channels=initial_channels,
-        rebuild_cache=rebuild_cache
+        rebuild_cache=rebuild_cache,
+        enable_tts=enable_tts
     )
 
     bot.db_file = db_file

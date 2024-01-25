@@ -2,15 +2,6 @@ let currentPage = 1; // Current page number
 let lastId = 0; // Initialize with the ID of the last known entry
 let originalChannelData = {};
 
-
-setInterval(checkForUpdates, 30000);
-
-
-
-
-
-
-
 function saveChannelSettings() {
     var selectedChannel = document.getElementById('channelSelect').value;
     var isAddChannel = selectedChannel === 'add_channel';
@@ -39,6 +30,19 @@ function saveChannelSettings() {
     } else {
         updateChannelSettings(updatedData);
     }
+}
+
+//setInterval(checkForNewAudio, 5000);
+
+function checkForNewAudio() {
+    fetch('/check-new-audio')
+        .then((response) => response.json())
+        .then((data) => {
+            if (data.newAudioAvailable) {
+                fetchPaginatedData(currentPage);  // Re-fetch data for the current page
+            }
+        })
+        .catch((error) => console.error("Error:", error));
 }
 
 function updateChannelSettings(data) {
@@ -74,16 +78,20 @@ function handleSaveResponse(data) {
 
 // Function to fetch paginated data
 function fetchPaginatedData(page) {
-  fetch(`/messages/${page}`)
-    .then((response) => response.json())
-    .then((data) => {
-      if (page === 1) {
-        initializeTable(data);
-      } else {
-        updateTable(data);
-      }
-    })
-    .catch((error) => console.error("Error:", error));
+    return fetch(`/messages/${page}`)
+        .then((response) => response.json())
+        .then((data) => {
+            if (page === 1) {
+                initializeTable(data);
+            } else {
+                updateTable(data);
+            }
+            return data;  // Return the fetched data for further processing
+        })
+        .catch((error) => {
+            console.error("Error:", error);
+            return [];  // Return an empty array in case of an error
+        });
 }
 
 function nextPage() {
@@ -110,29 +118,23 @@ function initializeTable(data) {
 
 
 function updateTable(data) {
-  let tableBody = document.getElementById("ttsFilesBody");
-  let isNewData = false;
+    let tableBody = document.getElementById("ttsFilesBody");
+    let isNewData = false;
 
-  data.forEach((file) => {
-    // Convert message ID to integer for comparison
-    let messageIdInt = parseInt(file[1]);
+    data.forEach((file) => {
+        let messageIdInt = parseInt(file[1]);
 
-    if (messageIdInt > lastId) {
-      addRowToTable(file, true); // Prepend new row
-      lastId = messageIdInt; // Update lastId
-      isNewData = true;
-    }
-  });
+        if (messageIdInt > lastId) {
+            addRowToTable(file, true); // Add new row at the beginning
+            lastId = messageIdInt; // Update lastId to the latest
+            isNewData = true;
+        }
+    });
 
-  return isNewData; // Return true if new data was added
+    return isNewData;
 }
-function handleSaveResponse(data) {
-  if(data.success) {
-      alert("Settings saved successfully.");
-  } else {
-      alert("Failed to save settings: " + data.message);
-  }
-}
+
+
 
 function handleError(error) {
   console.error('Error:', error);
@@ -207,49 +209,90 @@ function addRowToTable(file, prepend = false) {
 
 // Function to check if autoplay is enabled and play the latest file
 function checkAutoplay(data) {
-  let autoplayEnabled = document.getElementById("autoplay").checked;
-  if (autoplayEnabled && data.length > 0) {
-    let latestAudio = document.getElementById(`audio-${data[0][1]}`);
-    if (latestAudio) {
-      latestAudio.play();
+    let autoplayEnabled = document.getElementById("autoplay").checked;
+  
+    if (autoplayEnabled && data.length > 0) {
+      let latestAudioId = `audio-${data[0][1]}`;
+      let latestAudio = document.getElementById(latestAudioId);
+  
+      if (latestAudio) {
+        // Wait for the audio to be ready to play
+        latestAudio.addEventListener('canplay', function() {
+          // Attempt to play the audio
+          latestAudio.play().then(() => {
+            console.log("Autoplay started for", latestAudioId);
+          }).catch(error => {
+            console.error("Autoplay failed for", latestAudioId, ":", error);
+            // Handle autoplay rejection, e.g., by showing a play button
+          });
+        });
+  
+        // If the audio is already in a state where it can start playing, play it
+        if (latestAudio.readyState >= 3) {
+          latestAudio.play().catch(error => {
+            console.error("Autoplay failed for", latestAudioId, ":", error);
+            // Handle autoplay rejection
+          });
+        }
+      } else {
+        console.error("No audio element found for", latestAudioId);
+      }
     }
   }
-}
 
 // Function to check for updates and refresh the table if needed
 function checkForUpdates() {
-  fetch(`/check-updates/${lastId}`)
-    .then((response) => response.json())
-    .then((data) => {
-      if (data.newData) {
-        let isNewDataAdded = updateTable(data.entries);
-        if (isNewDataAdded) {
-          checkAutoplay(data.entries);
-        }
-      }
-    })
-    .catch((error) => console.error("Error:", error));
+    fetch(`/check-updates/${lastId}`)
+        .then((response) => response.json())
+        .then((data) => {
+            if (data.newData) {
+                let isNewDataAdded = updateTable(data.entries);
+                if (isNewDataAdded) {
+                    checkAutoplay(data.entries);
+                }
+            }
+        })
+        .catch((error) => console.error("Error:", error));
 }
 
-function checkAutoplay(data) {
-  let autoplayEnabled = document.getElementById("autoplay").checked;
-  if (autoplayEnabled && data.length > 0) {
-    let latestAudio = document.getElementById(`audio-${data[0][1]}`);
-    if (latestAudio && !latestAudio.ended && latestAudio.paused) {
-      latestAudio.play();
-    }
-  }
+// function checkAutoplay(data) {
+//   let autoplayEnabled = document.getElementById("autoplay").checked;
+//   if (autoplayEnabled && data.length > 0) {
+//     let latestAudio = document.getElementById(`audio-${data[0][1]}`);
+//     if (latestAudio && !latestAudio.ended && latestAudio.paused) {
+//       latestAudio.play();
+//     }
+//   }
+// }
+
+function checkForNewAudio() {
+    fetch('/check-new-audio')
+        .then((response) => response.json())
+        .then((data) => {
+            if (data.newAudioAvailable) {
+                // If new audio is available, fetch updated data for the current page
+                return fetchPaginatedData(currentPage);
+            } else {
+                // Return a promise resolving to an empty array if no new audio is available
+                return Promise.resolve([]);
+            }
+        })
+        .then((fetchedData) => {
+            if (fetchedData && fetchedData.length > 0) {
+                // Check autoplay only if there is new fetched data
+                checkAutoplay(fetchedData);
+            }
+        })
+        .catch((error) => console.error("Error:", error));
 }
 
-// Check for updates every 30 seconds
-setInterval(checkForUpdates, 30000);
 
-document.addEventListener("DOMContentLoaded", function () {
-  // Initial fetch and table update
-  fetchPaginatedData(currentPage);
-});
 document.addEventListener('DOMContentLoaded', function() {
     var settingsTab = document.getElementById('settingsTab');
+    setInterval(checkForNewAudio, 30000);
+    fetchPaginatedData(currentPage);
+
+
 
     settingsTab.addEventListener('click', function() {
         fetch('/get-channels')
@@ -446,6 +489,16 @@ document.addEventListener("DOMContentLoaded", function () {
         saveChannelSettings(); // Call the saveChannelSettings function
     });
 
+    var nextPageButton = document.getElementById("nextPage");
+    var prevPageButton = document.getElementById("prevPage");
+
+    nextPageButton.addEventListener("click", function () {
+        nextPage();
+    });
+
+    prevPageButton.addEventListener("click", function () {
+        previousPage();
+    });
 
     var addChannelSaveButton = document.getElementById('addChannelSave');
     addChannelSaveButton.addEventListener('click', function() {
@@ -469,32 +522,6 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     });
 
-
-    function saveOrUpdateChannel(data) {
-        console.log("Saving channel settings:", data);
-    
-        fetch('/save-channel-settings', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(data)
-        })
-        .then(response => response.json())
-        .then(data => {
-            console.log("Response from server:", data);
-            if (data.success) {
-                alert("Settings saved successfully.");
-                location.reload(); // Reload to update the channel list
-            } else {
-                alert("Failed to save settings.");
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            alert("An error occurred while saving settings.");
-        });
-    }
 
     mainTab.addEventListener("click", function () {
         mainContent.style.display = "block";
