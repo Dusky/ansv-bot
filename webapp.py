@@ -1,3 +1,4 @@
+#webapp.py
 from flask import Flask, render_template, url_for, jsonify, request
 import sqlite3
 from datetime import datetime
@@ -18,16 +19,29 @@ def format_data_for_frontend(data):
         formatted_data.append(formatted_record)
     return formatted_data
 
-@app.route('/')
-def index():
-    tts_files, last_id = get_last_10_tts_files_with_last_id(db_file)
-    return render_template('files_list.html', tts_files=tts_files, last_id=last_id)
-
 @app.route('/messages/<int:page>')
 def paginated_messages(page):
     per_page = 10  # Number of items per page
     tts_files = get_paginated_tts_files(db_file, page, per_page)
     return jsonify(format_data_for_frontend(tts_files))
+
+def get_paginated_tts_files(db_file, page, per_page):
+    try:
+        conn = sqlite3.connect(db_file)
+        c = conn.cursor()
+        offset = (page - 1) * per_page
+        c.execute("SELECT channel, message_id, timestamp, voice_preset, file_path, message FROM tts_logs ORDER BY timestamp DESC LIMIT ? OFFSET ?", (per_page, offset))
+        files = c.fetchall()
+        return files
+    except sqlite3.Error as e:
+        print("[ERROR] Database error:", e)
+        return []
+    finally:
+        conn.close()
+@app.route('/')
+def index():
+    tts_files, last_id = get_last_10_tts_files_with_last_id(db_file)
+    return render_template('files_list.html', tts_files=tts_files, last_id=last_id)
 
 def get_paginated_tts_files(db_file, page, per_page):
     try:
@@ -68,6 +82,22 @@ def update_channel_settings():
         return jsonify({'success': False, 'message': str(e)})
     finally:
         conn.close()
+
+@app.route('/channel-stats')
+def channel_stats():
+    try:
+        conn = sqlite3.connect(db_file)
+        cursor = conn.cursor()
+        query = "SELECT channel_name, message_count, last_active FROM channel_info"
+        cursor.execute(query)
+        channels = cursor.fetchall()
+        channel_stats = [dict(channel_name=row[0], message_count=row[1], last_active=row[2]) for row in channels]
+        return jsonify(channel_stats)
+    except Exception as e:
+        return jsonify({'error': str(e)})
+    finally:
+        conn.close()
+
 
 
 @app.route('/save-channel-settings', methods=['POST'])
@@ -185,7 +215,7 @@ def get_last_10_tts_files_with_last_id(db_file):
         conn.close()
 
 def run_flask_app():
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=True, host='0.0.0.0', port=5001)
 
 if __name__ == '__main__':
     run_flask_app()

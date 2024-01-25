@@ -13,41 +13,34 @@ GREEN = "\x1b[32m"
 PURPLE = "\x1b[35m"
 
 async def ansv_command(self, ctx, setting, new_value=None):
-    if ctx.author.name not in self.trusted_users:
-        self.my_logger.log_warning(f"Unauthorized attempt to use ansv command by {ctx.author.name}")
-        return
-
+    # Fetch channel-specific trusted users and owner
     conn = sqlite3.connect(self.db_file)
     c = conn.cursor()
-        
-        
+    c.execute("SELECT voice_enabled, owner, trusted_users FROM channel_configs WHERE channel_name = ?", (ctx.channel.name,))
+    channel_config = c.fetchone()
+    conn.close()
+
+    if channel_config is None:
+        await ctx.send("This channel is not configured.")
+        return
+
+    voice_enabled, channel_owner, channel_trusted_users = channel_config
+    channel_trusted_users = channel_trusted_users.split(",") if channel_trusted_users else []
+
+    # Check if the user is allowed to use the command
+    config = configparser.ConfigParser()
+    config.read("settings.conf")
+    bot_owner = config.get("auth", "owner")
+
+    if ctx.author.name not in channel_trusted_users and ctx.author.name != channel_owner and ctx.author.name != bot_owner:
+        self.my_logger.log_warning(f"Unauthorized attempt to use ansv command by {ctx.author.name}")
+        await ctx.send("You do not have permission to use this command.")
+        return
+
     if setting == "speak":
-        config = configparser.ConfigParser()
-        config.read("settings.conf")
-        bot_owner = config.get("auth", "owner")
-
-        conn = sqlite3.connect(self.db_file)
-        c = conn.cursor()
-
-        # Check if voice (TTS) is enabled for this channel
-        c.execute("SELECT voice_enabled, owner, trusted_users FROM channel_configs WHERE channel_name = ?", (ctx.channel.name,))
-        channel_config = c.fetchone()
-
-        if channel_config is None or not channel_config[0]:
+        if not voice_enabled:
             await ctx.send("Voice (TTS) is not enabled for this channel.")
-            conn.close()
             return
-
-        channel_owner = channel_config[1]
-        trusted_users = channel_config[2].split(",") if channel_config[2] else []
-
-        # Check if the user is the bot owner, channel owner, or a trusted user
-        if ctx.author.name != bot_owner and ctx.author.name != channel_owner and ctx.author.name not in trusted_users:
-            await ctx.send("You do not have permission to use this command in this channel.")
-            conn.close()
-            return
-
-        conn.close()
 
         # Generate a Markov chain message
         response = self.generate_message(ctx.channel.name)
@@ -67,6 +60,7 @@ async def ansv_command(self, ctx, setting, new_value=None):
                 self.my_logger.log_error(f"Failed to send message due to: {e}")
         else:
             await ctx.send("Unable to generate a message at this time.")
+
 
 
 

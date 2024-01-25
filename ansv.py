@@ -16,8 +16,7 @@ if __name__ == "__main__":
     db_file = "messages.db"
     ensure_db_setup(db_file)
 
+    bot_instance = setup_bot(db_file, rebuild_cache=args.rebuild_cache)
 
 
-    bot_instance = setup_bot(db_file)
-
-    #bot_instance.run()
+bot_instance.run()
