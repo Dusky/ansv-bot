@@ -7,12 +7,9 @@ import warnings
 from datetime import datetime
 import sqlite3
 import warnings
+import requests
 
-# Suppress specific warnings from TTS libraries
-warnings.filterwarnings('ignore', message='The BetterTransformer implementation does not support padding during training*')
-warnings.filterwarnings('ignore', message='The attention mask and the pad token id were not set*')
-warnings.filterwarnings('ignore', message='Setting `pad_token_id` to `eos_token_id`*')
-warnings.filterwarnings("ignore", category=UserWarning)
+
 
 # Database connection setup
 db_file = './messages.db'  # Update with the correct path
@@ -77,27 +74,51 @@ def process_text(input_text, channel_name, db_file='./messages.db'):
 
     try:
         # TTS processing
-    #    print("[TTS] Initializing TTS model...")
+        #print("[TTS] Initializing TTS model...")
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         processor = AutoProcessor.from_pretrained("suno/bark-small")
         model = BarkModel.from_pretrained("suno/bark-small").to(device)
         model.to_bettertransformer()
         model.enable_cpu_offload()
 
-    #    print("[TTS] Processing input text...")
+        #print("[TTS] Processing input text...")
         inputs = processor(input_text, voice_preset=voice_preset).to(device)
         audio_array = model.generate(**inputs)
         audio_array = audio_array.cpu().numpy().squeeze()
         sample_rate = model.generation_config.sample_rate
 
-    #    print("[TTS] Writing audio data to file...")
+        #print("[TTS] Writing audio data to file...")
         scipy.io.wavfile.write(full_path, rate=sample_rate, data=audio_array)
 
         # Logging the TTS file
         message_id = int(time.time())
         log_tts_file(message_id, channel_name, timestamp, full_path, voice_preset, input_text, db_file)
-    #    print(f"[TTS] TTS file logged: {full_path}")
+        #print(f"[TTS] TTS file logged: {full_path}")
+
+        # Notify the Flask app that a new audio file is available
+        notify_new_audio_available(channel_name, message_id)
+
         return full_path
     except Exception as e:
         print(f"[TTS] An error occurred during TTS processing: {e}")
         return None
+    
+def notify_new_audio_available(channel_name, message_id):
+    # Define the URL of the Flask endpoint
+    url = 'http://localhost:5000/new-audio-notification'  # Update with the correct URL if needed
+
+    # Data to send (optional, you can customize this)
+    data = {
+        'channel_name': channel_name,
+        'message_id': message_id
+    }
+
+    # Send POST request
+    try:
+        response = requests.post(url, json=data)
+        if response.status_code == 200:
+            print("Notification sent successfully")
+        else:
+            print("Failed to send notification")
+    except requests.exceptions.RequestException as e:
+        print(f"Error sending notification: {e}")
