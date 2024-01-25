@@ -12,8 +12,6 @@ import warnings
 warnings.filterwarnings('ignore', message='The BetterTransformer implementation does not support padding during training*')
 warnings.filterwarnings('ignore', message='The attention mask and the pad token id were not set*')
 warnings.filterwarnings('ignore', message='Setting `pad_token_id` to `eos_token_id`*')
-
-# Configure warning filters
 warnings.filterwarnings("ignore", category=UserWarning)
 
 # Database connection setup
@@ -45,6 +43,7 @@ def get_voice_preset(channel_name, db_file):
     finally:
         conn.close()
         
+
 def log_tts_file(message_id, channel_name, timestamp, file_path, voice_preset, input_text, db_file):
     file_path = file_path.replace('static/', '', 1)
     if not voice_preset:

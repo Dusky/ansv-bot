@@ -1,7 +1,16 @@
 let currentPage = 1; // Current page number
 let lastId = 0; // Initialize with the ID of the last known entry
 let originalChannelData = {};
+
+
 setInterval(checkForUpdates, 30000);
+
+
+
+
+
+
+
 function saveChannelSettings() {
     var selectedChannel = document.getElementById('channelSelect').value;
     var isAddChannel = selectedChannel === 'add_channel';
@@ -41,12 +50,11 @@ function updateChannelSettings(data) {
         body: JSON.stringify(data)
     })
     .then(response => response.json())
-    .then(data => {
-        if (data.success) {
+    .then(result => {
+        if (result.success) {
             alert("Channel settings updated successfully.");
-            location.reload(); // Reload to reflect the updated settings
         } else {
-            alert("Failed to update settings: " + data.message);
+            alert("Failed to update settings: " + result.message);
         }
     })
     .catch(error => {
@@ -54,6 +62,7 @@ function updateChannelSettings(data) {
         alert("An error occurred while updating settings.");
     });
 }
+
 
 function handleSaveResponse(data) {
   if(data.success) {
@@ -76,6 +85,20 @@ function fetchPaginatedData(page) {
     })
     .catch((error) => console.error("Error:", error));
 }
+
+function nextPage() {
+    currentPage += 1;
+    fetchPaginatedData(currentPage);
+}
+
+function previousPage() {
+    if (currentPage > 1) {
+        currentPage -= 1;
+        fetchPaginatedData(currentPage);
+    }
+}
+
+
 // Function to initialize the table with first page of data
 function initializeTable(data) {
   let tableBody = document.getElementById("ttsFilesBody");
@@ -135,7 +158,7 @@ function checkForAddChannelOption(selectElement) {
 }
 
 function addNewChannel(data) {
-    fetch('/add-channel', { // POST request to /add-channel
+    fetch('/add-channel', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json'
@@ -143,12 +166,12 @@ function addNewChannel(data) {
         body: JSON.stringify(data)
     })
     .then(response => response.json())
-    .then(data => {
-        if (data.success) {
+    .then(result => {
+        if (result.success) {
             alert("Channel added successfully.");
-            location.reload();
+            // Optionally, dynamically update the channel list in the UI here
         } else {
-            alert("Failed to add channel: " + data.message);
+            alert("Failed to add channel: " + result.message);
         }
     })
     .catch(error => {
@@ -156,6 +179,7 @@ function addNewChannel(data) {
         alert("An error occurred while adding the channel.");
     });
 }
+
 
 
 // Function to add a row to the table
@@ -320,24 +344,38 @@ function resetFormForNewChannel() {
   }
 
 function fetchChannels() {
-fetch('/get-channels')
-.then(response => response.json())
-.then(data => {
-var channelSelect = document.getElementById('channelSelect');
-channelSelect.innerHTML = '';
-data.forEach(channel => {
-  var option = document.createElement('option');
-  option.value = channel[0];
-  option.text = channel[0];
-  channelSelect.appendChild(option);
-});
-var addChannelOption = document.createElement('option');
-addChannelOption.value = 'add_channel';
-addChannelOption.text = 'Add Channel';
-channelSelect.appendChild(addChannelOption);
-})
-.catch(error => console.error('Error fetching channels:', error));
+    fetch('/get-channels')
+        .then(response => response.json())
+        .then(data => {
+            var channelSelect = document.getElementById('channelSelect');
+            channelSelect.innerHTML = ''; // Clear existing options
+
+            // Re-add the default 'Select a channel...' option
+            var defaultOption = document.createElement('option');
+            defaultOption.value = "";
+            defaultOption.text = "Select a channel...";
+            defaultOption.disabled = true;
+            defaultOption.selected = true;
+            channelSelect.appendChild(defaultOption);
+
+            // Append other channel options
+            data.forEach(channel => {
+                var option = document.createElement('option');
+                option.value = channel[0];
+                option.text = channel[0];
+                channelSelect.appendChild(option);
+            });
+
+            // Add 'Add Channel' option
+            var addChannelOption = document.createElement('option');
+            addChannelOption.value = 'add_channel';
+            addChannelOption.text = 'Add Channel';
+            channelSelect.appendChild(addChannelOption);
+        })
+        .catch(error => console.error('Error fetching channels:', error));
 }
+
+
 
 function fetchChannelSettings(channelName) {
     // Fetch settings for the selected channel and update the form
@@ -366,13 +404,41 @@ function fetchChannelSettings(channelName) {
             // Handle the error gracefully here, e.g., show a user-friendly message
         });
 }
+function setActiveTab(activeTab) {
+    const tabs = ['mainTab', 'settingsTab', 'markovTab']; // Add all tab IDs here
+    const contents = ['mainContent', 'settingsContent', 'markovContent']; // Add all content IDs here
 
+    tabs.forEach(tab => {
+        document.getElementById(tab).classList.remove('active');
+    });
+    contents.forEach(content => {
+        document.getElementById(content).style.display = 'none';
+    });
+
+    activeTab.classList.add('active');
+    document.getElementById(activeTab.id.replace('Tab', 'Content')).style.display = 'block';
+}
 document.addEventListener("DOMContentLoaded", function () {
     var mainTab = document.getElementById("mainTab");
     var settingsTab = document.getElementById("settingsTab");
     var mainContent = document.getElementById("mainContent");
     var settingsContent = document.getElementById("settingsContent");
 
+    var markovTab = document.getElementById('markovTab'); // Ensure you have a corresponding element with this ID
+
+    mainTab.addEventListener("click", function () {
+        setActiveTab(this);
+    });
+
+    settingsTab.addEventListener("click", function () {
+        setActiveTab(this);
+    });
+
+    if (markovTab) {
+        markovTab.addEventListener('click', function() {
+            setActiveTab(this);
+        });
+    }
 
     var saveSettingsButton = document.getElementById('saveSettings');
     saveSettingsButton.addEventListener('click', function(event) {
@@ -446,21 +512,30 @@ document.addEventListener("DOMContentLoaded", function () {
         fetchChannels();
     });
 
-    var channelSelect = document.getElementById('channelSelect');
-    channelSelect.addEventListener('change', function () {
-        if (this.value === 'add_channel') {
-            resetFormForNewChannel();
-            document.getElementById('addChannelDiv').style.display = 'block';
-            document.getElementById('channelConfig').style.display = 'none';
-            document.getElementById('newChannelName').style.display = 'block'; // Show new channel name input
-        } else {
-            document.getElementById('addChannelDiv').style.display = 'none';
-            document.getElementById('channelConfig').style.display = 'block';
-            document.getElementById('newChannelName').style.display = 'none'; // Hide new channel name input
-            fetchChannelSettings(this.value);
-        }
-    });
 
 // Fetch paginated data for the main tab
 fetchPaginatedData(currentPage);
+});
+
+function fetchChannelStats() {
+    fetch('/get-channel-stats')
+        .then(response => response.json())
+        .then(data => {
+            let tableBody = document.getElementById("channelStatsBody");
+            tableBody.innerHTML = ""; // Clear previous data
+
+            data.forEach(channel => {
+                let row = `<tr>
+                               <td>${channel[0]}</td>
+                               <td>${channel[1]}</td>
+                               <td>${channel[2]}</td>
+                           </tr>`;
+                tableBody.innerHTML += row;
+            });
+        })
+        .catch(error => console.error("Error fetching channel stats:", error));
+}
+
+document.getElementById('markovTab').addEventListener('click', function() {
+    fetchChannelStats(); // Fetch and display stats when Markov tab is clicked
 });
