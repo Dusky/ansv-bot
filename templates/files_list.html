@@ -28,7 +28,7 @@
   <body>
     <div class="container mt-4">
       <!-- Navigation Bar -->
-      <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+      <nav class="navbar navbar-expand-lg navbar rounded bg-primary shadow">
         <div class="container-fluid">
           <a class="navbar-brand" href="#">ANSV</a>
           <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
@@ -51,9 +51,9 @@
           </div>
         </div>
       </nav>
-      
-      <div id="settingsContent" style="display: none" class="shadow-lg p-3 mb-5 rounded">
-        <br />
+      <br>
+      <div id="settingsContent" style="display: none" class="shadow-lg p-3 mb-5 rounded"><br>
+        
         <div class="row">
             <div class="col">
                 <div class="card border-primary shadow mb-5 rounded">
@@ -215,7 +215,9 @@
                   </tr>
                 </tbody>
               </table>
-              <button id="saveSettings" class="btn btn-primary">Save</button>
+              <div class="text-end d-grid gap-2" >
+              <button id="saveSettings" class="btn btn-lg btn-primary">Save</button>
+              </div>
             </form>
         </div>
     </div>
