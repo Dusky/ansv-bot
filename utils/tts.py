@@ -1,18 +1,17 @@
-from transformers import AutoProcessor, BarkModel
-import torch
-import scipy.io.wavfile
 import os
 import time
-import warnings
 from datetime import datetime
 import sqlite3
-import warnings
 import requests
-
-
+import threading
+import sys
+import warnings
 
 # Database connection setup
 db_file = './messages.db'  # Update with the correct path
+
+
+
 
 def fetch_latest_message():
     try:
@@ -54,9 +53,32 @@ def log_tts_file(message_id, channel_name, timestamp, file_path, voice_preset, i
     finally:
         conn.close()
 
+def initialize_tts():
+    global AutoProcessor, BarkModel, torch, scipy
+    from transformers import AutoProcessor, BarkModel
+    import torch
+    import scipy.io.wavfile
+
+def process_text_thread(input_text, channel_name, db_file='./messages.db'):
+    # Suppress console output
+    original_stdout = sys.stdout
+    original_stderr = sys.stderr
+    sys.stdout = open(os.devnull, 'w')
+    sys.stderr = open(os.devnull, 'w')
+
+    try:
+        process_text(input_text, channel_name, db_file)
+    finally:
+        # Restore original stdout and stderr
+        sys.stdout.close()
+        sys.stderr.close()
+        sys.stdout = original_stdout
+        sys.stderr = original_stderr
+
 def process_text(input_text, channel_name, db_file='./messages.db'):
     #print(f"[TTS] Starting TTS processing for channel: {channel_name}")
-
+    if 'AutoProcessor' not in globals():
+        initialize_tts()
     # Get voice preset
     voice_preset = get_voice_preset(channel_name, db_file)
     #print(f"[TTS] Voice preset selected: {voice_preset}")
@@ -103,9 +125,19 @@ def process_text(input_text, channel_name, db_file='./messages.db'):
         print(f"[TTS] An error occurred during TTS processing: {e}")
         return None
     
+def start_tts_processing(input_text, channel_name, db_file='./messages.db'):
+    tts_thread = threading.Thread(target=process_text_thread, args=(input_text, channel_name, db_file))
+    tts_thread.start()
+    # Suppress specific warnings from TTS libraries
+    warnings.filterwarnings('ignore', message='The BetterTransformer implementation does not support padding during training*')
+    warnings.filterwarnings('ignore', message='The attention mask and the pad token id were not set*')
+    warnings.filterwarnings('ignore', message='Setting `pad_token_id` to `eos_token_id`*')
+    warnings.filterwarnings("ignore", category=UserWarning)
+
+    
 def notify_new_audio_available(channel_name, message_id):
     # Define the URL of the Flask endpoint
-    url = 'http://localhost:5000/new-audio-notification'  # Update with the correct URL if needed
+    url = 'http://localhost:5001/new-audio-notification'  # Update with the correct URL if needed
 
     # Data to send (optional, you can customize this)
     data = {
