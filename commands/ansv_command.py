@@ -1,6 +1,6 @@
-import markovify
+
 import configparser
-import json
+
 from twitchio.ext import commands
 import sqlite3
 from tabulate import tabulate
@@ -36,10 +36,9 @@ async def ansv_command(self, ctx, setting, new_value=None):
         self.my_logger.log_warning(f"Unauthorized attempt to use ansv command by {ctx.author.name}")
         await ctx.send("You do not have permission to use this command.")
         return
-
     if setting == "speak":
         if not voice_enabled:
-            await ctx.send("Voice (TTS) is not enabled for this channel.")
+            await ctx.send("Voice is not enabled for this channel.")
             return
 
         # Generate a Markov chain message
@@ -49,12 +48,13 @@ async def ansv_command(self, ctx, setting, new_value=None):
                 await ctx.send(response)
                 self.my_logger.log_message(ctx.channel.name, self.nick, response)
 
-                # Trigger TTS processing
-                tts_output = process_text(response, ctx.channel.name, self.db_file)
-                if tts_output:
-                    print(f"TTS audio file generated: {tts_output}")
-                else:
-                    print("Failed to generate TTS audio file.")
+                # Trigger TTS processing only if enable_tts is True
+                if self.enable_tts:
+                    tts_output = process_text(response, ctx.channel.name, self.db_file)
+                    if tts_output:
+                        print(f"TTS audio file generated: {tts_output}")
+                    else:
+                        print("Failed to generate TTS audio file.")
 
             except Exception as e:
                 self.my_logger.log_error(f"Failed to send message due to: {e}")

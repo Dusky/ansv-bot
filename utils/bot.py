@@ -96,6 +96,9 @@ class Bot(commands.Bot):
         self.first_model_update = True
         self.update_model_periodically() 
         self.enable_tts = enable_tts
+        if self.enable_tts:
+            from utils import tts
+            tts.initialize_tts()
 
     def load_channel_settings(self):
         self.channel_settings = {}
@@ -385,8 +388,7 @@ class Bot(commands.Bot):
 
     @commands.command(name="ansv")
     async def ansv_wrapper(self, ctx, setting, new_value=None):
-
-        await ansv_command(self, ctx, setting, new_value)
+        await ansv_command(self, ctx, setting, new_value,enable_tts=enable_tts)
 
     @staticmethod
     def convert_size(size_bytes):
