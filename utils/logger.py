@@ -64,7 +64,7 @@ class Logger:
         }
 
         timestamp = datetime.now()
-        day_year_time = timestamp.strftime('%-d %y %-H:%M:%S')
+        day_year_time = timestamp.strftime('%d %y %H:%M:%S')
         month = timestamp.strftime("%b").upper()
         colored_month = f"\x1b[38;5;{month_colors[month]}m{month}\x1b[0m"
         timestamp_color_index = 14  # Cyan color index in xterm color
