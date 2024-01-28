@@ -6,6 +6,9 @@ import requests
 import threading
 import sys
 import warnings
+import nltk
+import numpy as np
+from nltk.tokenize import sent_tokenize
 
 # Database connection setup
 db_file = './messages.db'  # Update with the correct path
@@ -76,51 +79,66 @@ def process_text_thread(input_text, channel_name, db_file='./messages.db'):
         sys.stderr = original_stderr
 
 def process_text(input_text, channel_name, db_file='./messages.db'):
-    #print(f"[TTS] Starting TTS processing for channel: {channel_name}")
+    # Initialize TTS and other setups
     if 'AutoProcessor' not in globals():
         initialize_tts()
+
     # Get voice preset
     voice_preset = get_voice_preset(channel_name, db_file)
-    #print(f"[TTS] Voice preset selected: {voice_preset}")
 
     # Generate file name and output directory
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     filename = f"{channel_name}-{timestamp}.wav"
     channel_directory = os.path.join("static/outputs", channel_name)
     if not os.path.exists(channel_directory):
-    #    print(f"[TTS] Creating output directory: {channel_directory}")
         os.makedirs(channel_directory)
 
     full_path = os.path.join(channel_directory, filename)
-    #print(f"[TTS] Generated file path: {full_path}")
 
     try:
         # TTS processing
-        #print("[TTS] Initializing TTS model...")
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         processor = AutoProcessor.from_pretrained("suno/bark-small")
         model = BarkModel.from_pretrained("suno/bark-small").to(device)
         model.to_bettertransformer()
         model.enable_cpu_offload()
 
-        #print("[TTS] Processing input text...")
-        inputs = processor(input_text, voice_preset=voice_preset).to(device)
-        audio_array = model.generate(**inputs)
-        audio_array = audio_array.cpu().numpy().squeeze()
-        sample_rate = model.generation_config.sample_rate
+        # Splitting input text into sentences
+        sentences = sent_tokenize(input_text)
+        all_audio_pieces = []
+        for sentence in sentences:
+            # Split long sentences into smaller parts
+            pieces = []
+            while len(sentence) > 165:
+                split_index = sentence.rfind(' ', 0, 165)
+                if split_index == -1:  # No space found, forced split
+                    split_index = 164
+                pieces.append(sentence[:split_index + 1])
+                sentence = sentence[split_index + 1:]
+            pieces.append(sentence)
 
-        #print("[TTS] Writing audio data to file...")
-        scipy.io.wavfile.write(full_path, rate=sample_rate, data=audio_array)
+            # Process each piece with TTS
+            for piece in pieces:
+                inputs = processor(piece, voice_preset=voice_preset).to(device)
+                audio_array = model.generate(**inputs)
+                audio_array = audio_array.cpu().numpy().squeeze()
+                all_audio_pieces.append(audio_array)
+
+        # Concatenate all audio pieces
+        final_audio_array = np.concatenate(all_audio_pieces)
+
+        # Writing concatenated audio data to file
+        scipy.io.wavfile.write(full_path, rate=model.generation_config.sample_rate, data=final_audio_array)
 
         # Logging the TTS file
         message_id = int(time.time())
         log_tts_file(message_id, channel_name, timestamp, full_path, voice_preset, input_text, db_file)
-        #print(f"[TTS] TTS file logged: {full_path}")
 
         # Notify the Flask app that a new audio file is available
         notify_new_audio_available(channel_name, message_id)
 
         return full_path
+
     except Exception as e:
         print(f"[TTS] An error occurred during TTS processing: {e}")
         return None

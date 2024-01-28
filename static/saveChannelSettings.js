@@ -25,6 +25,7 @@ function saveChannelSettings() {
       document.getElementById("linesBetweenMessages").value || 0,
     time_between_messages:
       document.getElementById("timeBetweenMessages").value || 0,
+    voice_preset: document.getElementById("voicePreset").value
   };
 
   if (isAddChannel) {

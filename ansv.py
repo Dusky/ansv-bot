@@ -3,17 +3,15 @@ from threading import Thread
 from utils.bot import setup_bot
 from utils.db_setup import ensure_db_setup
 import warnings
-
-# Initialize variable for TTS functionality
 enable_tts = False
 
-# Function to run the web application in a separate thread
+
 # Function to run the web application in a separate thread
 def run_webapp():
     from webapp import app  # Import the Flask app object
 
     # Run the Flask app with reloader disabled
-    app.run(debug=True, host="0.0.0.0", port=5001, use_reloader=False)
+    app.run(debug=False, host="0.0.0.0", port=5001, use_reloader=False)
 
 
 if __name__ == "__main__":
