@@ -3,4 +3,27 @@
 *.pyc
 app.log
 messages.db
+<<<<<<< Updated upstream
 colors.json
+=======
+settings.conf
+*.wav
+settings.conf
+logs/firestarman.txt
+logs/patbaer.txt
+.vscode/settings.json
+logs/firestarman.txt
+logs/misokoneko.txt
+logs/patstaresat.txt
+cache/patstaresat_model.json
+cache/sad_compositions_model.json
+cache/smight_model.json
+logs/aegies.txt
+logs/egancaerwyn.txt
+logs/firestarman.txt
+logs/imyt.txt
+logs/krayshkast.txt
+logs/matthiasmythos.txt
+logs/sad_compositions.txt
+logs/smight.txt
+>>>>>>> Stashed changes
