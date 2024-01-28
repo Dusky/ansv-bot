@@ -3,25 +3,35 @@ let lastId = 0;
 // Function to initialize the table with first page of data
 
 function updateTable(data) {
+    console.log("Updating table with data:", data);
     let tableBody = document.getElementById("ttsFilesBody");
     let isNewData = false;
 
     data.forEach((file) => {
         let messageIdInt = parseInt(file[1]);
+        console.log(`Processing messageIdInt: ${messageIdInt}, lastId: ${lastId}`);
         if (messageIdInt > lastId) {
             addRowToTable(file, true); // Add new row at the beginning
-            lastId = messageIdInt; // Update lastId to the latest
             isNewData = true;
         }
     });
 
+    if (isNewData) {
+        lastId = parseInt(data[0][1]); // Update lastId to the latest messageId
+    }
+
     return isNewData;
 }
+
+
+
 
 // Function to add a row to the table
 function addRowToTable(file, prepend = false) {
     let tableBody = document.getElementById("ttsFilesBody");
     let audioSrc = `/static/${file[4]}`;
+    let audioId = `audio-${file[1]}`;
+    console.log(`Adding new row with audio ID: ${audioId}`);
     let row = `<tr>
                    <td>${file[0]}</td>
                    <td>${file[2]}</td>
@@ -45,6 +55,26 @@ function addRowToTable(file, prepend = false) {
     } else {
         tableBody.insertAdjacentHTML("beforeend", row);
     }
+    // Delay autoplay check to ensure DOM has been updated
+    setTimeout(() => {
+        checkAutoplay([file]);
+    }, 100); // Adjust delay as needed
+}
+function addLatestRow() {
+    fetch('/latest-messages')
+        .then(response => response.json())
+        .then(data => {
+            if (data && data.length > 0) {
+                let latestData = data[0];
+                addRowToTable(latestData, true);
+                setTimeout(() => {
+                    if (document.getElementById("autoplay").checked) {
+                        playAudio(`/static/${latestData[4]}`);
+                    }
+                }, 100);
+            }
+        })
+        .catch(error => console.error("Error fetching latest data:", error));
 }
 
 // Function to play audio
@@ -55,76 +85,38 @@ function playAudio(src) {
 
 // Function to check if autoplay is enabled and play the latest file
 function checkAutoplay(data) {
+    console.log("checkAutoplay called with data:", data); // Debug log
     let autoplayEnabled = document.getElementById("autoplay").checked;
+    console.log("Is autoplay enabled?", autoplayEnabled); // Debug log
 
     if (autoplayEnabled && data.length > 0) {
         let latestAudioId = `audio-${data[0][1]}`;
         let latestAudio = document.getElementById(latestAudioId);
+        console.log(`Latest audio element:`, latestAudio); // Debug log
 
         if (latestAudio) {
-            // Wait for the audio to be ready to play
-            latestAudio.addEventListener("canplay", function () {
-                // Attempt to play the audio
-                latestAudio
-                    .play()
-                    .then(() => {
-                        console.log("Autoplay started for", latestAudioId);
-                    })
-                    .catch((error) => {
-                        console.error("Autoplay failed for", latestAudioId, ":", error);
-                        // Handle autoplay rejection, e.g., by showing a play button
-                    });
-            });
-
-            // If the audio is already in a state where it can start playing, play it
-            if (latestAudio.readyState >= 3) {
-                latestAudio.play().catch((error) => {
+            latestAudio.muted = true;  // Start muted to comply with autoplay policies
+            latestAudio.play()
+                .then(() => {
+                    console.log("Autoplay started for", latestAudioId);
+                    latestAudio.muted = false;  // Unmute after starting playback
+                })
+                .catch((error) => {
                     console.error("Autoplay failed for", latestAudioId, ":", error);
-                    // Handle autoplay rejection
+                    // You might want to show a manual play button here
                 });
-            }
         } else {
             console.error("No audio element found for", latestAudioId);
         }
     }
 }
 
-function checkForNewAudio() {
-    fetch("/check-new-audio")
-        .then((response) => response.json())
-        .then((data) => {
-            if (data.newAudioAvailable) {
-                checkForUpdates(); // Fetch new rows and update the table
-            }
-        })
-        .catch((error) => console.error("Error checking for new audio:", error));
-}
-
-// Function to check for updates and refresh the table if needed
-function checkForUpdates() {
-    fetch(`/check-updates/${lastId}`)
-        .then((response) => response.json())
-        .then((data) => {
-            if (data.newData) {
-                let isNewDataAdded = updateTable(data.entries);
-                if (isNewDataAdded) {
-                    checkAutoplay(data.entries);
-                }
-            }
-        })
-        .catch((error) => console.error("Error:", error));
-}
 
 function refreshTable() {
-    // Reset the currentPage to 1
     currentPage = 1;
-
-    // Clear only the table body (rows with data) before loading new data
     const tableBody = document.getElementById("ttsFilesBody");
     tableBody.innerHTML = "";
-
-    // Fetch the first page of data again
-    loadMoreData();
+    loadMoreData(); // Load the initial set of data
 }
 
 let currentPage = 1;
@@ -151,8 +143,81 @@ function loadMoreData() {
         });
 }
 
+function loadLatestData() {
+    fetch('/latest-messages')
+        .then((response) => response.json())
+        .then((data) => {
+            if (data && data.length > 0) {
+                let latestMessageId = parseInt(data[0][1]);
+                if (latestMessageId > lastId) {
+                    addRowToTable(data[0], true); // Append only the latest row
+                    lastId = latestMessageId;
+                }
+            }
+        })
+        .catch((error) => {
+            console.error("Error:", error);
+        });
+}
+
+function fetchAvailableModels() {
+    fetch('/available-models')
+        .then(response => response.json())
+        .then(models => {
+            const modelSelector = document.getElementById('modelSelector');
+            models.forEach(model => {
+                const option = document.createElement('option');
+                option.value = model;
+                option.textContent = model;
+                modelSelector.appendChild(option);
+            });
+        })
+        .catch(error => console.error('Error fetching models:', error));
+}
+
+function generateMessage() {
+    const selectedModel = document.getElementById('modelSelector').value;
+    fetch(`/generate-message/${selectedModel}`)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            if(data.message) {
+                document.getElementById('generatedMessage').textContent = `${data.message}`;
+            } else {
+                alert('Failed to generate message. No message returned from server.');
+            }
+        })
+        .catch(error => {
+            console.error('Error generating message:', error);
+            alert(`Error generating message: ${error}`);
+        });
+}
+
+
+// function generateMessage() {
+//     const selectedModel = document.getElementById('modelSelector').value;
+//     const combineWithGeneral = document.getElementById('combineModelsCheckbox').checked;
+//     const modelWeight = combineWithGeneral ? document.getElementById('modelWeight').value : undefined;
+  
+//     // Include the combineWithGeneral and modelWeight in the request
+//     const queryParams = new URLSearchParams({ combineWithGeneral, modelWeight }).toString();
+//     fetch(`/generate-message/${selectedModel}?${queryParams}`)
+//       .then(response => response.json())
+//       .then(data => {
+//         // Handle the response
+//       })
+//       .catch(error => {
+//         // Handle the error
+//       });
+//   }
+
 document.addEventListener("DOMContentLoaded", function () {
     console.log("DOMContentLoaded event fired");
+    fetchAvailableModels();
     var mainTab = document.getElementById("mainTab");
     var settingsTab = document.getElementById("settingsTab");
     var mainContent = document.getElementById("mainContent");
@@ -164,6 +229,7 @@ document.addEventListener("DOMContentLoaded", function () {
         checkForAddChannelOption(this);
     });
 
+    
   function updateButtonTheme() {
     var currentTheme = document.documentElement.getAttribute("data-bs-theme");
     if (currentTheme === "dark") {
@@ -175,6 +241,24 @@ document.addEventListener("DOMContentLoaded", function () {
     }
   }
 
+//   document.getElementById('combineModelsCheckbox').addEventListener('change', function() {
+//     document.getElementById('modelWeight').disabled = !this.checked;
+//   });
+
+  document.getElementById('autoplay').addEventListener('change', function() {
+    let autoplayEnabled = this.checked;
+    let muteIcon = document.getElementById('muteIcon');
+    let unmuteIcon = document.getElementById('unmuteIcon');
+
+    if (autoplayEnabled) {
+        muteIcon.classList.add('d-none');
+        unmuteIcon.classList.remove('d-none');
+    } else {
+        muteIcon.classList.remove('d-none');
+        unmuteIcon.classList.add('d-none');
+    }
+});
+  
     themeToggle.addEventListener("click", function () {
         var currentTheme = document.documentElement.getAttribute("data-bs-theme");
 
@@ -189,14 +273,20 @@ document.addEventListener("DOMContentLoaded", function () {
     // Initialize button theme on load
     updateButtonTheme();
 
-    mainTab.addEventListener("click", function () {
-        setActiveTab(this);
-    });
 
-    settingsTab.addEventListener("click", function () {
-        setActiveTab(this);
-    });
-
+    try {
+        var socket = io.connect(location.protocol + '//' + document.domain + ':' + location.port);
+    
+        socket.on('connect', function() {
+            console.log('Websocket connected!');
+        });
+    
+        socket.on('refresh_table', function() {
+            loadLatestData();
+        });
+    } catch (error) {
+        console.error("Error initializing WebSocket:", error);
+    }
 
     var saveSettingsButton = document.getElementById("saveSettings");
     saveSettingsButton.addEventListener("click", function (event) {
@@ -220,7 +310,7 @@ document.addEventListener("DOMContentLoaded", function () {
                 lines_between_messages: 100,
                 time_between_messages: 0,
             };
-            addNewChannel(newChannelData); // Call addNewChannel instead of saveOrUpdateChannel
+            addNewChannel(newChannelData); 
         } else {
             alert("Please enter a channel name.");
         }
@@ -242,6 +332,8 @@ document.addEventListener("DOMContentLoaded", function () {
         fetchChannels();
     });
 
+    
+
     document.getElementById("refreshTable").addEventListener("click", function () {
         refreshTable();
     });
@@ -256,9 +348,12 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     // Load initial data
-    setInterval(checkForNewAudio, 3000);
-    loadMoreData();
-
+    //loadMoreData();
+    //loadLatestData();
+    refreshTable();
+     socket.on('refresh_table', function() {
+         addLatestRow(); // or any other function that updates the table
+     });
 });
 
 

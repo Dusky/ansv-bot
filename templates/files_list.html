@@ -14,6 +14,9 @@
   />
   <script src="{{ url_for('static', filename='saveChannelSettings.js') }}"></script>
   <script src="{{ url_for('static', filename='setActiveTab.js') }}"></script>
+  <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"  crossorigin="anonymous"></script>
+
+
     <script src="{{ url_for('static', filename='script.js') }}"></script>
 
     <style>
@@ -43,15 +46,27 @@
                 <a class="nav-link" id="settingsTab" data-bs-toggle="tab" href="#settingsContent">Settings</a>
               </li>
             </ul>
-            <form class="d-flex">
+
+            
+            <form class="d-inline-flex p-2 bd-highlight">
+              <input type="checkbox" class="btn-check" id="autoplay" checked="" autocomplete="off">
+              <label class="btn btn-primary" for="autoplay" id="autoplayLabel">
+                  <i class="fas fa-volume-mute" id="muteIcon"></i>
+                  <i class="fas fa-volume-up d-none" id="unmuteIcon"></i>
+              </label>
+          </form>
+               
+            <form class="d-flex p-2 bd-highlight justify-content-end">
               <button id="themeToggle" type="button" class="btn btn-outline-light">
                 Lightswitch
               </button>
+              
             </form>
           </div>
         </div>
       </nav>
       <br>
+      
       <div id="settingsContent" style="display: none" class="shadow-lg p-3 mb-5 rounded"><br>
         
         <div class="row">
@@ -59,10 +74,11 @@
                 <div class="card border-primary shadow mb-5 rounded">
                     <div class="card-header">Settings</div>
                     <div class="card-body">
-                        <label> <input type="checkbox" id="autoplay" /> Autoplay </label><br>
+                        <!--<label> <input type="checkbox" id="autoplay" /> Autoplay </label><br>-->
                         <div class="form-group">
                             <label for="themeSelect">Select Theme:</label>
-                            <select id="themeSelect" class="form-control" onchange="changeTheme()" style="width: 30%">
+                            <select id="themeSelect" class="form-control" onchange="changeTheme()">
+                                
                                 <br>
                 <option value="default">Default</option>
                 <option value="cerulean">Cerulean</option>
@@ -91,16 +107,40 @@
                 <option value="yeti">Yeti</option>
                 <option value="zephyr">Zephyr</option>
             </select><br>
+            
         </div>
+
     </div>
+    
 </div>
+
+
+<div class="card border-primary shadow mb-5 rounded">
+  <div class="card-header">Generate  Message</div>
+  <div class="card-body text-center">
+    
+
+
+
+
+    <select id="modelSelector" class="form-select mb-3"></select>
+    <button id="generateMsgBtn" class="btn btn-primary" onclick="generateMessage()">Generate Message</button>
+    <p id="generatedMessage" class="mt-3">Generated message will appear here...</p>
+  </div>
 </div>
+
+
+
+
+</div>
+
+
 <div class="col">
     <div class="channel-settings">
         <div class="card border-primary shadow mb-5 rounded">
             <div class="card-header">Channel Settings</div>
             <div class="card-body">
-              <label for="channelSelect">Select Channel:</label>
+              <label for="channelSelect"></label>
               <select
                 id="channelSelect"
                 class="form-control"
@@ -213,6 +253,23 @@
                       />
                     </td>
                   </tr>
+                  <tr>
+                    <td>Voice Preset:</td>
+                    <td>
+                        <select id="voicePreset" class="form-select">
+                            <option value="v2/en_speaker_0">English Speaker 0</option>
+                            <option value="v2/en_speaker_1">English Speaker 1</option>
+                            <option value="v2/en_speaker_2">English Speaker 2</option>
+                            <option value="v2/en_speaker_3">English Speaker 3</option>
+                            <option value="v2/en_speaker_4">English Speaker 4</option>
+                            <option value="v2/en_speaker_5">English Speaker 5</option>
+                            <option value="v2/en_speaker_6">English Speaker 6</option>
+                            <option value="v2/en_speaker_7">English Speaker 7</option>
+                            <option value="v2/en_speaker_8">English Speaker 8</option>
+                            <option value="v2/en_speaker_9">English Speaker 9</option>
+                        </select>
+                    </td>
+                </tr>
                 </tbody>
               </table>
               <div class="text-end d-grid gap-2" >

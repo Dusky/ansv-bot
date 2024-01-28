@@ -1,20 +1,61 @@
 # webapp.py
-from flask import Flask, render_template, url_for, jsonify, request
+from flask import Flask, render_template, jsonify, request
+from flask_socketio import SocketIO
 import sqlite3
 from datetime import datetime
-import time
-from flask import jsonify
+from utils.markov_handler import MarkovHandler
 
 app = Flask(__name__)
+socketio = SocketIO(app)
 db_file = "messages.db"
+markov_handler = MarkovHandler(cache_directory="cache")
 
-new_audio_available = False  # Flag to indicate new audio availability
+
+@app.route("/")
+def index():
+    tts_files = get_last_10_tts_files_with_last_id(db_file)
+    return render_template("files_list.html", tts_files=tts_files, last_id=None)  # last_id is set to None or removed based on your template
+
+
+@app.route('/generate-message/<channel_name>')
+def generate_message(channel_name):
+    try:
+        message = markov_handler.generate_message(channel_name)
+        if message:
+            return jsonify({"message": message})
+        else:
+            return jsonify({"error": "Failed to generate message"}), 400
+    except Exception as e:
+        app.logger.error(f"Error in generate_message_route: {str(e)}")
+        return jsonify({"error": f"Internal server error: {str(e)}"}), 500
+
+def generate_message_route(channel_name):
+    try:
+        message = markov_handler.generate_message(channel_name)
+        if message:
+            return jsonify({"message": message})
+        return jsonify({"error": "No message could be generated"}), 400
+    except FileNotFoundError:
+        return jsonify({"error": "Model file not found"}), 404
+    except Exception as e:
+        app.logger.error(f"Server Error: {str(e)}")
+        return jsonify({"error": "Internal server error"}), 500
+
+@app.route('/available-models')
+def available_models():
+    try:
+        models = markov_handler.get_available_models()
+        return jsonify(models)
+    except Exception as e:
+        app.logger.error(f"Error in available_models: {str(e)}")
+        return jsonify({"error": f"Internal server error: {str(e)}"}), 500
 
 
 @app.route("/new-audio-notification", methods=["POST"])
 def new_audio_notification():
     global new_audio_available
     new_audio_available = True
+    socketio.emit('refresh_table', {'data': 'New audio available'})
     return jsonify({"success": True})
 
 
@@ -27,8 +68,14 @@ def check_new_audio():
 
 
 def format_timestamp(timestamp):
-    dt = datetime.strptime(timestamp, "%Y%m%d-%H%M%S")
-    return dt.strftime("%b %d %I:%M %p").upper()  # Format like 'JAN 1 04:51 PM'
+    try:
+        # Convert from '20240127-190809' to '2024-01-27 19:08:09'
+        dt = datetime.strptime(timestamp, "%Y%m%d-%H%M%S")
+        return dt.strftime("%Y-%m-%d %H:%M:%S")
+    except ValueError as e:
+        print(f"Error parsing timestamp: {timestamp} - {e}")
+        return timestamp  # Return original timestamp in case of an error
+
 
 
 def format_data_for_frontend(data):
@@ -38,10 +85,17 @@ def format_data_for_frontend(data):
         truncated_message_id = (
             str(message_id)[4:] if len(str(message_id)) > 4 else str(message_id)
         )
+
+        # Check if timestamp is already in the desired format
+        if len(timestamp) == 19 and timestamp[4] == '-' and timestamp[7] == '-' and timestamp[13] == ':':
+            formatted_timestamp = timestamp
+        else:
+            formatted_timestamp = format_timestamp(timestamp)
+
         formatted_record = (
             channel,
             truncated_message_id,
-            format_timestamp(timestamp),
+            formatted_timestamp,
             voice_preset,
             file_path,
             message,
@@ -91,12 +145,6 @@ def get_paginated_tts_files(db_file, page, per_page):
         conn.close()
 
 
-@app.route("/")
-def index():
-    tts_files, last_id = get_last_10_tts_files_with_last_id(db_file)
-    return render_template("files_list.html", tts_files=tts_files, last_id=last_id)
-
-
 @app.route("/update-channel-settings", methods=["POST"])
 def update_channel_settings():
     data = request.json
@@ -112,7 +160,7 @@ def update_channel_settings():
         c.execute(
             """
             UPDATE channel_configs
-            SET tts_enabled = ?, voice_enabled = ?, join_channel = ?, owner = ?, trusted_users = ?, ignored_users = ?, use_general_model = ?, lines_between_messages = ?, time_between_messages = ?
+            SET tts_enabled = ?, voice_enabled = ?, join_channel = ?, owner = ?, trusted_users = ?, ignored_users = ?, use_general_model = ?, lines_between_messages = ?, time_between_messages = ?, voice_preset = ?
             WHERE channel_name = ?""",
             (
                 data["tts_enabled"],
@@ -124,15 +172,14 @@ def update_channel_settings():
                 data["use_general_model"],
                 data["lines_between_messages"],
                 data["time_between_messages"],
-                channel_name,
+                data["voice_preset"],  
+                data["channel_name"],
             ),
         )
         conn.commit()
-        return jsonify(
-            {"success": True, "message": "Channel settings updated successfully"}
-        )
+        return jsonify({"success": True})
     except sqlite3.Error as e:
-        print(f"[ERROR] SQLite error in update_channel_settings: {e}")
+        print(f"SQLite error: {e}")
         return jsonify({"success": False, "message": str(e)})
     finally:
         conn.close()
@@ -317,11 +364,10 @@ def get_last_10_tts_files_with_last_id(db_file):
             "SELECT channel, message_id, timestamp, voice_preset, file_path, message FROM tts_logs ORDER BY timestamp DESC LIMIT 10"
         )
         files = c.fetchall()
-        last_id = files[0][1] if files else 0
-        return format_data_for_frontend(files), last_id
+        return format_data_for_frontend(files)  # Return only the formatted data
     except sqlite3.Error as e:
         print("[ERROR] Database error:", e)
-        return [], 0
+        return []  # Return an empty list on error
     finally:
         conn.close()
 
@@ -330,5 +376,6 @@ def run_flask_app():
     app.run(debug=True, host="0.0.0.0", port=5001)
 
 
-if __name__ == "__main__":
-    run_flask_app()
+if __name__ == '__main__':
+    markov_handler.load_models()
+    socketio.run(app, debug=True, host="0.0.0.0", port=5001)
