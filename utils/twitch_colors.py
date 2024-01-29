@@ -2,8 +2,8 @@ import requests
 import sqlite3
 from colors import *
 # Twitch API credentials
-client_id = 'wstzdcfxzjl8xizx91v65u7a4t7lg1'
-client_secret = 'l37uzwt1eyc4ymh54a0svefmjr3s1u'
+client_id = ''
+client_secret = ''
 
 # Database file
 db_file = 'messages.db'

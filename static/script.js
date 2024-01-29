@@ -281,9 +281,9 @@ document.addEventListener("DOMContentLoaded", function () {
             console.log('Websocket connected!');
         });
     
-        socket.on('refresh_table', function() {
-            loadLatestData();
-        });
+        // socket.on('refresh_table', function() {
+        //     loadLatestData();
+        // });
     } catch (error) {
         console.error("Error initializing WebSocket:", error);
     }
@@ -334,9 +334,9 @@ document.addEventListener("DOMContentLoaded", function () {
 
     
 
-    document.getElementById("refreshTable").addEventListener("click", function () {
-        refreshTable();
-    });
+        // document.getElementById("refreshTable").addEventListener("click", function () {
+        //     refreshTable();
+        // });
 
     var settingsTab = document.getElementById("settingsTab");
 
