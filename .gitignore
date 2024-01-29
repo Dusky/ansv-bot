@@ -28,3 +28,11 @@ cache/patstaresat_model.json
 cache/misokoneko_model.json
 cache/imyt_model.json
 cache/firestarman_model.json
+logs/imyt.txt
+logs/firestarman.txt
+logs/aegies.txt
+cache/patstaresat_model.json
+cache/misokoneko_model.json
+cache/imyt_model.json
+cache/general_markov_model.json
+cache/firestarman_model.json
