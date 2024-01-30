@@ -75,20 +75,22 @@ function addNewChannel(data) {
     },
     body: JSON.stringify(data),
   })
-    .then((response) => response.json())
-    .then((result) => {
-      if (result.success) {
-        alert("Channel added successfully.");
-        // Optionally, dynamically update the channel list in the UI here
-      } else {
-        alert("Failed to add channel: " + result.message);
-      }
-    })
-    .catch((error) => {
-      console.error("Error:", error);
-      alert("An error occurred while adding the channel.");
-    });
+  .then((response) => response.json())
+  .then((result) => {
+    if (result.success) {
+      // Show the success modal
+      var successModal = new bootstrap.Modal(document.getElementById('successModal'));
+      successModal.show();
+    } else {
+      alert("Failed to add channel: " + result.message);
+    }
+  })
+  .catch((error) => {
+    console.error("Error:", error);
+    alert("An error occurred while adding the channel.");
+  });
 }
+
 
 function displayChannelConfig(channels, selectedChannel) {
   var channelConfigForm = document.getElementById("channelConfig");
@@ -122,15 +124,6 @@ function displayChannelConfig(channels, selectedChannel) {
   }
 }
 
-// function checkForAddChannelOption(selectElement, channels) {
-// if (selectElement.value === "add_channel") {
-//     // Reset form fields for new channel
-//     resetFormForNewChannel();
-//     document.getElementById("addChannelDiv").style.display = "block";
-// } else {
-//     displayChannelConfig(channels, selectElement.value);
-// }
-// }
 
 
 function resetFormForNewChannel() {
@@ -236,3 +229,4 @@ function handleError(error) {
   console.error("Error:", error);
   alert("An error occurred while saving settings.");
 }
+
