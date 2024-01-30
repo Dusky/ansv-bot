@@ -12,3 +12,10 @@ logs/patbaer.txt
 logs/firestarman.txt
 logs/misokoneko.txt
 logs/patstaresat.txt
+*.npz
+*.mp3
+voices/gets_hurt-24-0116-0130-08-SPK-en_female_inten.mp3_info.txt
+voices/oops_i_farted-24-0116-0152-44-SPK-en_female_inten.mp3_info.txt
+voices/taco_bell-24-0116-0124-31-SPK-en_speaker_9.mp3_info.txt
+voices/unsure_how_best-24-0116-0133-27-SPK-en_speaker_9.mp3_info.txt
+voices/æ-24-0124-1745-34-SPK-en_speaker_9.mp3_info.txt

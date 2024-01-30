@@ -10,6 +10,13 @@ function saveChannelSettings() {
     return;
   }
 
+  // Fetch the selected voice preset or custom voice
+  var voicePresetSelect = document.getElementById("voicePreset");
+  var customVoiceSelect = document.getElementById("customVoiceSelect");
+  var voicePreset = voicePresetSelect.value === "custom"
+    ? customVoiceSelect.value
+    : voicePresetSelect.value;
+
   var updatedData = {
     channel_name: channelName,
     tts_enabled: document.getElementById("ttsEnabled").checked ? 1 : 0,
@@ -18,14 +25,10 @@ function saveChannelSettings() {
     owner: document.getElementById("owner").value || channelName,
     trusted_users: document.getElementById("trustedUsers").value,
     ignored_users: document.getElementById("ignoredUsers").value,
-    use_general_model: document.getElementById("useGeneralModel").checked
-      ? 1
-      : 0,
-    lines_between_messages:
-      document.getElementById("linesBetweenMessages").value || 0,
-    time_between_messages:
-      document.getElementById("timeBetweenMessages").value || 0,
-    voice_preset: document.getElementById("voicePreset").value
+    use_general_model: document.getElementById("useGeneralModel").checked ? 1 : 0,
+    lines_between_messages: document.getElementById("linesBetweenMessages").value || 0,
+    time_between_messages: document.getElementById("timeBetweenMessages").value || 0,
+    voice_preset: voicePreset
   };
 
   if (isAddChannel) {
@@ -34,6 +37,8 @@ function saveChannelSettings() {
     updateChannelSettings(updatedData);
   }
 }
+
+
 function updateChannelSettings(data) {
   fetch("/update-channel-settings", {
     method: "POST",
