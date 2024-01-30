@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <title>ANSV brain</title>
+    <link id="bootstrapCSS" rel="stylesheet" href="https://bootswatch.com/5/{{ theme }}/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.1/css/all.min.css">
+    <script src="{{ url_for('static', filename='scripts/event_listener.js') }}"></script>
+    <script src="{{ url_for('static', filename='scripts/saveChannelSettings.js') }}"></script>
+    <script src="{{ url_for('static', filename='scripts/setActiveTab.js') }}"></script>
+    <script src="{{ url_for('static', filename='scripts/handle_voice.js') }}"></script>
+    <script src="{{ url_for('static', filename='scripts/markov.js') }}"></script>
+    <script src="{{ url_for('static', filename='scripts/data_handler.js') }}"></script>
+    <script src="https://cdn.socket.io/4.0.0/socket.io.min.js" crossorigin="anonymous"></script>
+    <style>
+        #scrollableTableContainer {
+            max-height: 600px; /* Adjust this value based on your needs */
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-4">
+        <!-- Navigation Bar -->
+        <nav class="navbar navbar-expand-lg navbar rounded bg-primary shadow">
+            <div class="container-fluid">
+              <a class="navbar-brand" href="#">ANSV</a>
+              <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+              </button>
+              <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+                  <li class="nav-item">
+                    <a class="nav-link {{ 'active' if request.endpoint == 'main' else '' }}" id="mainTab" data-bs-toggle="tab" href="{{ url_for('main') }}">Main</a>
+                  </li>
+                  <li class="nav-item">
+                    <a class="nav-link {{ 'active' if request.endpoint == 'settings' else '' }}" id="settingsTab" data-bs-toggle="tab" href="{{ url_for('settings') }}">Settings</a>
+                  </li>
+                  <li class="nav-item">
+                    <a class="nav-link {{ 'active' if request.endpoint == 'stats' else '' }}" id="statsTab" data-bs-toggle="tab" href="{{ url_for('stats') }}">Stats and Info</a>
+                  </li>
+                </ul>
+    
+                
+                <form class="d-inline-flex p-2 bd-highlight">
+                  <input type="checkbox" class="btn-check" id="autoplay" checked="" autocomplete="off">
+                  <label class="btn btn-primary" for="autoplay" id="autoplayLabel">
+                      <i class="fas fa-volume-mute" id="muteIcon"></i>
+                      <i class="fas fa-volume-up d-none" id="unmuteIcon"></i>
+                  </label>
+              </form>
+                   
+                <form class="d-flex p-2 bd-highlight justify-content-end">
+                  <button id="themeToggle" type="button" class="btn btn-outline-light">
+                    Lightswitch
+                  </button>
+                  
+                </form>
+              </div>
+            </div>
+          </nav>
+        <!-- Content Block -->
+        {% block content %}{% endblock %}
+    </div>
+    <!-- Footer and additional scripts can go here -->
+
+
+
+</body>
+</html>

@@ -2,7 +2,7 @@ import argparse
 from threading import Thread
 from utils.bot import setup_bot
 from utils.db_setup import ensure_db_setup
-import warnings
+
 enable_tts = False
 
 
