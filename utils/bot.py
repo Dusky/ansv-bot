@@ -18,7 +18,6 @@ from utils.color_control import ColorManager
 from commands.ansv_command import ansv_command
 from utils.db_setup import ensure_db_setup
 from utils.tts import process_text
-from utils.markov_handler import MarkovHandler
 
 config = configparser.ConfigParser()
 config.read("settings.conf")
@@ -140,34 +139,13 @@ class Bot(commands.Bot):
         except Exception as e:
             print(f"Error checking for new channels: {e}")
 
-
-
-        current_time = time.time()
-        # If last_build_time is None, which means the file was never built, we need to update
-        if last_build_time is None:
-            return True
-
-        # Update cache if it is older than the threshold
-        return current_time - last_build_time > self.cache_update_threshold
-
-    async def try_join_channel(self, channel_name):
-        try:
-            await self.join_channels([channel_name])
-            print(f"{GREEN}Joined channel: {channel_name}{RESET}")  # Add this line
-            return True
-        except Exception as e:
-            print(f"Failed to join channel {channel_name}: {e}")
-            return False
-        
-    def start_periodic_channel_check(self, interval=36000):
+    def start_periodic_channel_check(self, interval=3600):
         """Start a periodic check for new channels."""
         def channel_check():
             asyncio.run(self.check_and_join_new_channels())
             threading.Timer(interval, channel_check).start()
 
         threading.Timer(interval, channel_check).start()
-
-
 
     def should_update_cache(self, channel_name, last_build_time):
         # Immediately return True if rebuild_cache is set
@@ -181,6 +159,16 @@ class Bot(commands.Bot):
 
         # Update cache if it is older than the threshold
         return current_time - last_build_time > self.cache_update_threshold
+
+
+    async def try_join_channel(self, channel_name):
+        try:
+            await self.join_channels([channel_name])
+            print(f"{GREEN}Joined channel: {channel_name}{RESET}")  # Add this line
+            return True
+        except Exception as e:
+            print(f"Failed to join channel {channel_name}: {e}")
+            return False
 
     
     def load_last_cache_build_times(self):
@@ -369,7 +357,7 @@ class Bot(commands.Bot):
         conn.close()
 
 
-    def update_model_periodically(self, interval=600, initial_delay=10):
+    def update_model_periodically(self, interval=86400, initial_delay=10):
         self.my_logger.info("update_model_periodically called")
         def delayed_execution():
             try:

@@ -225,23 +225,22 @@ if (voicePreset) {
           // Function to create a row for a stat
           const createStatRow = (stat) => {
             let row = document.createElement('tr');
-            let channelName = stat.channel;
-
-            // Add Bootstrap class to the row
-            if (channelName === 'general_markov') {
-              row.classList.add('table-primary');
+          
+            // Check if this is the General Model row
+            if (stat.channel === 'General Model') {
+              row.classList.add('table-primary'); // Apply Bootstrap class for the General Model row
             }
-
+          
             let channelCell = document.createElement('th');
             channelCell.scope = 'row';
-            channelCell.innerHTML = channelName === 'general_markov' ? 'General Model' : `<a href="http://twitch.tv/${channelName}" target="_blank">${channelName}</a>`;
-
+            channelCell.innerHTML = stat.channel === 'General Model' ? 'General Model' : `<a href="http://twitch.tv/${stat.channel}" target="_blank">${stat.channel}</a>`;
+          
             let cacheCell = createCell(stat.cache);
             let logCell = createCell(stat.log);
             let cacheSizeCell = createCell(formatFileSize(stat.cache_size));
-            let lineCountCell = createCell(stat.line_count);
-            let actionsCell = createCell(channelName === 'general_markov' ? '' : createRebuildButton(channelName));
-
+            let lineCountCell = createCell(stat.line_count.toString());
+            let actionsCell = createCell(stat.channel === 'General Model' ? '' : createRebuildButton(stat.channel));
+          
             row.append(channelCell, cacheCell, logCell, cacheSizeCell, lineCountCell, actionsCell);
             return row;
           }
@@ -290,6 +289,7 @@ if (voicePreset) {
       return (bytes / 1073741824).toFixed(1) + ' GB';
   }
   
+
 
 
 const rebuildGeneralCacheBtn = document.getElementById('rebuildGeneralCacheBtn');

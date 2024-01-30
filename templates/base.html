@@ -5,7 +5,8 @@
     <title>ANSV brain</title>
     <link id="bootstrapCSS" rel="stylesheet" href="https://bootswatch.com/5/{{ theme }}/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.1/css/all.min.css">
-    <script src="{{ url_for('static', filename='scripts/event_listener.js') }}"></script>
+    <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
+
     <script src="{{ url_for('static', filename='scripts/saveChannelSettings.js') }}"></script>
     <script src="{{ url_for('static', filename='scripts/setActiveTab.js') }}"></script>
     <script src="{{ url_for('static', filename='scripts/handle_voice.js') }}"></script>
@@ -38,7 +39,7 @@
                     <a class="nav-link {{ 'active' if request.endpoint == 'settings' else '' }}" id="settingsTab" data-bs-toggle="tab" href="{{ url_for('settings') }}">Settings</a>
                   </li>
                   <li class="nav-item">
-                    <a class="nav-link {{ 'active' if request.endpoint == 'stats' else '' }}" id="statsTab" data-bs-toggle="tab" href="{{ url_for('stats') }}">Stats and Info</a>
+                    <a class="nav-link {{ 'active' if request.endpoint == 'stats' else '' }}" id="statsTab" data-bs-toggle="tab" href="{{ url_for('stats') }}">Brain</a>
                   </li>
                 </ul>
     
@@ -65,7 +66,7 @@
     </div>
     <!-- Footer and additional scripts can go here -->
 
-
+    <script src="{{ url_for('static', filename='scripts/event_listener.js') }}"></script>
 
 </body>
 </html>

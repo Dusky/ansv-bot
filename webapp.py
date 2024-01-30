@@ -122,32 +122,42 @@ def api_stats():
     cache_files = os.listdir(cache_dir)
     log_files = os.listdir(logs_dir)
 
+    total_line_count = 0  # Initialize total line count for general model
     stats_data = []
+
     for file in cache_files:
         if file.endswith("_model.json"):
             channel_name = file.replace("_model.json", "")
             log_file = f"{channel_name}.txt"
             cache_file_path = os.path.join(cache_dir, file)
-            log_file_path = os.path.join(logs_dir, log_file)
             
-            # Check if the log file exists
-            if os.path.exists(log_file_path):
+            if log_file in log_files:
+                log_file_path = os.path.join(logs_dir, log_file)
                 cache_size = os.path.getsize(cache_file_path)
-                line_count = sum(1 for line in open(log_file_path))
-            else:
-                # Handle the case where the log file does not exist
-                cache_size = os.path.getsize(cache_file_path)
-                line_count = 'N/A'  # or any other placeholder you prefer
+                with open(log_file_path, 'r') as f:
+                    line_count = sum(1 for line in f)
+                total_line_count += line_count  # Add to total line count
 
-            stats_data.append({
-                'channel': channel_name,
-                'cache': file,
-                'log': log_file,
-                'cache_size': cache_size,
-                'line_count': line_count
-            })
+                stats_data.append({
+                    'channel': channel_name,
+                    'cache': file,
+                    'log': log_file,
+                    'cache_size': cache_size,
+                    'line_count': line_count
+                })
+
+    # Add the general model row at the beginning
+    general_model_row = {
+        'channel': 'General Model',
+        'cache': 'general_markov_model.json',
+        'log': 'N/A',
+        'cache_size': os.path.getsize(os.path.join(cache_dir, 'general_markov_model.json')),
+        'line_count': total_line_count
+    }
+    stats_data.insert(0, general_model_row)  # Insert at the top
 
     return jsonify(stats_data)
+
 
 @app.route('/rebuild-general-cache', methods=['POST'])
 def rebuild_general_cache_route():
@@ -166,14 +176,25 @@ def rebuild_general_cache_route():
 
 
 
-
 @app.route("/set_theme/<theme>")
 def set_theme(theme):
-    resp = make_response(redirect(url_for("index")))  # Redirect back to the index page
-    resp.set_cookie(
-        "theme", theme, max_age=30 * 24 * 60 * 60
-    )  # Set theme cookie for 30 days
-    return resp
+    try:
+        # Log the theme being set for debugging
+        app.logger.info(f"Setting theme to: {theme}")
+        
+        # Redirect back to a valid route (make sure 'index' exists or use another valid endpoint)
+        resp = make_response(redirect(url_for("main")))
+        
+        # Set the theme cookie
+        resp.set_cookie("theme", theme, max_age=30 * 24 * 60 * 60)
+        
+        return resp
+    except Exception as e:
+        app.logger.error(f"Error in set_theme: {e}")
+        # Return a more informative error response for debugging
+        return jsonify({'error': f"Failed to set theme: {str(e)}"}), 500
+
+
 
 
 @app.route("/list-voices", methods=["GET"])
@@ -224,6 +245,9 @@ def generate_message(channel_name):
     except Exception as e:
         app.logger.error(f"Error in generate_message_route: {str(e)}")
         return jsonify({"error": f"Internal server error: {str(e)}"}), 500
+
+
+
 
 
 def generate_message_route(channel_name):
