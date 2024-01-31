@@ -586,20 +586,17 @@ class Bot(commands.Bot):
         await ansv_command(self, ctx, setting, new_value)
 
     async def event_message(self, message):
-        if message.author is None or message.author.name == self.nick:
+        if message.author is None or message.author.name.lower() == self.nick.lower():
             return
 
-        channel_name = message.channel.name
+        channel_name = message.channel.name.lower()
         self.my_logger.log_message(channel_name, message.author.name, message.content)
 
-        # Fetch channel settings including ignored users
         lines_between, time_between, tts_enabled, voice_enabled = self.fetch_channel_settings(channel_name)
-        ignored_users = self.channel_settings[channel_name]['ignored_users'] if channel_name in self.channel_settings else []
+        ignored_users = [user.lower() for user in self.channel_settings[channel_name]['ignored_users']] if channel_name in self.channel_settings else []
 
-        # Check if the message author is ignored
-        if message.author.name in ignored_users:
-            # Skip processing for ignored users
-            return
+        if message.author.name.lower() in ignored_users:
+            return  # Ignore messages from ignored users
 
         await self.handle_commands(message)
 
