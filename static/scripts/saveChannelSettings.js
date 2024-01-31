@@ -79,8 +79,7 @@ function addNewChannel(data) {
   .then((result) => {
     if (result.success) {
       // Show the success modal
-      var successModal = new bootstrap.Modal(document.getElementById('successModal'));
-      successModal.show();
+      alert("Channel added: " + result.message);
     } else {
       alert("Failed to add channel: " + result.message);
     }
