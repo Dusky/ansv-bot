@@ -592,9 +592,17 @@ class Bot(commands.Bot):
         channel_name = message.channel.name
         self.my_logger.log_message(channel_name, message.author.name, message.content)
 
+        # Fetch channel settings including ignored users
+        lines_between, time_between, tts_enabled, voice_enabled = self.fetch_channel_settings(channel_name)
+        ignored_users = self.channel_settings[channel_name]['ignored_users'] if channel_name in self.channel_settings else []
+
+        # Check if the message author is ignored
+        if message.author.name in ignored_users:
+            # Skip processing for ignored users
+            return
+
         await self.handle_commands(message)
 
-        lines_between, time_between, tts_enabled, voice_enabled = self.fetch_channel_settings(channel_name)
         self.channel_chat_line_count[channel_name] += 1
         elapsed_time = time.time() - self.channel_last_message_time.get(channel_name, 0)
 
@@ -633,6 +641,7 @@ class Bot(commands.Bot):
                     except Exception as e:
                         self.my_logger.error(f"Failed to send message in {channel_name}: {str(e)}")
                         print(f"Error sending message in {channel_name}: {str(e)}")
+
 
 
 
