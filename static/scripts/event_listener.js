@@ -191,8 +191,17 @@ if (voicePreset) {
     addLatestRow();
   });
 
-
     var statsContainer = document.getElementById('statsContainer');
+    if (statsContainer) {
+        statsContainer.addEventListener('click', function(event) {
+            if (event.target && event.target.classList.contains('rebuild-cache-btn')) {
+                const channelName = event.target.getAttribute('data-channel');
+                if (channelName) {
+                    rebuildCacheForChannel(channelName);
+                }
+            }
+        });
+    }
     if (statsContainer) {
         loadStats();
     }
