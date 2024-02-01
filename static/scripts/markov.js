@@ -38,35 +38,36 @@ function generateMessage() {
 }
 
 function rebuildCacheForChannel(channelName) {
-  const rebuildButton = document.querySelector(`button[data-channel="${channelName}"]`);
-  if (rebuildButton) {
-      rebuildButton.disabled = true;
-      rebuildButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Rebuilding...';
+    const rebuildButton = document.querySelector(`button[data-channel="${channelName}"]`);
+    if (rebuildButton) {
+        rebuildButton.disabled = true;
+        rebuildButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Rebuilding...';
 
-      fetch(`/rebuild-cache/${channelName}`, { method: 'POST' })
-          .then(response => {
-              if (!response.ok) {
-                  throw new Error('Failed to rebuild cache');
-              }
-              return response.json();
-          })
-          .then(data => {
-              if (data.success) {
-                  alert(`Cache rebuilt successfully for ${channelName}`);
-              } else {
-                  alert(`Failed to rebuild cache for ${channelName}`);
-              }
-          })
-          .catch(error => {
-              console.error('Error:', error);
-              alert(`Error rebuilding cache for ${channelName}: ${error}`);
-          })
-          .finally(() => {
-              rebuildButton.disabled = false;
-              rebuildButton.textContent = 'Rebuild Cache';
-          });
-  }
+        fetch(`/rebuild-cache/${channelName}`, { method: 'POST' })
+            .then(response => {
+                console.log('Response received:', response); // Added for debugging
+                if (!response.ok) {
+                    throw new Error(`Failed to rebuild cache: ${response.statusText}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                console.log('Data:', data); // Added for debugging
+                alert(data.success ? `Cache rebuilt successfully for ${channelName}` : `Failed to rebuild cache for ${channelName}: ${data.message}`);
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert(`Error rebuilding cache for ${channelName}: ${error}`);
+            })
+            .finally(() => {
+                rebuildButton.disabled = false;
+                rebuildButton.textContent = 'Rebuild Cache';
+            });
+    } else {
+        console.error(`Rebuild button not found for channel: ${channelName}`);
+    }
 }
+
 
 function rebuildAllCaches() {
   const rebuildAllButton = document.getElementById('rebuildAllCachesBtn');
