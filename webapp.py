@@ -20,13 +20,6 @@ socketio = SocketIO(app)
 db_file = "messages.db"
 markov_handler = MarkovHandler(cache_directory="cache")
 
-# @app.route("/")
-# def index():
-#     theme = request.cookies.get("theme", "default")  # Get theme from cookie
-#     tts_files = get_last_10_tts_files_with_last_id(db_file)
-#     return render_template(
-#         "files_list.html", tts_files=tts_files, last_id=None, theme=theme
-#     )
 
 @app.route('/')
 def main():
@@ -122,7 +115,7 @@ def api_stats():
     cache_files = os.listdir(cache_dir)
     log_files = os.listdir(logs_dir)
 
-    total_line_count = 0  # Initialize total line count for general model
+    total_line_count = 0  
     stats_data = []
 
     for file in cache_files:
@@ -136,8 +129,7 @@ def api_stats():
                 cache_size = os.path.getsize(cache_file_path)
                 with open(log_file_path, 'r') as f:
                     line_count = sum(1 for line in f)
-                total_line_count += line_count  # Add to total line count
-
+                total_line_count += line_count  
                 stats_data.append({
                     'channel': channel_name,
                     'cache': file,
@@ -146,7 +138,7 @@ def api_stats():
                     'line_count': line_count
                 })
 
-    # Add the general model row at the beginning
+
     general_model_row = {
         'channel': 'General Model',
         'cache': 'general_markov_model.json',
@@ -154,7 +146,7 @@ def api_stats():
         'cache_size': os.path.getsize(os.path.join(cache_dir, 'general_markov_model.json')),
         'line_count': total_line_count
     }
-    stats_data.insert(0, general_model_row)  # Insert at the top
+    stats_data.insert(0, general_model_row)  
 
     return jsonify(stats_data)
 
@@ -179,19 +171,12 @@ def rebuild_general_cache_route():
 @app.route("/set_theme/<theme>")
 def set_theme(theme):
     try:
-        # Log the theme being set for debugging
         app.logger.info(f"Setting theme to: {theme}")
-        
-        # Redirect back to a valid route (make sure 'index' exists or use another valid endpoint)
         resp = make_response(redirect(url_for("main")))
-        
-        # Set the theme cookie
         resp.set_cookie("theme", theme, max_age=30 * 24 * 60 * 60)
-        
         return resp
     except Exception as e:
         app.logger.error(f"Error in set_theme: {e}")
-        # Return a more informative error response for debugging
         return jsonify({'error': f"Failed to set theme: {str(e)}"}), 500
 
 
@@ -217,7 +202,6 @@ def set_voice():
         ""  # Replace with actual channel name or logic to determine it
     )
     try:
-        # Logic to update the voice setting in the database
         conn = sqlite3.connect(db_file)
         c = conn.cursor()
         c.execute(
@@ -233,7 +217,6 @@ def set_voice():
         return jsonify({"error": str(e)}), 500
 
 
-
 @app.route("/generate-message/<channel_name>")
 def generate_message(channel_name):
     try:
@@ -245,10 +228,6 @@ def generate_message(channel_name):
     except Exception as e:
         app.logger.error(f"Error in generate_message_route: {str(e)}")
         return jsonify({"error": f"Internal server error: {str(e)}"}), 500
-
-
-
-
 
 def generate_message_route(channel_name):
     try:
@@ -327,7 +306,6 @@ def format_data_for_frontend(data):
             str(message_id)[4:] if len(str(message_id)) > 4 else str(message_id)
         )
 
-        # Check if timestamp is already in the desired format
         if (
             len(timestamp) == 19
             and timestamp[4] == "-"
@@ -355,7 +333,7 @@ def get_total_tts_files_count(db_file):
     cursor = conn.cursor()
     cursor.execute(
         "SELECT COUNT(*) FROM tts_logs"
-    )  # Replace 'tts_logs' with your table name
+    )
     count = cursor.fetchone()[0]
     conn.close()
     return count
@@ -366,7 +344,7 @@ def paginated_messages(page):
     per_page = 10
     total_items = get_total_tts_files_count(
         db_file
-    )  # Function to get the total count of TTS files
+    )
     tts_files = get_paginated_tts_files(db_file, page, per_page)
     return jsonify(
         {"items": format_data_for_frontend(tts_files), "totalItems": total_items}

@@ -34,25 +34,25 @@ document.addEventListener("DOMContentLoaded", function () {
     }
   }
 
-  var autoplayElement = document.getElementById("autoplay");
-  if (autoplayElement) {
-      autoplayElement.addEventListener("change", function () {
-          let autoplayEnabled = this.checked;
-          let muteIcon = document.getElementById("muteIcon");
-          let unmuteIcon = document.getElementById("unmuteIcon");
-  
-          if (autoplayEnabled) {
-              muteIcon && muteIcon.classList.add("d-none");
-              unmuteIcon && unmuteIcon.classList.remove("d-none");
-          } else {
-              muteIcon && muteIcon.classList.remove("d-none");
-              unmuteIcon && unmuteIcon.classList.add("d-none");
-          }
-  
-          // Save the mute status. Use 'localStorage' for persistence across sessions.
-          localStorage.setItem('muteStatus', !autoplayEnabled);
-      });
-  }
+var autoplayElement = document.getElementById("autoplay");
+if (autoplayElement) {
+    autoplayElement.addEventListener("change", function () {
+        let autoplayEnabled = this.checked;
+        let muteIcon = document.getElementById("muteIcon");
+        let unmuteIcon = document.getElementById("unmuteIcon");
+
+        if (autoplayEnabled) {
+            muteIcon && muteIcon.classList.add("d-none");
+            unmuteIcon && unmuteIcon.classList.remove("d-none");
+        } else {
+            muteIcon && muteIcon.classList.remove("d-none");
+            unmuteIcon && unmuteIcon.classList.add("d-none");
+        }
+
+        // Save the mute status. Use 'localStorage' for persistence across sessions.
+        localStorage.setItem('muteStatus', !autoplayEnabled);
+    });
+}
 
   themeToggle.addEventListener("click", function () {
     var currentTheme = document.documentElement.getAttribute("data-bs-theme");
