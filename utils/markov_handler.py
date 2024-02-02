@@ -1,11 +1,8 @@
 import os
 import markovify
 import logging
-import time
-import json
 import sqlite3
-import threading
-import sys
+from datetime import datetime
 
 class MarkovHandler:
     def __init__(self, cache_directory):

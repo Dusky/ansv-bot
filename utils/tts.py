@@ -5,7 +5,7 @@ import sqlite3
 import requests
 import threading
 import sys
-import warnings
+from contextlib import contextmanager
 import nltk
 import numpy as np
 from nltk.tokenize import sent_tokenize
@@ -64,12 +64,12 @@ def initialize_tts():
     import torch
     import scipy.io.wavfile
 
-def process_text_thread(input_text, channel_name, db_file='./messages.db'):
-    # Suppress console output
-    original_stdout = sys.stdout
-    original_stderr = sys.stderr
+def silence_output():
     sys.stdout = open(os.devnull, 'w')
     sys.stderr = open(os.devnull, 'w')
+
+def process_text_thread(input_text, channel_name, db_file='./messages.db'):
+    silence_output()
 
     try:
         process_text(input_text, channel_name, db_file)
@@ -169,11 +169,7 @@ def split_sentence(sentence, max_length):
 def start_tts_processing(input_text, channel_name, db_file='./messages.db'):
     tts_thread = threading.Thread(target=process_text_thread, args=(input_text, channel_name, db_file))
     tts_thread.start()
-    # Suppress specific warnings from TTS libraries
-    warnings.filterwarnings('ignore', message='The BetterTransformer implementation does not support padding during training*')
-    warnings.filterwarnings('ignore', message='The attention mask and the pad token id were not set*')
-    warnings.filterwarnings('ignore', message='Setting `pad_token_id` to `eos_token_id`*')
-    warnings.filterwarnings("ignore", category=UserWarning)
+
 
     
 def notify_new_audio_available(channel_name, message_id):
