@@ -1,42 +1,41 @@
 
-
 <div class="card border-primary shadow mb-5 rounded">
-   <div class="card-header">Settings</div>
-   <div class="card-body">
-       <div class="form-group">
-           <label for="themeSelect">Select Theme:</label>
-           <select id="themeSelect" class="form-control" onchange="changeTheme()">
-             <br>
-             <option value="cerulean">Cerulean</option>
-             <option value="cosmo">Cosmo</option>
-             <option value="cyborg">Cyborg</option>
-             <option value="darkly">Darkly</option>
-             <option value="flatly">Flatly</option>
-             <option value="journal">Journal</option>
-             <option value="litera">Litera</option>
-             <option value="lumen">Lumen</option>
-             <option value="lux">Lux</option>
-             <option value="materia">Materia</option>
-             <option value="minty">Minty</option>
-             <option value="morph">Morph</option>
-             <option value="pulse">Pulse</option>
-             <option value="quartz">Quartz</option>
-             <option value="sandstone">Sandstone</option>
-             <option value="simplex">Simplex</option>
-             <option value="sketchy">Sketchy</option>
-             <option value="slate">Slate</option>
-             <option value="solar">Solar</option>
-             <option value="spacelab">Spacelab</option>
-             <option value="superhero">Superhero</option>
-             <option value="united">United</option>
-             <option value="vapor">Vapor</option>
-             <option value="yeti">Yeti</option>
-             <option value="zephyr">Zephyr</option>
-           </select>
-           <br>
-       </div>
-   </div>
+  <div class="card-header">Settings</div>
+  <div class="card-body">
+      <div class="form-group">
+          <label for="themeSelect">Select Theme:</label>
+          <select id="themeSelect" class="form-control" onchange="changeTheme()">
+            <option value="cerulean" {% if current_theme == 'cerulean' %}selected{% endif %}>Cerulean</option>
+            <option value="cosmo" {% if current_theme == 'cosmo' %}selected{% endif %}>Cosmo</option>
+            <option value="cyborg" {% if current_theme == 'cyborg' %}selected{% endif %}>Cyborg</option>
+            <option value="darkly" {% if current_theme == 'darkly' %}selected{% endif %}>Darkly</option>
+            <option value="flatly" {% if current_theme == 'flatly' %}selected{% endif %}>Flatly</option>
+            <option value="journal" {% if current_theme == 'journal' %}selected{% endif %}>Journal</option>
+            <option value="litera" {% if current_theme == 'litera' %}selected{% endif %}>Litera</option>
+            <option value="lumen" {% if current_theme == 'lumen' %}selected{% endif %}>Lumen</option>
+            <option value="lux" {% if current_theme == 'lux' %}selected{% endif %}>Lux</option>
+            <option value="materia" {% if current_theme == 'materia' %}selected{% endif %}>Materia</option>
+            <option value="minty" {% if current_theme == 'minty' %}selected{% endif %}>Minty</option>
+            <option value="morph" {% if current_theme == 'morph' %}selected{% endif %}>Morph</option>
+            <option value="pulse" {% if current_theme == 'pulse' %}selected{% endif %}>Pulse</option>
+            <option value="quartz" {% if current_theme == 'quartz' %}selected{% endif %}>Quartz</option>
+            <option value="sandstone" {% if current_theme == 'sandstone' %}selected{% endif %}>Sandstone</option>
+            <option value="simplex" {% if current_theme == 'simplex' %}selected{% endif %}>Simplex</option>
+            <option value="sketchy" {% if current_theme == 'sketchy' %}selected{% endif %}>Sketchy</option>
+            <option value="slate" {% if current_theme == 'slate' %}selected{% endif %}>Slate</option>
+            <option value="solar" {% if current_theme == 'solar' %}selected{%endif %}>Solar</option>
+            <option value="spacelab" {% if current_theme == 'spacelab' %}selected{% endif %}>Spacelab</option>
+            <option value="superhero" {% if current_theme == 'superhero' %}selected{% endif %}>Superhero</option>
+            <option value="united" {% if current_theme == 'united' %}selected{% endif %}>United</option>
+            <option value="vapor" {% if current_theme == 'vapor' %}selected{% endif %}>Vapor</option>
+            <option value="yeti" {% if current_theme == 'yeti' %}selected{% endif %}>Yeti</option>
+            <option value="zephyr" {% if current_theme == 'zephyr' %}selected{% endif %}>Zephyr</option>
+          </select>
+          <br>
+      </div>
+  </div>
 </div>
+
 <div id="loadingIndicator" class="modal" tabindex="-1" role="dialog" style="display: none; background: rgba(0, 0, 0, 0.5);">
   <div class="modal-dialog modal-dialog-centered" role="document">
     <div class="modal-content">
