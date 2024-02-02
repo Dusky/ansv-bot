@@ -1,8 +1,7 @@
 import os
 import markovify
 import logging
-import sqlite3
-from datetime import datetime
+
 
 class MarkovHandler:
     def __init__(self, cache_directory):

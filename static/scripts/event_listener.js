@@ -48,8 +48,10 @@ document.addEventListener("DOMContentLoaded", function () {
               muteIcon && muteIcon.classList.remove("d-none");
               unmuteIcon && unmuteIcon.classList.add("d-none");
           }
+  
+          // Save the mute status. Use 'localStorage' for persistence across sessions.
+          localStorage.setItem('muteStatus', !autoplayEnabled);
       });
-  } else {
   }
 
   themeToggle.addEventListener("click", function () {
@@ -144,23 +146,23 @@ if (settingsTab && settingsContent && mainContent && mainTab) {
 }
 
 
-var voicePreset = document.getElementById("voicePreset");
-if (voicePreset) {
-    voicePreset.addEventListener("change", function () {
-        const customVoiceRow = document.getElementById("customVoiceRow");
-        if (this.value === "custom") {
-            if (customVoiceRow) {
-                customVoiceRow.style.display = "";
-                fetchAndShowCustomVoices(); // Ensure this function exists and works correctly
-            }
-        } else {
-            if (customVoiceRow) {
-                customVoiceRow.style.display = "none";
-            }
-        }
-    });
-} else {
-}
+// var voicePreset = document.getElementById("voicePreset");
+// if (voicePreset) {
+//     voicePreset.addEventListener("change", function () {
+//         const customVoiceRow = document.getElementById("customVoiceRow");
+//         if (this.value === "custom") {
+//             if (customVoiceRow) {
+//                 customVoiceRow.style.display = "";
+//                 fetchAndShowCustomVoices(); 
+//             }
+//         } else {
+//             if (customVoiceRow) {
+//                 customVoiceRow.style.display = "none";
+//             }
+//         }
+//     });
+// } else {
+// }
 
 
     var refreshTableButton = document.getElementById("refreshTable");

@@ -683,6 +683,24 @@ def fetch_initial_channels(db_file):
         conn.close()
     return channels
 
+def insert_initial_channels_to_db(db_file, channels):
+    """Insert initial channels with default values into the database if not already present,
+    setting the owner name to the name of the channel."""
+    conn = sqlite3.connect(db_file)
+    c = conn.cursor()
+    
+
+    for channel in channels:
+        c.execute('''
+            INSERT INTO channel_configs (channel_name, tts_enabled, voice_enabled, join_channel, owner, trusted_users, ignored_users, use_general_model, lines_between_messages, time_between_messages)
+            SELECT ?, 0, 0, 1, ?, '', '', 1, 100, 0
+            WHERE NOT EXISTS(SELECT 1 FROM channel_configs WHERE channel_name = ?)
+        ''', (channel, channel, channel))  
+    
+    conn.commit()
+    conn.close()
+
+
 
 def setup_bot(db_file, rebuild_cache, enable_tts=False):
     logger = Logger()
@@ -708,5 +726,5 @@ def setup_bot(db_file, rebuild_cache, enable_tts=False):
     )
 
     bot.db_file = db_file
-
+    insert_initial_channels_to_db(db_file, channels)
     return bot
