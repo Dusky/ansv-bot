@@ -360,7 +360,7 @@ class Bot(commands.Bot):
         conn.close()
 
 
-    def update_model_periodically(self, interval=86400, initial_delay=10):
+    def update_model_periodically(self, interval=86400, initial_delay=120):
         #self.my_logger.info("update_model_periodically called")
         def delayed_execution():
             try:
