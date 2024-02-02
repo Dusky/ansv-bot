@@ -23,7 +23,7 @@ markov_handler = MarkovHandler(cache_directory="cache")
 
 @app.route('/')
 def main():
-    theme = request.cookies.get("theme", "default")  # Get theme from cookie
+    theme = request.cookies.get("theme", "darkly")  # Get theme from cookie
     tts_files = get_last_10_tts_files_with_last_id(db_file)
     return render_template(
         "main_content.html", tts_files=tts_files, last_id=None, theme=theme
@@ -31,13 +31,13 @@ def main():
 
 @app.route('/settings')
 def settings():
-    theme = request.cookies.get("theme", "default")
+    theme = request.cookies.get("theme", "darkly")
     return render_template('settings.html',  last_id=None, theme=theme)
 
 
 @app.route('/stats')
 def stats():
-    theme = request.cookies.get("theme", "default")
+    theme = request.cookies.get("theme", "darkly")
     cache_dir = 'cache'
     logs_dir = 'logs'
     cache_files = os.listdir(cache_dir)
