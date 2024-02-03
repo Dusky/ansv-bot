@@ -1,0 +1,22 @@
+{% extends 'base.html' %}
+<script src="{{ url_for('static', filename='scripts/handle_voice.js') }}"></script>
+
+{% block content %}
+<div class="container mt-4">
+    <div id="settingsContent" class="shadow-lg p-3 mb-5 rounded">
+        <!-- Start of Row for the entire content -->
+        <div class="row">
+            <!-- Left Column -->
+            <div class="col">
+                {% include 'settings_block.html' %}
+                {% include 'generate_message_block.html' %}
+            </div>
+            <!-- Right Column -->
+            <div class="col">
+                {% include 'channel_settings_block.html' %}
+            </div>
+        </div> 
+    </div> 
+</div>
+{% endblock %}
+<acript

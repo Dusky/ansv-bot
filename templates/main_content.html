@@ -1,0 +1,30 @@
+{% extends 'base.html' %}
+
+
+{% block content %}
+<div class="container mt-4">
+    <div id="mainContent" class="shadow-lg p-3 mb-5 rounded">
+        <div class="table-responsive" id="scrollableTableContainer">
+            <table class="table table-striped table-bordered table-hover shadow-sm p-3 mb-5 rounded">
+                <thead class="thead">
+                    <tr>
+                        <th>Channel</th>
+                        <th>Timestamp</th>
+                        <th>Voice</th>
+                        <th>Text</th>
+                        <th>Play</th>
+                        <th>Download</th>
+                    </tr>
+                </thead>
+                <tbody id="ttsFilesBody">
+
+                </tbody>
+            </table>
+        </div>
+        <br>
+        <div>
+            <button id="loadMore" class="btn btn-primary">Load 10 More</button>
+            <button id="refreshTable" class="btn btn-info">&#x21bb; Refresh</button>
+        </div>
+    </div>
+{% endblock %}

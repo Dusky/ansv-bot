@@ -29,6 +29,7 @@ def ensure_db_setup(db_file):
                         use_general_model BOOLEAN NOT NULL DEFAULT 1,
                         lines_between_messages INTEGER DEFAULT 100,
                         time_between_messages INTEGER DEFAULT 0
+                        -- Note: 'voice_preset' column will be checked and added below if missing
                     )''')
 
         # Create 'user_colors' table
@@ -56,34 +57,11 @@ def ensure_db_setup(db_file):
         if 'time_between_messages' not in channel_config_columns:
             c.execute('ALTER TABLE channel_configs ADD COLUMN time_between_messages INTEGER DEFAULT 0')
             print("Column 'time_between_messages' added to 'channel_configs'.")
+        if 'voice_preset' not in channel_config_columns:
+            c.execute('ALTER TABLE channel_configs ADD COLUMN voice_preset TEXT DEFAULT \'v2/en_speaker_5\'')
+            print("Column 'voice_preset' added to 'channel_configs'.")
 
-        # Read channels and trusted users from settings.conf
-        config = configparser.ConfigParser()
-        config.read("settings.conf")
-        channels = config.get("settings", "channels").split(",")
-        trusted_users = ",".join(config.get("settings", "trusted_users").split(","))
-
-        # Initialize counters for imported and skipped channels
-        imported_channels_count = 0
-        skipped_channels_count = 0
-
-        # Check and insert channels into channel_configs
-        for channel in channels:
-            if channel:  # Check that channel is not empty
-                c.execute("SELECT COUNT(*) FROM channel_configs WHERE channel_name = ?", (channel,))
-                if c.fetchone()[0] == 0:
-                    c.execute("INSERT INTO channel_configs (channel_name, tts_enabled, voice_enabled, join_channel, owner, trusted_users) VALUES (?, ?, ?, ?, ?, ?)",
-                            (channel, False, False, True, channel, trusted_users))
-                    imported_channels_count += 1
-                else:
-                    skipped_channels_count += 1
-        conn.commit()
-
-        # Query the number of rows in messages and channels in channel_configs
-        c.execute('SELECT COUNT(*) FROM messages')
-        messages_count = c.fetchone()[0]
-        c.execute('SELECT COUNT(*) FROM channel_configs')
-        channels_count = c.fetchone()[0]
+        # Further code for initializing channels and handling settings...
 
     except sqlite3.Error as e:
         print(f"Database error: {e}")

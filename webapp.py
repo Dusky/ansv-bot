@@ -1,23 +1,223 @@
-# webapp.py
-from flask import Flask, render_template, jsonify, request
+from flask import (
+    Flask,
+    render_template,
+    jsonify,
+    request,
+    make_response,
+    url_for,
+    redirect,
+)
 from flask_socketio import SocketIO
+from flask_cors import CORS  # Import CORS
 import sqlite3
 from datetime import datetime
 from utils.markov_handler import MarkovHandler
+import os
 
 app = Flask(__name__)
+CORS(app)  
 socketio = SocketIO(app)
 db_file = "messages.db"
 markov_handler = MarkovHandler(cache_directory="cache")
 
 
-@app.route("/")
-def index():
+@app.route('/')
+def main():
+    theme = request.cookies.get("theme", "darkly")  # Get theme from cookie
     tts_files = get_last_10_tts_files_with_last_id(db_file)
-    return render_template("files_list.html", tts_files=tts_files, last_id=None)  # last_id is set to None or removed based on your template
+    return render_template(
+        "main_content.html", tts_files=tts_files, last_id=None, theme=theme
+    )
+
+@app.route('/settings')
+def settings():
+    theme = request.cookies.get("theme", "darkly")
+    return render_template('settings.html',  last_id=None, theme=theme)
 
 
-@app.route('/generate-message/<channel_name>')
+@app.route('/stats')
+def stats():
+    theme = request.cookies.get("theme", "darkly")
+    cache_dir = 'cache'
+    logs_dir = 'logs'
+    cache_files = os.listdir(cache_dir)
+    log_files = os.listdir(logs_dir)
+    
+    total_line_count = 0  # Initialize total line count for general model
+    stats_data = []
+    for file in cache_files:
+        channel_name = file.replace('_model.json', '')
+        corresponding_log = f"{channel_name}.txt"
+        if corresponding_log in log_files:
+            # Calculate line count for each log file
+            with open(os.path.join(logs_dir, corresponding_log), 'r') as f:
+                line_count = sum(1 for line in f)
+            total_line_count += line_count  # Add to total line count
+            stats_data.append({
+                'channel': channel_name,
+                'cache': file,
+                'log': corresponding_log,
+                'line_count': line_count
+            })
+
+    # Add the general model row at the beginning
+    general_model_row = {
+        'channel': 'General Model',
+        'cache': 'general_markov_model.json',
+        'log': 'N/A',  # Since general model doesn't have a corresponding log file
+        'line_count': total_line_count
+    }
+    stats_data.insert(0, general_model_row)  # Insert at the top
+
+    return render_template('stats.html', stats_data=stats_data, theme=theme)
+
+
+@app.route('/rebuild-cache/<channel_name>', methods=['POST'])
+def rebuild_cache(channel_name):
+    try:
+        app.logger.info(f"Rebuilding cache for channel: {channel_name}")
+
+        # Define the logs directory path
+        logs_directory = 'logs'
+
+        # Call the rebuild_cache_for_channel method with the necessary arguments
+        success = markov_handler.rebuild_cache_for_channel(channel_name, logs_directory)
+
+        if success:
+            return jsonify({'success': True, 'message': 'Cache rebuilt successfully'})
+        else:
+            return jsonify({'success': False, 'message': 'Failed to rebuild cache'}), 400
+    except Exception as e:
+        app.logger.error(f"Error in rebuild_cache: {e}")
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
+
+@app.route('/rebuild-all-caches', methods=['POST'])
+def rebuild_all_caches():
+    try:
+        app.logger.info("Rebuilding all caches")
+
+        # Implement the logic to rebuild caches for all channels
+        success = markov_handler.rebuild_all_caches()  # Assuming this method exists in your MarkovHandler
+
+        if success:
+            return jsonify({'success': True, 'message': 'All caches rebuilt successfully'})
+        else:
+            return jsonify({'success': False, 'message': 'Failed to rebuild all caches'}), 400
+    except Exception as e:
+        app.logger.error(f"Error in rebuild_all_caches: {e}")
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
+
+
+@app.route('/api/stats')
+def api_stats():
+    cache_dir = 'cache'
+    logs_dir = 'logs'
+    cache_files = os.listdir(cache_dir)
+    log_files = os.listdir(logs_dir)
+
+    total_line_count = 0  
+    stats_data = []
+
+    for file in cache_files:
+        if file.endswith("_model.json"):
+            channel_name = file.replace("_model.json", "")
+            log_file = f"{channel_name}.txt"
+            cache_file_path = os.path.join(cache_dir, file)
+            
+            if log_file in log_files:
+                log_file_path = os.path.join(logs_dir, log_file)
+                cache_size = os.path.getsize(cache_file_path)
+                with open(log_file_path, 'r') as f:
+                    line_count = sum(1 for line in f)
+                total_line_count += line_count  
+                stats_data.append({
+                    'channel': channel_name,
+                    'cache': file,
+                    'log': log_file,
+                    'cache_size': cache_size,
+                    'line_count': line_count
+                })
+
+
+    general_model_row = {
+        'channel': 'General Model',
+        'cache': 'general_markov_model.json',
+        'log': 'N/A',
+        'cache_size': os.path.getsize(os.path.join(cache_dir, 'general_markov_model.json')),
+        'line_count': total_line_count
+    }
+    stats_data.insert(0, general_model_row)  
+
+    return jsonify(stats_data)
+
+
+@app.route('/rebuild-general-cache', methods=['POST'])
+def rebuild_general_cache_route():
+    try:
+        app.logger.info("Rebuilding general cache")
+        # Specify the path to your logs directory
+        logs_directory = 'logs'  
+        success = markov_handler.rebuild_general_cache(logs_directory)
+        if success:
+            return jsonify({'success': True, 'message': 'General cache rebuilt successfully'})
+        else:
+            return jsonify({'success': False, 'message': 'Failed to rebuild general cache'}), 400
+    except Exception as e:
+        app.logger.error(f"Error in rebuild_general_cache: {e}")
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
+
+
+
+@app.route("/set_theme/<theme>")
+def set_theme(theme):
+    try:
+        app.logger.info(f"Setting theme to: {theme}")
+        resp = make_response(redirect(url_for("main")))
+        resp.set_cookie("theme", theme, max_age=30 * 24 * 60 * 60)
+        return resp
+    except Exception as e:
+        app.logger.error(f"Error in set_theme: {e}")
+        return jsonify({'error': f"Failed to set theme: {str(e)}"}), 500
+
+
+
+
+@app.route("/list-voices", methods=["GET"])
+def list_available_voices():
+    try:
+        voices_directory = "voices"  # Adjust the path if necessary
+        voices = [
+            voice for voice in os.listdir(voices_directory) if voice.endswith(".npz")
+        ]
+        return jsonify({"voices": voices})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/set-voice", methods=["POST"])
+def set_voice():
+    data = request.json
+    voice_name = data.get("voice")
+    channel_name = (
+        ""  # Replace with actual channel name or logic to determine it
+    )
+    try:
+        conn = sqlite3.connect(db_file)
+        c = conn.cursor()
+        c.execute(
+            "UPDATE channel_configs SET voice_preset = ? WHERE channel_name = ?",
+            (voice_name, channel_name),
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({"success": True})
+    except FileNotFoundError as e:
+        return jsonify({"error": str(e)}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/generate-message/<channel_name>")
 def generate_message(channel_name):
     try:
         message = markov_handler.generate_message(channel_name)
@@ -34,14 +234,15 @@ def generate_message_route(channel_name):
         message = markov_handler.generate_message(channel_name)
         if message:
             return jsonify({"message": message})
-        return jsonify({"error": "No message could be generated"}), 400
+        return jsonify({"error": "No message could be generated1"}), 400
     except FileNotFoundError:
         return jsonify({"error": "Model file not found"}), 404
     except Exception as e:
         app.logger.error(f"Server Error: {str(e)}")
         return jsonify({"error": "Internal server error"}), 500
 
-@app.route('/available-models')
+
+@app.route("/available-models")
 def available_models():
     try:
         models = markov_handler.get_available_models()
@@ -55,7 +256,7 @@ def available_models():
 def new_audio_notification():
     global new_audio_available
     new_audio_available = True
-    socketio.emit('refresh_table', {'data': 'New audio available'})
+    socketio.emit("refresh_table", {"data": "New audio available"})
     return jsonify({"success": True})
 
 
@@ -66,6 +267,26 @@ def check_new_audio():
     new_audio_available = False  # Reset flag after checking
     return jsonify(response)
 
+def get_stats_data(cache_dir='cache', logs_dir='logs'):
+    stats_data = []
+
+    # List all files in the cache directory
+    cache_files = os.listdir(cache_dir)
+
+    # For each cache file, find the corresponding log file
+    for cache_file in cache_files:
+        channel_name = cache_file.split('.')[0]  # Assuming cache file name format is 'channel_name.extension'
+        log_file = f'{channel_name}.txt'
+
+        # Check if the log file exists in the logs directory
+        if log_file in os.listdir(logs_dir):
+            stats_data.append({
+                'channel_name': channel_name,
+                'cache_file': cache_file,
+                'log_file': log_file
+            })
+    
+    return stats_data
 
 def format_timestamp(timestamp):
     try:
@@ -77,7 +298,6 @@ def format_timestamp(timestamp):
         return timestamp  # Return original timestamp in case of an error
 
 
-
 def format_data_for_frontend(data):
     formatted_data = []
     for record in data:
@@ -86,8 +306,12 @@ def format_data_for_frontend(data):
             str(message_id)[4:] if len(str(message_id)) > 4 else str(message_id)
         )
 
-        # Check if timestamp is already in the desired format
-        if len(timestamp) == 19 and timestamp[4] == '-' and timestamp[7] == '-' and timestamp[13] == ':':
+        if (
+            len(timestamp) == 19
+            and timestamp[4] == "-"
+            and timestamp[7] == "-"
+            and timestamp[13] == ":"
+        ):
             formatted_timestamp = timestamp
         else:
             formatted_timestamp = format_timestamp(timestamp)
@@ -109,7 +333,7 @@ def get_total_tts_files_count(db_file):
     cursor = conn.cursor()
     cursor.execute(
         "SELECT COUNT(*) FROM tts_logs"
-    )  # Replace 'tts_logs' with your table name
+    )
     count = cursor.fetchone()[0]
     conn.close()
     return count
@@ -120,7 +344,7 @@ def paginated_messages(page):
     per_page = 10
     total_items = get_total_tts_files_count(
         db_file
-    )  # Function to get the total count of TTS files
+    )
     tts_files = get_paginated_tts_files(db_file, page, per_page)
     return jsonify(
         {"items": format_data_for_frontend(tts_files), "totalItems": total_items}
@@ -172,7 +396,7 @@ def update_channel_settings():
                 data["use_general_model"],
                 data["lines_between_messages"],
                 data["time_between_messages"],
-                data["voice_preset"],  
+                data["voice_preset"],
                 data["channel_name"],
             ),
         )
@@ -253,6 +477,7 @@ def get_channels():
         print(f"SQLite error in get_channels: {e}")
         return jsonify([])
 
+
 @app.route("/get-channel-settings/<channelName>")
 def get_channel_settings(channelName):
     try:
@@ -260,11 +485,21 @@ def get_channel_settings(channelName):
         c = conn.cursor()
         c.execute(
             "SELECT tts_enabled, voice_enabled, join_channel, owner, trusted_users, ignored_users, use_general_model, lines_between_messages, time_between_messages FROM channel_configs WHERE channel_name = ?",
-            (channelName,)
+            (channelName,),
         )
         settings = c.fetchone()
         if settings:
-            keys = ["tts_enabled", "voice_enabled", "join_channel", "owner", "trusted_users", "ignored_users", "use_general_model", "lines_between_messages", "time_between_messages"]
+            keys = [
+                "tts_enabled",
+                "voice_enabled",
+                "join_channel",
+                "owner",
+                "trusted_users",
+                "ignored_users",
+                "use_general_model",
+                "lines_between_messages",
+                "time_between_messages",
+            ]
             return jsonify(dict(zip(keys, settings)))
         else:
             return jsonify({"error": "Channel not found"}), 404
@@ -273,6 +508,8 @@ def get_channel_settings(channelName):
         return jsonify({"error": str(e)}), 500
     finally:
         conn.close()
+
+
 @app.route("/add-channel", methods=["POST"])
 def add_channel():
     data = request.json
@@ -376,6 +613,6 @@ def run_flask_app():
     app.run(debug=True, host="0.0.0.0", port=5001)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     markov_handler.load_models()
     socketio.run(app, debug=True, host="0.0.0.0", port=5001)
