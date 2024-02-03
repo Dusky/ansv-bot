@@ -34,25 +34,30 @@ document.addEventListener("DOMContentLoaded", function () {
     }
   }
 
-var autoplayElement = document.getElementById("autoplay");
-if (autoplayElement) {
-    autoplayElement.addEventListener("change", function () {
-        let autoplayEnabled = this.checked;
-        let muteIcon = document.getElementById("muteIcon");
-        let unmuteIcon = document.getElementById("unmuteIcon");
+  const autoplayElement = document.getElementById("autoplay");
+  const muteIcon = document.getElementById("muteIcon");
+  const unmuteIcon = document.getElementById("unmuteIcon");
 
-        if (autoplayEnabled) {
-            muteIcon && muteIcon.classList.add("d-none");
-            unmuteIcon && unmuteIcon.classList.remove("d-none");
-        } else {
-            muteIcon && muteIcon.classList.remove("d-none");
-            unmuteIcon && unmuteIcon.classList.add("d-none");
-        }
+  // Set the UI based on stored preferences
+  const isMuted = localStorage.getItem('muteStatus') === 'true';
+  autoplayElement.checked = !isMuted;
+  updateIcons(isMuted);
 
-        // Save the mute status. Use 'localStorage' for persistence across sessions.
-        localStorage.setItem('muteStatus', !autoplayEnabled);
-    });
-}
+  autoplayElement.addEventListener("change", function () {
+      const autoplayEnabled = this.checked;
+      updateIcons(!autoplayEnabled);
+      localStorage.setItem('muteStatus', !autoplayEnabled);
+  });
+
+  function updateIcons(isMuted) {
+      if (isMuted) {
+          muteIcon.classList.remove("d-none");
+          unmuteIcon.classList.add("d-none");
+      } else {
+          muteIcon.classList.add("d-none");
+          unmuteIcon.classList.remove("d-none");
+      }
+  }
 
   themeToggle.addEventListener("click", function () {
     var currentTheme = document.documentElement.getAttribute("data-bs-theme");
