@@ -5,13 +5,15 @@ import sqlite3
 import requests
 import threading
 import sys
-import warnings
+from contextlib import contextmanager
 import nltk
 import numpy as np
 from nltk.tokenize import sent_tokenize
 
-# Database connection setup
-db_file = './messages.db'  # Update with the correct path
+import numpy as np
+
+VOICES_DIRECTORY = './voices'
+db_file = './messages.db'
 
 
 
@@ -62,29 +64,47 @@ def initialize_tts():
     import torch
     import scipy.io.wavfile
 
-def process_text_thread(input_text, channel_name, db_file='./messages.db'):
-    # Suppress console output
-    original_stdout = sys.stdout
-    original_stderr = sys.stderr
+def silence_output():
     sys.stdout = open(os.devnull, 'w')
     sys.stderr = open(os.devnull, 'w')
+
+def process_text_thread(input_text, channel_name, db_file='./messages.db'):
+    global original_stdout, original_stderr
+    silence_output()
 
     try:
         process_text(input_text, channel_name, db_file)
     finally:
         # Restore original stdout and stderr
-        sys.stdout.close()
-        sys.stderr.close()
         sys.stdout = original_stdout
         sys.stderr = original_stderr
+
+
+def load_custom_voice(voice_name):
+    """Load a custom voice file if it exists."""
+    voice_path = os.path.join(VOICES_DIRECTORY, f"{voice_name}.npz")
+    if os.path.isfile(voice_path):
+        voice_data = np.load(voice_path, allow_pickle=True)
+        if 'weights' in voice_data:
+            return voice_data
+        else:
+            print(f"No 'weights' key found in {voice_name}.npz")
+    else:
+        print(f"Custom voice file not found: {voice_path}")
+    return None
+
 
 def process_text(input_text, channel_name, db_file='./messages.db'):
     # Initialize TTS and other setups
     if 'AutoProcessor' not in globals():
         initialize_tts()
 
-    # Get voice preset
+    # Define message_id at the start of the function
+    message_id = int(time.time())
+
+    # Get voice preset or custom voice
     voice_preset = get_voice_preset(channel_name, db_file)
+    custom_voice_data = load_custom_voice(voice_preset)
 
     # Generate file name and output directory
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -100,41 +120,29 @@ def process_text(input_text, channel_name, db_file='./messages.db'):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         processor = AutoProcessor.from_pretrained("suno/bark-small")
         model = BarkModel.from_pretrained("suno/bark-small").to(device)
-        model.to_bettertransformer()
-        model.enable_cpu_offload()
+        if torch.cuda.is_available():
+            model.to_bettertransformer()
+            model.enable_cpu_offload()
 
-        # Splitting input text into sentences
-        sentences = sent_tokenize(input_text)
+        if custom_voice_data is not None:
+            # Apply custom voice parameters
+            model.load_state_dict(custom_voice_data['weights'])
+
+        # Prepare TTS inputs
         all_audio_pieces = []
+        sentences = sent_tokenize(input_text)
         for sentence in sentences:
-            # Split long sentences into smaller parts
-            pieces = []
-            while len(sentence) > 165:
-                split_index = sentence.rfind(' ', 0, 165)
-                if split_index == -1:  # No space found, forced split
-                    split_index = 164
-                pieces.append(sentence[:split_index + 1])
-                sentence = sentence[split_index + 1:]
-            pieces.append(sentence)
-
-            # Process each piece with TTS
+            pieces = split_sentence(sentence, 165)  # Split long sentences
             for piece in pieces:
-                inputs = processor(piece, voice_preset=voice_preset).to(device)
+                inputs = processor(piece).to(device)
                 audio_array = model.generate(**inputs)
                 audio_array = audio_array.cpu().numpy().squeeze()
                 all_audio_pieces.append(audio_array)
 
-        # Concatenate all audio pieces
         final_audio_array = np.concatenate(all_audio_pieces)
-
-        # Writing concatenated audio data to file
         scipy.io.wavfile.write(full_path, rate=model.generation_config.sample_rate, data=final_audio_array)
 
-        # Logging the TTS file
-        message_id = int(time.time())
         log_tts_file(message_id, channel_name, timestamp, full_path, voice_preset, input_text, db_file)
-
-        # Notify the Flask app that a new audio file is available
         notify_new_audio_available(channel_name, message_id)
 
         return full_path
@@ -142,15 +150,27 @@ def process_text(input_text, channel_name, db_file='./messages.db'):
     except Exception as e:
         print(f"[TTS] An error occurred during TTS processing: {e}")
         return None
+
+
+
+
+def split_sentence(sentence, max_length):
+    """Split a sentence into smaller parts if it's longer than max_length."""
+    pieces = []
+    while len(sentence) > max_length:
+        split_index = sentence.rfind(' ', 0, max_length)
+        if split_index == -1:  # No space found, forced split
+            split_index = max_length - 1
+        pieces.append(sentence[:split_index + 1])
+        sentence = sentence[split_index + 1:]
+    pieces.append(sentence)
+    return pieces
     
 def start_tts_processing(input_text, channel_name, db_file='./messages.db'):
-    tts_thread = threading.Thread(target=process_text_thread, args=(input_text, channel_name, db_file))
+    tts_thread = threading.Thread(target=process_text_thread, args=(input_text, channel_name, db_file), daemon=True)
+
     tts_thread.start()
-    # Suppress specific warnings from TTS libraries
-    warnings.filterwarnings('ignore', message='The BetterTransformer implementation does not support padding during training*')
-    warnings.filterwarnings('ignore', message='The attention mask and the pad token id were not set*')
-    warnings.filterwarnings('ignore', message='Setting `pad_token_id` to `eos_token_id`*')
-    warnings.filterwarnings("ignore", category=UserWarning)
+
 
     
 def notify_new_audio_available(channel_name, message_id):

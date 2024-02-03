@@ -1,0 +1,31 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container mt-4">
+    <div id="" class="shadow-lg p-3 mb-2 rounded">
+        <button id="rebuildAllCachesBtn" class="btn btn-warning" data-bs-toggle="tooltip" data-bs-placement="top" title="Rebuild all brains">Rebuild Brains</button>
+        <button id="rebuildGeneralCacheBtn" class="btn btn-info" data-bs-toggle="tooltip" data-bs-placement="top" title="Dump the general brain">Brain Dump</button>
+    <div class="table-responsive pt-2">
+        <table class="table table-striped table-bordered table-hover">
+            <thead>
+                <tr>
+                    <th>Channel</th>
+                    <th>Cache File</th>
+                    <th>Log File</th>
+                    <th>Cache Size</th> <!-- New Column -->
+                    <th>Line Count</th> <!-- New Column -->
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="statsContainer">
+                <!-- Stats will be loaded here by JavaScript -->
+            </tbody>
+        </table>
+    </div>
+        <div id="loadingIndicator" class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

@@ -8,7 +8,7 @@ import sqlite3
 from datetime import datetime
 import os
 import math
-from termcolor import colored
+
 from colorama import init
 from datetime import datetime
 import threading
@@ -57,7 +57,6 @@ class Bot(commands.Bot):
         initial_channels,
         rebuild_cache=False,
         enable_tts=False
-
     ):
         super().__init__(
             token=irc_token,
@@ -94,7 +93,11 @@ class Bot(commands.Bot):
         self.db_file = "messages.db"
         self.load_text_and_build_model()
         self.first_model_update = True
-        self.update_model_periodically() 
+        
+        # Conditional call to update_model_periodically based on rebuild_cache flag
+        if self.rebuild_cache:
+            self.update_model_periodically()
+        
         self.enable_tts = enable_tts
         if self.enable_tts:
             from utils import tts
@@ -357,14 +360,14 @@ class Bot(commands.Bot):
         conn.close()
 
 
-    def update_model_periodically(self, interval=86400, initial_delay=10):
-        self.my_logger.info("update_model_periodically called")
+    def update_model_periodically(self, interval=86400, initial_delay=120):
+        #self.my_logger.info("update_model_periodically called")
         def delayed_execution():
             try:
                 if self.rebuild_cache:
                     # Rebuild cache including individual caches
                     self.load_text_and_build_model(create_individual_caches=True)
-                    self.my_logger.info("Brain rebuild requested.")
+                    #self.my_logger.info("Brain rebuild requested.")
                 else:
                     # Check if the general model cache is loaded
                     cache_loaded = self.load_model_from_cache("general_markov_model.json")
@@ -586,15 +589,20 @@ class Bot(commands.Bot):
         await ansv_command(self, ctx, setting, new_value)
 
     async def event_message(self, message):
-        if message.author is None or message.author.name == self.nick:
+        if message.author is None or message.author.name.lower() == self.nick.lower():
             return
 
-        channel_name = message.channel.name
+        channel_name = message.channel.name.lower()
         self.my_logger.log_message(channel_name, message.author.name, message.content)
+
+        lines_between, time_between, tts_enabled, voice_enabled = self.fetch_channel_settings(channel_name)
+        ignored_users = [user.lower() for user in self.channel_settings[channel_name]['ignored_users']] if channel_name in self.channel_settings else []
+
+        if message.author.name.lower() in ignored_users:
+            return  # Ignore messages from ignored users
 
         await self.handle_commands(message)
 
-        lines_between, time_between, tts_enabled, voice_enabled = self.fetch_channel_settings(channel_name)
         self.channel_chat_line_count[channel_name] += 1
         elapsed_time = time.time() - self.channel_last_message_time.get(channel_name, 0)
 
@@ -633,6 +641,7 @@ class Bot(commands.Bot):
                     except Exception as e:
                         self.my_logger.error(f"Failed to send message in {channel_name}: {str(e)}")
                         print(f"Error sending message in {channel_name}: {str(e)}")
+
 
 
 
@@ -677,6 +686,24 @@ def fetch_initial_channels(db_file):
         conn.close()
     return channels
 
+def insert_initial_channels_to_db(db_file, channels):
+    """Insert initial channels with default values into the database if not already present,
+    setting the owner name to the name of the channel."""
+    conn = sqlite3.connect(db_file)
+    c = conn.cursor()
+    
+
+    for channel in channels:
+        c.execute('''
+            INSERT INTO channel_configs (channel_name, tts_enabled, voice_enabled, join_channel, owner, trusted_users, ignored_users, use_general_model, lines_between_messages, time_between_messages)
+            SELECT ?, 0, 0, 1, ?, '', '', 1, 100, 0
+            WHERE NOT EXISTS(SELECT 1 FROM channel_configs WHERE channel_name = ?)
+        ''', (channel, channel, channel))  
+    
+    conn.commit()
+    conn.close()
+
+
 
 def setup_bot(db_file, rebuild_cache, enable_tts=False):
     logger = Logger()
@@ -702,5 +729,5 @@ def setup_bot(db_file, rebuild_cache, enable_tts=False):
     )
 
     bot.db_file = db_file
-
+    insert_initial_channels_to_db(db_file, channels)
     return bot

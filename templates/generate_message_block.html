@@ -1,0 +1,11 @@
+<div class="card border-primary shadow mb-5 rounded">
+  <div class="card-header">Generate Message</div>
+  <div class="card-body text-center pt-3">
+    <select id="modelSelector" class="form-select mb-2"></select>
+    <button id="generateMsgBtn" class="btn btn-primary mb-3" onclick="generateMessage()">Generate Message</button>
+    <!-- Initially hide the message container -->
+    <div id="generatedMessageContainer" class="p-3 mb-3 bg-dark rounded d-none">
+      <p id="generatedMessage" class="text-center mb-0">Generated message will appear here...</p>
+    </div>
+  </div>
+</div>
