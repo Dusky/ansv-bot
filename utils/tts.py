@@ -69,14 +69,13 @@ def silence_output():
     sys.stderr = open(os.devnull, 'w')
 
 def process_text_thread(input_text, channel_name, db_file='./messages.db'):
+    global original_stdout, original_stderr
     silence_output()
 
     try:
         process_text(input_text, channel_name, db_file)
     finally:
         # Restore original stdout and stderr
-        sys.stdout.close()
-        sys.stderr.close()
         sys.stdout = original_stdout
         sys.stderr = original_stderr
 
@@ -121,8 +120,9 @@ def process_text(input_text, channel_name, db_file='./messages.db'):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         processor = AutoProcessor.from_pretrained("suno/bark-small")
         model = BarkModel.from_pretrained("suno/bark-small").to(device)
-        model.to_bettertransformer()
-        model.enable_cpu_offload()
+        if torch.cuda.is_available():
+            model.to_bettertransformer()
+            model.enable_cpu_offload()
 
         if custom_voice_data is not None:
             # Apply custom voice parameters
@@ -167,7 +167,8 @@ def split_sentence(sentence, max_length):
     return pieces
     
 def start_tts_processing(input_text, channel_name, db_file='./messages.db'):
-    tts_thread = threading.Thread(target=process_text_thread, args=(input_text, channel_name, db_file))
+    tts_thread = threading.Thread(target=process_text_thread, args=(input_text, channel_name, db_file), daemon=True)
+
     tts_thread.start()
 
 
