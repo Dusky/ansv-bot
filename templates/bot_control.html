@@ -1,0 +1,49 @@
+
+<script>
+    // Function to disable the start button and update its text
+    function updateStartButton(status) {
+        var startButton = document.getElementById('startBotButton');
+        startButton.disabled = status;
+        startButton.innerHTML = status ? 'Running!' : 'Start Bot';
+    }
+
+    // Event listener for form submission
+    document.getElementById('startBotForm').addEventListener('submit', function() {
+        updateStartButton(true); // Update button text to "Running!" when form is submitted
+    });
+    </script>
+{% extends 'base.html' %}
+
+
+{% block content %}
+<div class="container mt-4">
+    <div id="botControlContent" class="shadow-lg p-3 mb-5 rounded">
+        <div class="row">
+            <div class="col">
+                <h2 class="mb-4">Bot Control</h2>
+                <form id="startBotForm" action="{{ url_for('start_bot') }}" method="post">
+                    <div class="form-check">
+                        <!-- Make checkbox interactive only when bot is not running -->
+                        <input class="form-check-input" type="checkbox" name="enable_tts" id="enableTtsCheckbox" {% if enable_tts %}checked{% endif %} {% if bot_running %}disabled{% endif %}>
+                        <label class="form-check-label" for="enableTtsCheckbox">
+                            Enable TTS
+                        </label>
+                    </div>
+                    <button id="startBotButton" type="submit" class="btn btn-primary {% if bot_running %}disabled{% endif %}">
+                        {% if bot_running %}Running!{% else %}Start Bot{% endif %}
+                    </button>
+                    
+                </form>
+                <!-- Include Stop Bot Button only if the bot is running -->
+                {% if bot_running %}
+                <form action="{{ url_for('stop_bot') }}" method="post">
+                    <button type="submit" class="btn btn-danger mt-3">Stop Bot</button>
+                </form>
+
+                {% endif %}
+            </div>
+
+        </div>
+    </div>
+</div>
+{% endblock %}

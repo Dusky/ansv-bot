@@ -13,13 +13,60 @@ import sqlite3
 from datetime import datetime
 from utils.markov_handler import MarkovHandler
 import os
+from utils.bot import setup_bot
+from utils.db_setup import ensure_db_setup
+from threading import Thread
+import asyncio
 
 app = Flask(__name__)
 CORS(app)  
 socketio = SocketIO(app)
+
 db_file = "messages.db"
 markov_handler = MarkovHandler(cache_directory="cache")
+bot_instance = None
+bot_thread = None
+bot_running = False
+enable_tts = False
 
+
+
+
+@app.route('/toggle_tts', methods=['POST'])
+def toggle_tts():
+    global enable_tts
+    enable_tts = not enable_tts
+    return redirect(url_for('bot_control'))
+
+def run_bot(enable_tts=False):
+    global bot_instance
+    db_file = "messages.db"
+    ensure_db_setup(db_file)
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    bot_instance = setup_bot(db_file, rebuild_cache=False, enable_tts=enable_tts)
+    loop.run_until_complete(bot_instance.start())
+
+
+@app.route('/start_bot', methods=['POST'])
+def start_bot():
+    global bot_running, enable_tts
+    if not bot_running:
+        enable_tts = request.form.get('enable_tts') == 'on'
+        bot_thread = Thread(target=lambda: run_bot(enable_tts=enable_tts))
+        bot_thread.start()
+        bot_running = True
+    return redirect(url_for('bot_control'))
+
+
+# Route to stop the bot
+@app.route('/stop_bot', methods=['POST'])
+def stop_bot():
+    global bot_running
+    if bot_running:
+        bot_instance.stop()
+        bot_running = False
+    return redirect(url_for('bot_control'))
 
 @app.route('/')
 def main():
@@ -34,6 +81,18 @@ def settings():
     theme = request.cookies.get("theme", "darkly")
     return render_template('settings.html',  last_id=None, theme=theme)
 
+@app.route('/bot_control')
+def bot_control():
+    global bot_running, enable_tts
+    theme = request.cookies.get("theme", "darkly")  # Get theme from cookie
+    
+    # Pass both bot_running and enable_tts status to the template
+    return render_template(
+        "bot_control.html", 
+        theme=theme, 
+        bot_running=bot_running, 
+        enable_tts=enable_tts
+    )
 
 @app.route('/stats')
 def stats():
@@ -609,10 +668,11 @@ def get_last_10_tts_files_with_last_id(db_file):
         conn.close()
 
 
-def run_flask_app():
-    app.run(debug=True, host="0.0.0.0", port=5001)
+# def run_flask_app():
+#     app.run(debug=True, host="0.0.0.0", port=5001)
 
 
 if __name__ == "__main__":
     markov_handler.load_models()
     socketio.run(app, debug=True, host="0.0.0.0", port=5001)
+
