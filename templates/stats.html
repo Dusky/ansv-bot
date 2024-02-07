@@ -1,5 +1,25 @@
 {% extends 'base.html' %}
+<script>
+document.addEventListener('click', function(event) {
+    if (event.target && event.target.classList.contains('send-markov-tts-btn')) {
+        const channelName = event.target.getAttribute('data-channel');
+        sendMarkovMessageWithTTS(channelName);
+    }
+});
 
+function sendMarkovMessageWithTTS(channelName) {
+    fetch(`/send_markov_message_with_tts/${channelName}`, { method: 'POST' })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                console.log('Message and TTS sent successfully');
+            } else {
+                console.error('Failed to send message and TTS');
+            }
+        })
+        .catch(error => console.error('Error:', error));
+}
+</script>
 {% block content %}
 <div class="container mt-4">
     <div id="" class="shadow-lg p-3 mb-2 rounded">
@@ -12,8 +32,8 @@
                     <th>Channel</th>
                     <th>Cache File</th>
                     <th>Log File</th>
-                    <th>Cache Size</th> <!-- New Column -->
-                    <th>Line Count</th> <!-- New Column -->
+                    <th>Cache Size</th> 
+                    <th>Line Count</th>
                     <th>Actions</th>
                 </tr>
             </thead>
