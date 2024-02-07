@@ -30,6 +30,25 @@ bot_running = False
 enable_tts = False
 
 
+@app.route('/send_markov_message/<channel_name>', methods=['POST'])
+def send_markov_message(channel_name):
+    global bot_instance  # Ensure you're working with the global instance
+    if bot_instance:  # Ensure bot_instance is not None
+        try:
+            message = bot_instance.generate_message(channel_name)
+            if message:
+                # Ensure that send_message_to_channel is an async method
+                coroutine = bot_instance.send_message_to_channel(channel_name, message)
+                # Properly schedule the coroutine in the bot's event loop
+                asyncio.run_coroutine_threadsafe(coroutine, bot_instance.loop)
+                return jsonify({'success': True, 'message': 'Message sent successfully'})
+            else:
+                return jsonify({'success': False, 'message': 'Failed to generate message'})
+        except Exception as e:
+            return jsonify({'success': False, 'message': str(e)})
+    else:
+        return jsonify({'success': False, 'message': 'Bot instance is not initialized'})
+
 @app.route('/bot_status')
 def bot_status():
     global bot_running  # Assuming bot_running indicates if the bot is running

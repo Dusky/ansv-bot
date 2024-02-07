@@ -45,6 +45,7 @@ PURPLE = "\x1b[35m"
 channels = config["settings"]["channels"].split(",")
 
 
+
 class Bot(commands.Bot):
     def __init__(
         self,
@@ -103,6 +104,13 @@ class Bot(commands.Bot):
         if self.enable_tts:
             from utils import tts
             tts.initialize_tts()
+            
+            
+    async def send_message_to_channel(self, channel_name, message):
+        channel = self.get_channel(channel_name)
+        if channel:
+            asyncio.run_coroutine_threadsafe(channel.send(message), self.loop)
+
 
     def load_channel_settings(self):
         self.channel_settings = {}
@@ -730,7 +738,7 @@ def setup_bot(db_file, rebuild_cache, enable_tts=False):
         client_id=config.get("auth", "client_id"),
         nick=config.get("auth", "nickname"),
         prefix=config.get("settings", "command_prefix"),
-        trusted_users=[],  # This can be managed within the bot
+        trusted_users=[],  
         ignored_users=[],
         owner=config.get("auth", "owner"),
         initial_channels=initial_channels,
