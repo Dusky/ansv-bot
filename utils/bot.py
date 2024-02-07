@@ -44,6 +44,7 @@ PURPLE = "\x1b[35m"
 # Extract the channels
 channels = config["settings"]["channels"].split(",")
 
+
 class Bot(commands.Bot):
     def __init__(
         self,
@@ -643,7 +644,14 @@ class Bot(commands.Bot):
                         print(f"Error sending message in {channel_name}: {str(e)}")
 
 
-
+    async def stop(self):
+        try:
+            # Disconnect the bot from all channels
+            await self.close()
+            # Perform any additional cleanup tasks, such as closing database connections or saving data
+            print("Bot stopped successfully.")
+        except Exception as e:
+            print(f"Error stopping bot: {e}")
 
 
 
@@ -702,6 +710,8 @@ def insert_initial_channels_to_db(db_file, channels):
     
     conn.commit()
     conn.close()
+
+
 
 
 

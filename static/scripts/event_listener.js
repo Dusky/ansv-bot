@@ -22,6 +22,35 @@ document.addEventListener("DOMContentLoaded", function () {
       });
       fetchChannels(); // Populate the channels when the settings page loads
   }
+        // Get the start bot button element
+        var startBotButton = document.getElementById("startBotButton");
+
+        // Add event listener to the start bot button
+        if (startBotButton) {
+            startBotButton.addEventListener("click", function () {
+                // Make an asynchronous POST request to start the bot
+                fetch("/start_bot", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    // Handle successful response
+                    console.log("Bot started successfully");
+                })
+                .catch(error => {
+                    // Handle error
+                    console.error('There was a problem with the fetch operation:', error);
+                });
+            });
+        }
 
   function updateButtonTheme() {
     var currentTheme = document.documentElement.getAttribute("data-bs-theme");
@@ -149,25 +178,6 @@ if (settingsTab && settingsContent && mainContent && mainTab) {
         }
     });
 }
-
-
-// var voicePreset = document.getElementById("voicePreset");
-// if (voicePreset) {
-//     voicePreset.addEventListener("change", function () {
-//         const customVoiceRow = document.getElementById("customVoiceRow");
-//         if (this.value === "custom") {
-//             if (customVoiceRow) {
-//                 customVoiceRow.style.display = "";
-//                 fetchAndShowCustomVoices(); 
-//             }
-//         } else {
-//             if (customVoiceRow) {
-//                 customVoiceRow.style.display = "none";
-//             }
-//         }
-//     });
-// } else {
-// }
 
 
     var refreshTableButton = document.getElementById("refreshTable");
@@ -310,9 +320,19 @@ if (settingsTab && settingsContent && mainContent && mainTab) {
 
 const rebuildGeneralCacheBtn = document.getElementById('rebuildGeneralCacheBtn');
 if (rebuildGeneralCacheBtn) {
-    // If the button exists, add the event listener
     rebuildGeneralCacheBtn.addEventListener('click', function() {
         rebuildGeneralCache();
     });
 }
 });
+
+if (botControlTab && botControlContent && mainContent && mainTab) {
+  botControlTab.addEventListener("click", function () {
+      mainContent.style.display = "none";
+      settingsContent.style.display = "none";
+      botControlContent.style.display = "block";
+      botControlTab.classList.add("active");
+      mainTab.classList.remove("active");
+      settingsTab.classList.remove("active");
+  });
+}

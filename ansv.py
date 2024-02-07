@@ -6,11 +6,10 @@ from utils.db_setup import ensure_db_setup
 enable_tts = False
 
 
-# Function to run the web application in a separate thread
-def run_webapp():
-    from webapp import app  # Import the Flask app object
 
-    # Run the Flask app with reloader disabled
+def run_webapp():
+    from webapp import app  
+
     app.run(debug=False, host="0.0.0.0", port=5001, use_reloader=False)
 
 
