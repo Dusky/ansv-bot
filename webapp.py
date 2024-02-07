@@ -30,7 +30,10 @@ bot_running = False
 enable_tts = False
 
 
-
+@app.route('/bot_status')
+def bot_status():
+    global bot_running  # Assuming bot_running indicates if the bot is running
+    return jsonify({'running': bot_running})
 
 @app.route('/toggle_tts', methods=['POST'])
 def toggle_tts():
