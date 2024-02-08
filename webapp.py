@@ -17,6 +17,7 @@ from utils.bot import setup_bot
 from utils.db_setup import ensure_db_setup
 from threading import Thread
 import asyncio
+import logging
 
 app = Flask(__name__)
 CORS(app)  
@@ -29,6 +30,10 @@ bot_thread = None
 bot_running = False
 enable_tts = False
 markov_handler.load_models()
+
+#logging.getLogger('werkzeug').disabled = True
+logging.getLogger('werkzeug').setLevel(logging.ERROR)
+#app.logger.setLevel(logging.ERROR)
 
 @app.route('/send_markov_message/<channel_name>', methods=['POST'])
 def send_markov_message(channel_name):
@@ -51,8 +56,9 @@ def send_markov_message(channel_name):
 
 @app.route('/bot_status')
 def bot_status():
-    global bot_running  # Assuming bot_running indicates if the bot is running
+    global bot_running 
     return jsonify({'running': bot_running})
+
 
 @app.route('/toggle_tts', methods=['POST'])
 def toggle_tts():

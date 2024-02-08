@@ -1,51 +1,36 @@
 {% extends 'base.html' %}
-<script>
-document.addEventListener('click', function(event) {
-    if (event.target && event.target.classList.contains('send-markov-tts-btn')) {
-        const channelName = event.target.getAttribute('data-channel');
-        sendMarkovMessageWithTTS(channelName);
-    }
-});
 
-function sendMarkovMessageWithTTS(channelName) {
-    fetch(`/send_markov_message_with_tts/${channelName}`, { method: 'POST' })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                console.log('Message and TTS sent successfully');
-            } else {
-                console.error('Failed to send message and TTS');
-            }
-        })
-        .catch(error => console.error('Error:', error));
-}
-</script>
 {% block content %}
+
+
 <div class="container mt-4">
-    <div id="" class="shadow-lg p-3 mb-2 rounded">
-        <button id="rebuildAllCachesBtn" class="btn btn-warning" data-bs-toggle="tooltip" data-bs-placement="top" title="Rebuild all brains">Rebuild Brains</button>
-        <button id="rebuildGeneralCacheBtn" class="btn btn-info" data-bs-toggle="tooltip" data-bs-placement="top" title="Dump the general brain">Brain Dump</button>
-    <div class="table-responsive pt-2">
-        <table class="table table-striped table-bordered table-hover">
-            <thead>
-                <tr>
-                    <th>Channel</th>
-                    <th>Cache File</th>
-                    <th>Log File</th>
-                    <th>Cache Size</th> 
-                    <th>Line Count</th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
-            <tbody id="statsContainer">
-                <!-- Stats will be loaded here by JavaScript -->
-            </tbody>
-        </table>
-    </div>
+    <div class="shadow-lg p-3 mb-2 rounded">
+        <!-- Example placement of the bot status icon -->
+        <span id="botStatusIcon" class="bi bi-circle" style="margin-right: 10px;"></span>Bot Status
+        <div class="pt-2">
+            <button id="rebuildAllCachesBtn" class="btn btn-warning" data-bs-toggle="tooltip" data-bs-placement="top" title="Rebuild all brains">Rebuild Brains</button>
+            <button id="rebuildGeneralCacheBtn" class="btn btn-info" data-bs-toggle="tooltip" data-bs-placement="top" title="Dump the general brain">Brain Dump</button>
+        </div>
+        <div class="table-responsive pt-2">
+            <table class="table table-striped table-bordered table-hover">
+                <thead>
+                    <tr>
+                        <th>Channel</th>
+                        <th>Cache File</th>
+                        <th>Log File</th>
+                        <th>Cache Size</th>
+                        <th>Line Count</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="statsContainer">
+                    <!-- Stats will be loaded here by JavaScript -->
+                </tbody>
+            </table>
+        </div>
         <div id="loadingIndicator" class="spinner-border text-primary" role="status">
             <span class="visually-hidden">Loading...</span>
         </div>
     </div>
 </div>
-
 {% endblock %}

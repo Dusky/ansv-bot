@@ -9,9 +9,12 @@ class MarkovHandler:
         self.models = {}
         self.logger = logging.getLogger(__name__)
 
+
     def load_models(self):
         """Load all models from cache files in the cache directory."""
         self.logger.info("Loading models from cache...")
+        successful_loads = []  # Initialize a list to keep track of successful loads
+        failed_loads = []  # Optionally, track failed loads as well
         for filename in os.listdir(self.cache_directory):
             if filename.endswith("_model.json"):
                 # Extract the channel name (or model name) from the filename
@@ -19,23 +22,34 @@ class MarkovHandler:
                 model = self.load_model_from_cache(filename)
                 if model:
                     self.models[channel_name] = model
-                    self.logger.info(f"Loaded model for channel: {channel_name}")
+                    successful_loads.append(channel_name)  # Add to successful loads
                 else:
+                    failed_loads.append(channel_name)  # Optionally, add to failed loads
                     self.logger.warning(f"Failed to load model for channel: {channel_name}")
+
+        # Log a summary of loaded models
+        if successful_loads:
+            self.logger.info(f"Successfully loaded models for channels: {', '.join(successful_loads)}")
+        # Optionally, log a summary of failed loads
+        if failed_loads:
+            self.logger.warning(f"Failed to load models for channels: {', '.join(failed_loads)}")
 
     def load_model_from_cache(self, filename):
         cache_file_path = os.path.join(self.cache_directory, filename)
-        self.logger.info(f"Trying to load model from: {cache_file_path}")
+        # Change to debug or remove to reduce verbosity
+        self.logger.debug(f"Trying to load model from: {cache_file_path}")
         try:
             with open(cache_file_path, "r") as f:
                 model_json = f.read()
-                self.logger.info(f"Successfully loaded model from: {cache_file_path}")
+                # Optionally, change to debug or remove this log
+                self.logger.debug(f"Successfully loaded model from: {cache_file_path}")
                 return markovify.Text.from_json(model_json)
         except FileNotFoundError:
             self.logger.error(f"Cache file not found: {cache_file_path}")
         except Exception as e:
             self.logger.error(f"Error loading model from {cache_file_path}: {e}")
         return None
+
 
 
     def generate_message(self, channel_name):
