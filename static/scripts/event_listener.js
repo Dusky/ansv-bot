@@ -29,10 +29,7 @@ document.addEventListener("DOMContentLoaded", function () {
       .catch((error) => console.error("Error fetching bot status:", error));
   }
 
-  // Call the function to update UI based on bot status
-  fetchBotStatusAndUpdateUI();
 
-  // Optional: Set an interval to periodically check bot status
   setInterval(fetchBotStatusAndUpdateUI, 30000); // 30 seconds
 
   var channelSelect = document.getElementById("channelSelect");
@@ -243,30 +240,6 @@ document.addEventListener("DOMContentLoaded", function () {
     loadStats();
   }
 
-  function sendMarkovMessageToChannel(channelName) {
-    fetch(`/send_markov_message/${channelName}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ channelName: channelName }),
-    })
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error("Network response was not ok");
-        }
-        return response.json();
-      })
-      .then((data) => {
-        console.log(`Message sent to channel ${channelName}: ${data.message}`);
-      })
-      .catch((error) => {
-        console.error(
-          `There was a problem sending message to channel ${channelName}:`,
-          error
-        );
-      });
-  }
 
   var rebuildAllCachesBtn = document.getElementById("rebuildAllCachesBtn");
   if (rebuildAllCachesBtn) {

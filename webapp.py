@@ -28,7 +28,7 @@ bot_instance = None
 bot_thread = None
 bot_running = False
 enable_tts = False
-
+markov_handler.load_models()
 
 @app.route('/send_markov_message/<channel_name>', methods=['POST'])
 def send_markov_message(channel_name):
@@ -695,6 +695,6 @@ def get_last_10_tts_files_with_last_id(db_file):
 
 
 if __name__ == "__main__":
-    markov_handler.load_models()
+    #markov_handler.load_models()
     socketio.run(app, debug=True, host="0.0.0.0", port=5001)
 

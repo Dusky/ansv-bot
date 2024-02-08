@@ -13,7 +13,7 @@ from nltk.tokenize import sent_tokenize
 import numpy as np
 
 VOICES_DIRECTORY = './voices'
-db_file = './messages.db'
+db_file = 'messages.db'
 
 
 
