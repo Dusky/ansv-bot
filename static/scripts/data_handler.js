@@ -1,7 +1,5 @@
 let lastId = 0;
 
-// Function to initialize the table with first page of data
-
 function updateTable(data) {
   console.log("Updating table with data:", data);
   let tableBody = document.getElementById("ttsFilesBody");
@@ -11,13 +9,13 @@ function updateTable(data) {
     let messageIdInt = parseInt(file[1]);
     console.log(`Processing messageIdInt: ${messageIdInt}, lastId: ${lastId}`);
     if (messageIdInt > lastId) {
-      addRowToTable(file, true); // Add new row at the beginning
+      addRowToTable(file, true);
       isNewData = true;
     }
   });
 
   if (isNewData) {
-    lastId = parseInt(data[0][1]); // Update lastId to the latest messageId
+    lastId = parseInt(data[0][1]); 
   }
 
   return isNewData;
@@ -52,10 +50,10 @@ function addRowToTable(file, prepend = false) {
   } else {
     tableBody.insertAdjacentHTML("beforeend", row);
   }
-  // Delay autoplay check to ensure DOM has been updated
+
   setTimeout(() => {
     checkAutoplay([file]);
-  }, 100); // Adjust delay as needed
+  }, 100); 
 }
 function addLatestRow() {
   fetch("/latest-messages")
@@ -98,7 +96,6 @@ function checkAutoplay(data) {
         })
         .catch((error) => {
           console.error("Autoplay failed for", latestAudioId, ":", error);
-          // You might want to show a manual play button here
         });
     } else {
     }

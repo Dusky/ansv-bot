@@ -21,7 +21,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
   // Function to fetch bot status and update UI
   function fetchBotStatusAndUpdateUI() {
-    fetch("/api/bot_status")
+    fetch("/bot_status")
       .then((response) => response.json())
       .then((data) => {
         updateButtonStates(data.is_running);
