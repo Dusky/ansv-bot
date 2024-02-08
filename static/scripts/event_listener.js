@@ -22,12 +22,19 @@ document.addEventListener("DOMContentLoaded", function () {
   // Function to fetch bot status and update UI
   function fetchBotStatusAndUpdateUI() {
     fetch("/bot_status")
-      .then((response) => response.json())
-      .then((data) => {
-        updateButtonStates(data.is_running);
-      })
-      .catch((error) => console.error("Error fetching bot status:", error));
-  }
+        .then(response => response.json())
+        .then(data => {
+            const isBotRunning = data.running;
+            // Update each "Send Message" button based on bot status
+            document.querySelectorAll('.send-message-btn').forEach(button => {
+                // Check if the button is in a countdown state to avoid disabling it prematurely
+                if (!button.classList.contains('countdown-active')) {
+                    button.disabled = !isBotRunning;
+                }
+            });
+        })
+        .catch(error => console.error('Error fetching bot status:', error));
+}
 
 
   setInterval(fetchBotStatusAndUpdateUI, 30000); // 30 seconds
