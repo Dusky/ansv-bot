@@ -68,6 +68,30 @@ function rebuildCacheForChannel(channelName) {
     }
 }
 
+function sendMarkovMessageToChannel(channelName) {
+    fetch(`/send_markov_message/${channelName}`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ channelName: channelName }),
+    })
+    .then((response) => {
+        if (!response.ok) {
+            throw new Error("Network response was not ok");
+        }
+        return response.json();
+    })
+    .then((data) => {
+        // Display an alert or update the UI to confirm that the message was sent
+        showToast(`Message successfully sent to channel ${channelName}: ${data.message}`);
+    })
+    .catch((error) => {
+        // Handle error scenario
+        console.error(`There was a problem sending message to channel ${channelName}:`, error);
+        alert(`Error sending message to channel ${channelName}: ${error}`);
+    });
+}
 
 function rebuildAllCaches() {
   const rebuildAllButton = document.getElementById('rebuildAllCachesBtn');
