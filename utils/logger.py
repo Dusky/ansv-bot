@@ -2,6 +2,7 @@ import logging
 from colorama import Fore
 from datetime import datetime
 import re
+import os
 from .color_control import ColorManager 
 from logging.handlers import RotatingFileHandler
 
@@ -19,7 +20,7 @@ class Logger:
     def __init__(self):
         self.color_manager = ColorManager()  # Initialize the ColorManager
         self.logger = logging.getLogger('bot')
-        
+        self.bad_words = self.load_bad_patterns()
         
     def setup_logger(self):
         self.logger = logging.getLogger('bot')
@@ -47,7 +48,37 @@ class Logger:
             custom_handler.setFormatter(formatter)
             self.logger.addHandler(custom_handler)
 
+    def load_bad_patterns(self):
+        patterns = []
+        filepath = 'badwords.txt'
+        
+        # Ensure the file exists, create if not
+        if not os.path.exists(filepath):
+            print(f"'{filepath}' not found. Creating an empty file.")
+            open(filepath, 'a').close()  # Create an empty file
+        
+        try:
+            with open(filepath, 'r', encoding='utf-8') as file:
+                for line in file:
+                    pattern = line.strip()
+                    if pattern:
+                        # Compile each pattern to a regex object for faster matching
+                        patterns.append(re.compile(pattern, re.IGNORECASE))
+        except FileNotFoundError:
+            # This block is now redundant but kept for clarity
+            print(f"Error: '{filepath}' file not found after attempting to create it.")
+        
+        return patterns
+
+    def message_contains_badword(self, message):
+        # Check if the message matches any compiled regex patterns
+        return any(pattern.search(message) for pattern in self.bad_patterns)
+
     def log_message(self, channel, username, message):
+        if self.message_contains_badword(message):
+            print(f"Message not logged due to bad word usage: {message}")
+            return
+        
         month_colors = {
             "JAN": "196",  # Bright Red
             "FEB": "201",  # Bright Pink
@@ -166,5 +197,3 @@ class CustomHandler(logging.StreamHandler):
         if 'Successfully logged onto Twitch WS' in str(record.msg):
             record.msg = f"{GREEN}Successfully logged onto Twitch {PURPLE}Bot is now ready. {RESET}"
         super().emit(record)
-
-

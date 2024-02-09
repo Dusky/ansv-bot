@@ -604,6 +604,7 @@ class Bot(commands.Bot):
         channel_name = message.channel.name.lower()
         self.my_logger.log_message(channel_name, message.author.name, message.content)
 
+
         lines_between, time_between, tts_enabled, voice_enabled = self.fetch_channel_settings(channel_name)
         ignored_users = [user.lower() for user in self.channel_settings[channel_name]['ignored_users']] if channel_name in self.channel_settings else []
 
