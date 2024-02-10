@@ -68,44 +68,48 @@ function rebuildCacheForChannel(channelName) {
     }
 }
 
-function sendMarkovMessageToChannel(channelName) {
-    const sendMessageButton = document.querySelector(`button.send-message-btn[data-channel="${channelName}"]`);
-    if (sendMessageButton) {
-        sendMessageButton.disabled = true;
-        sendMessageButton.innerText = 'Sending...';
-        sendMessageButton.classList.add('countdown-active'); // Mark button as in countdown
 
-        fetch(`/send_markov_message/${channelName}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ channelName: channelName }),
-        })
-        .then(response => {
-            if (!response.ok) { throw new Error("Network response was not ok"); }
-            return response.json();
-        })
-        .then(data => {
-            let countdown = 5;
-            const intervalId = setInterval(() => {
-                if (countdown === 0) {
-                    clearInterval(intervalId);
-                    sendMessageButton.disabled = false;
-                    sendMessageButton.innerText = 'Send Message';
-                    sendMessageButton.classList.remove('countdown-active'); // Remove countdown mark
-                } else {
-                    sendMessageButton.innerText = `Sent! (${countdown}s)`;
-                    countdown--;
-                }
-            }, 1000);
-        })
-        .catch(error => {
-            console.error(`There was a problem sending message to channel ${channelName}:`, error);
-            sendMessageButton.disabled = false;
-            sendMessageButton.innerText = 'Send Message';
-            sendMessageButton.classList.remove('countdown-active'); // Ensure to remove countdown mark on error
-        });
-    }
-}
+function sendMarkovMessageToChannel(channelName) {
+    // Correctly select the specific button for the channel
+    const button = document.querySelector(`button[data-channel='${channelName}'][class*='send-message-btn']`);
+    if (!button) return; // Exit if button not found
+  
+    button.classList.add('in-countdown'); // Mark button as in countdown
+    button.disabled = true;
+    button.innerText = 'Sending...';
+  
+    fetch(`/send_markov_message/${channelName}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ channelName: channelName })
+    })
+    .then(response => {
+      if (!response.ok) throw new Error("Network response was not ok");
+      return response.json();
+    })
+    .then(data => {
+      let countdown = 5;
+      const intervalId = setInterval(() => {
+        if (countdown <= 0) {
+          clearInterval(intervalId);
+          button.classList.remove('in-countdown'); // Remove countdown marker
+          button.disabled = false;
+          button.innerText = 'Send Message';
+        } else {
+          button.innerText = `Wait (${countdown}s)`;
+          countdown -= 1;
+        }
+      }, 1000);
+    })
+    .catch(error => {
+      console.error("Error:", error);
+      button.classList.remove('in-countdown'); // Ensure countdown marker is removed in error case
+      button.disabled = false;
+      button.innerText = 'Send Message';
+    });
+  }
+
+
 
 
 function rebuildAllCaches() {
