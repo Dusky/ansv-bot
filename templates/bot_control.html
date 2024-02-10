@@ -1,19 +1,6 @@
 
-<script>
-    // Function to disable the start button and update its text
-    function updateStartButton(status) {
-        var startButton = document.getElementById('startBotButton');
-        startButton.disabled = status;
-        startButton.innerHTML = status ? 'Running!' : 'Start Bot';
-    }
+<!DOCTYPE html>
 
-    // Event listener for form submission
-    document.getElementById('startBotForm').addEventListener('submit', function() {
-        updateStartButton(true); // Update button text to "Running!" when form is submitted
-    });
-
-
-    </script>
 {% extends 'base.html' %}
 
 

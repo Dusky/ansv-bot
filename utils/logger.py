@@ -72,7 +72,8 @@ class Logger:
 
     def message_contains_badword(self, message):
         # Check if the message matches any compiled regex patterns
-        return any(pattern.search(message) for pattern in self.bad_patterns)
+        return any(pattern.search(message) for pattern in self.bad_words)
+
 
     def log_message(self, channel, username, message):
         if self.message_contains_badword(message):

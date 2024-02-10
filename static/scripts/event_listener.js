@@ -1,40 +1,27 @@
 document.addEventListener("DOMContentLoaded", function () {
   console.log("DOMContentLoaded event fired");
-
-  var mainTab = document.getElementById("mainTab");
-  var settingsTab = document.getElementById("settingsTab");
-  var mainContent = document.getElementById("mainContent");
-  var settingsContent = document.getElementById("settingsContent");
+  fetchBotStatusAndUpdateUI();
 
   var modelSelector = document.getElementById("modelSelector");
   if (modelSelector) {
     fetchAvailableModels();
   } else {
   }
-
   function updateButtonStates(isBotRunning) {
     const messageButtons = document.querySelectorAll(".send-message-btn");
-    messageButtons.forEach((button) => {
-      button.disabled = !isBotRunning; // Disable if bot is not running
+    messageButtons.forEach(button => {
+      if (!button.classList.contains('in-countdown')) {
+        button.disabled = !isBotRunning;
+      }
     });
   }
-
-  // Function to fetch bot status and update UI
   function fetchBotStatusAndUpdateUI() {
     fetch("/bot_status")
-        .then(response => response.json())
-        .then(data => {
-            const isBotRunning = data.running;
-            // Update each "Send Message" button based on bot status
-            document.querySelectorAll('.send-message-btn').forEach(button => {
-                // Check if the button is in a countdown state to avoid disabling it prematurely
-                if (!button.classList.contains('countdown-active')) {
-                    button.disabled = !isBotRunning;
-                }
-            });
-        })
-        .catch(error => console.error('Error fetching bot status:', error));
-}
+      .then(response => response.json())
+      .then(data => updateButtonStates(data.running))
+      .catch(error => console.error("Error fetching bot status:", error));
+  }
+
 
 
   setInterval(fetchBotStatusAndUpdateUI, 30000); // 30 seconds
@@ -176,30 +163,6 @@ document.addEventListener("DOMContentLoaded", function () {
   } else {
   }
 
-  if (mainTab && mainContent && settingsContent && settingsTab) {
-    mainTab.addEventListener("click", function () {
-      mainContent.style.display = "block";
-      settingsContent.style.display = "none";
-      mainTab.classList.add("active");
-      settingsTab.classList.remove("active");
-    });
-  }
-
-  // Event listener for settingsTab
-  if (settingsTab && settingsContent && mainContent && mainTab) {
-    settingsTab.addEventListener("click", function () {
-      mainContent.style.display = "none";
-      settingsContent.style.display = "block";
-      settingsTab.classList.add("active");
-      mainTab.classList.remove("active");
-
-      // Fetch channels only if channelSelect element is present
-      var channelSelect = document.getElementById("channelSelect");
-      if (channelSelect) {
-        fetchChannels();
-      }
-    });
-  }
 
   var refreshTableButton = document.getElementById("refreshTable");
   if (refreshTableButton) {
@@ -362,11 +325,11 @@ document.addEventListener("DOMContentLoaded", function () {
   }
 });
 
-if (botControlTab && botControlContent && mainContent && mainTab) {
+if (botControlTab && mainContent && mainTab) {
   botControlTab.addEventListener("click", function () {
     mainContent.style.display = "none";
     settingsContent.style.display = "none";
-    botControlContent.style.display = "block";
+
     botControlTab.classList.add("active");
     mainTab.classList.remove("active");
     settingsTab.classList.remove("active");
