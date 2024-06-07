@@ -73,3 +73,8 @@ env/bin/get_gprof
 cache/general_markov_model.json
 logs/firestarman.txt
 logs/imyt.txt
+cache/aegies_model.json
+cache/firestarman_model.json
+cache/imyt_model.json
+cache/patstaresat_model.json
+logs/imyt.txt
