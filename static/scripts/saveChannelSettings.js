@@ -75,20 +75,20 @@ function addNewChannel(data) {
     },
     body: JSON.stringify(data),
   })
-  .then((response) => response.json())
-  .then((result) => {
-    if (result.success) {
-      // Show the success modal
-      alert("Channel added: " + result.message);
-    } else {
-      alert("Failed to add channel: " + result.message);
-    }
-  })
-  .catch((error) => {
-    console.error("Error:", error);
-    alert("An error occurred while adding the channel.");
-  });
+    .then((response) => response.json())
+    .then((result) => {
+      if (result.success) {
+        alert("Channel added: " + result.message);
+      } else {
+        alert("Failed to add channel: " + result.message);
+      }
+    })
+    .catch((error) => {
+      console.error("Error:", error);
+      alert("An error occurred while adding the channel.");
+    });
 }
+
 
 
 function displayChannelConfig(channels, selectedChannel) {
@@ -125,6 +125,7 @@ function displayChannelConfig(channels, selectedChannel) {
 
 
 
+
 function resetFormForNewChannel() {
   // Clear the form and set default values for a new channel
   document.getElementById("ttsEnabled").checked = false;
@@ -138,6 +139,7 @@ function resetFormForNewChannel() {
   document.getElementById("timeBetweenMessages").value = 0;
   document.getElementById("newChannelName").value = ""; // Clear the new channel name field
 }
+
 
 function fetchChannels() {
   fetch("/get-channels")
@@ -170,6 +172,7 @@ function fetchChannels() {
     })
     .catch((error) => console.error("Error fetching channels:", error));
 }
+
 
 function fetchChannelSettings(channelName) {
   // Fetch settings for the selected channel and update the form
