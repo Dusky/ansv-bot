@@ -17,50 +17,44 @@ Ansv is a robot that posts garbage based on chat history in your twitch channels
 - `pip` (Python package manager)
 - `pyenv` for Python version management (optional but recommended)
 
-### Installation
-
-```bash
-git clone https://github.com/dusky/ansv-bot.git
-cd ansv-bot
 
 
-# Set Up Python Environment
-# (Optional but recommended)
-
-# 1. Install `pyenv` (if not already installed)
-# [Pyenv Installation Guide](https://github.com/pyenv/pyenv#installation).
-
-# 2. Install Python 3 using pyenv
-
-pyenv install 3.11
-pyenv local 3.11
-
-or
-
-apt install python3.11-venv
-
-# 3. Create a virtual environment
-python -m venv env
-
-# 4. Activate the virtual environment
+```sudo apt install python3-pip
+pip install venv
+python3 -m venv env
 source env/bin/activate
-
-# 5. Install Dependencies
 pip install -r requirements.txt
-
-# Configuration
-# - Edit `settings.conf` to include your Twitch bot's token, client ID, nickname, and initial channels.
-
-# Usage
-# - Run the bot using:
-python ansv.py
+pip install -r requirements-tts.txt #for tts support (roughly 3gigs of dependencies are required.)
 ```
+
+**TTS requires NLTK punkt.**
+
+```
+(env) ~/ansv-bot $ python
+>>> import nltk
+>>> nltk.download('punkt')
+[nltk_data] Downloading package punkt to /home/pi/nltk_data...
+[nltk_data]   Unzipping tokenizers/punkt.zip.
+True
+```
+
+**insert bot info into settings.conf**
+
+    tmi_token = 
+    client_id = 
+```
+python ansv.py #to launch the twitch bot
+python webapp.py #to launch the web interface on port 5001
+```
+Launch ansv.py with --tts to enable tts functionality. 
+
+
 
 - **!ansv speak**
   -  Generates and sends a message.
 
 - **!ansv start**
-  -  Enables the ansv in a channel.
+  -  Enables ansv in a channel.
 
 - **!ansv stop**
   -  Disables ansv in a channel.
