@@ -596,62 +596,79 @@ class Bot(commands.Bot):
     @commands.command(name="ansv")
     async def ansv_wrapper(self, ctx, setting, new_value=None):
         await ansv_command(self, ctx, setting, new_value)
+# The function event_message is called whenever a new message is received in a channel.
+async def event_message(self, message):
+    # Ignore messages from the bot itself or messages with no author.
+    if message.author is None or message.author.name.lower() == self.nick.lower():
+        return
 
-    async def event_message(self, message):
-        if message.author is None or message.author.name.lower() == self.nick.lower():
-            return
+    channel_name = message.channel.name.lower()
+    # Log the message.
+    self.my_logger.log_message(channel_name, message.author.name, message.content)
 
-        channel_name = message.channel.name.lower()
-        self.my_logger.log_message(channel_name, message.author.name, message.content)
+    # Fetch the channel settings and ignored users for the current channel.
+    lines_between, time_between, tts_enabled, voice_enabled = self.fetch_channel_settings(channel_name)
+    ignored_users = [user.lower() for user in self.channel_settings[channel_name]['ignored_users']] if channel_name in self.channel_settings else []
 
+    # Ignore messages from ignored users.
+    if message.author.name.lower() in ignored_users:
+        return
 
-        lines_between, time_between, tts_enabled, voice_enabled = self.fetch_channel_settings(channel_name)
-        ignored_users = [user.lower() for user in self.channel_settings[channel_name]['ignored_users']] if channel_name in self.channel_settings else []
+    # Handle any commands in the message.
+    await self.handle_commands(message)
 
-        if message.author.name.lower() in ignored_users:
-            return  # Ignore messages from ignored users
+    # Increment the chat line count for the current channel.
+    self.channel_chat_line_count[channel_name] += 1
+    # Calculate the elapsed time since the last message in the current channel.
+    elapsed_time = time.time() - self.channel_last_message_time.get(channel_name, 0)
 
-        await self.handle_commands(message)
+    # Determine if a message should be sent based on the lines_between and time_between settings.
+    should_send_message = False
+    if lines_between > 0 and self.channel_chat_line_count[channel_name] >= lines_between:
+        should_send_message = True
+    elif time_between > 0 and elapsed_time >= time_between * 60:
+        should_send_message = True
 
-        self.channel_chat_line_count[channel_name] += 1
-        elapsed_time = time.time() - self.channel_last_message_time.get(channel_name, 0)
+    # If a message should be sent and voice is enabled for the current channel.
+    if should_send_message and voice_enabled:
+        # Connect to the database.
+        conn = sqlite3.connect(self.db_file)
+        c = conn.cursor()
+        # Check if the general model should be used for the current channel.
+        c.execute("SELECT use_general_model FROM channel_configs WHERE channel_name = ?", (channel_name,))
+        row = c.fetchone()
+        conn.close()
 
-        should_send_message = False
-        if lines_between > 0 and self.channel_chat_line_count[channel_name] >= lines_between:
-            should_send_message = True
-        elif time_between > 0 and elapsed_time >= time_between * 60:
-            should_send_message = True
+        # Generate a response using the appropriate model.
+        if row:
+            response = (self.general_model.make_sentence() if row[0] else self.models.get(channel_name, self.general_model).make_sentence())
 
-        if should_send_message and voice_enabled:
-            conn = sqlite3.connect(self.db_file)
-            c = conn.cursor()
-            c.execute("SELECT use_general_model FROM channel_configs WHERE channel_name = ?", (channel_name,))
-            row = c.fetchone()
-            conn.close()
+            # If a response was generated.
+            if response:
+                try:
+                    # Send the response in the current channel.
+                    channel_obj = self.get_channel(channel_name)
+                    if channel_obj:
+                        await channel_obj.send(response)
+                        # Log the response.
+                        self.my_logger.log_message(channel_name, self.nick, response)
 
-            if row:
-                response = (self.general_model.make_sentence() if row[0] else self.models.get(channel_name, self.general_model).make_sentence())
+                        # If TTS is enabled for the current channel.
+                        if self.enable_tts and tts_enabled:
+                            # Generate TTS audio for the response.
+                            tts_output = process_text(response, channel_name, self.db_file)
+                            if tts_output:
+                                print(f"TTS audio file generated: {tts_output}")
+                            else:
+                                print("Failed to generate TTS audio file.")
 
-                if response:
-                    try:
-                        channel_obj = self.get_channel(channel_name)
-                        if channel_obj:
-                            await channel_obj.send(response)
-                            self.my_logger.log_message(channel_name, self.nick, response)
-
-                            if self.enable_tts and tts_enabled:
-                                tts_output = process_text(response, channel_name, self.db_file)
-                                if tts_output:
-                                    print(f"TTS audio file generated: {tts_output}")
-                                else:
-                                    print("Failed to generate TTS audio file.")
-
-                            self.channel_chat_line_count[channel_name] = 0
-                            self.channel_last_message_time[channel_name] = time.time()
-                    except Exception as e:
-                        self.my_logger.error(f"Failed to send message in {channel_name}: {str(e)}")
-                        print(f"Error sending message in {channel_name}: {str(e)}")
-
+                        # Reset the chat line count and last message time for the current channel.
+                        self.channel_chat_line_count[channel_name] = 0
+                        self.channel_last_message_time[channel_name] = time.time()
+                except Exception as e:
+                    # Log any errors that occur when sending the message.
+                    self.my_logger.error(f"Failed to send message in {channel_name}: {str(e)}")
+                    print(f"Error sending message in {channel_name}: {str(e)}")
 
     async def stop(self):
         try:
