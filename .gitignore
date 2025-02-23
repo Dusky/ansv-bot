@@ -1,3 +1,23 @@
+# Configuration files
+settings.conf
+settings*.local.conf
+
+# Local databases
+*.db
+*.sqlite
+
+# Virtual environments
+.venv/
+
+# IDE files
+.vscode/
+.idea/
+
+# Cache and logs
+__pycache__/
+*.log
+cache/
+models/
 
 *.pyc
 colors.json
