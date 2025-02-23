@@ -1,75 +1,99 @@
-# ANSV
 
-Ansv is a robot that posts garbage based on chat history in your twitch channels.
+**Web Interface** (Port 5001)
+- `http://localhost:5001` - Main dashboard
+- `http://localhost:5001/stats` - Model statistics
+- `http://localhost:5001/tts` - TTS management
 
-## Features
+### Bot Commands
+| Command | Description | Example |
+|---------|-------------|---------|
+| `!ansv speak` | Generate message | `!ansv speak` |
+| `!ansv trust <user>` | Manage trusted users | `!ansv trust nightbot` |
+| `!ansv config <setting>` | Modify channel settings | `!ansv config lines 50` |
+| `!ansv tts <on/off>` | Toggle TTS | `!ansv tts on` |
+| `!ansv join/part` | Channel management | `!ansv join new_channel` |
 
-- **Markov Chain Message Generation**: Automatically generates messages based on chat history.
-- **Channel Management**: Join or leave Twitch channels as needed.
-- **Customizable Settings**: Adjust time and line thresholds for message posting.
-- **Trusted User System**: Designate trusted users for bot control in different channels.
+## Web Interface Features 🌐
 
-## Getting Started
+**Dashboard**
+- Real-time message statistics
+- Model performance metrics
+- Channel configuration management
 
-### Prerequisites
+**Model Management**
+- Cache rebuilding
+- Model version control
+- Training data inspection
 
-- Python 3.x
-- `pip` (Python package manager)
-- `pyenv` for Python version management (optional but recommended)
+**TTS System**
+- Voice preset selection
+- Audio file management
+- Synthesis history
 
+## Troubleshooting 🔧
 
+**Common Issues**
+1. **TTS Failures**
+   - Verify NVIDIA drivers are up-to-date
+   - Check free disk space (>5GB recommended)
+   - Run `python -m bark_hubert_quantizer` to initialize Bark model
 
-```sudo apt install python3-pip
-pip install venv
-python3 -m venv env
-source env/bin/activate
-pip install -r requirements.txt
-pip install -r requirements-tts.txt #for tts support (roughly 3gigs of dependencies are required.)
+2. **Database Errors**
+   ```bash
+   rm messages.db  # WARNING: Deletes all data
+   python utils/db_setup.py
+   ```
+
+3. **Cache Issues**
+   ```bash
+   python ansv.py --rebuild-cache
+   ```
+
+## License 📄
+MIT License - See [LICENSE](LICENSE) for details
+
+## Contributing 🤝
+Pull requests welcome! Please follow our [contribution guidelines](CONTRIBUTING.md).
+
+---
+
+> **Note**: Requires Twitch developer account. TTS functionality needs substantial system resources.
+
+# Installation
+
+## Core System
+```bash
+python -m pip install -r requirements.txt
+python -m spacy download en_core_web_sm  # For NLTK integration
 ```
 
-**TTS requires NLTK punkt.**
+## TTS Support (macOS)
+```bash
+# Install system dependencies first
+brew install portaudio ffmpeg
 
-```
-(env) ~/ansv-bot $ python
->>> import nltk
->>> nltk.download('punkt')
-[nltk_data] Downloading package punkt to /home/pi/nltk_data...
-[nltk_data]   Unzipping tokenizers/punkt.zip.
-True
+# Install Python packages
+python -m pip install -r requirements-tts.txt
 ```
 
-**insert bot info into settings.conf**
-
-    tmi_token = 
-    client_id = 
+### Configuration
+1. Copy the example configuration:
+```bash
+cp settings.example.conf settings.conf
 ```
-python ansv.py #to launch the twitch bot
-python webapp.py #to launch the web interface on port 5001
+
+2. Edit settings.conf with your Twitch credentials:
+```ini
+[auth]
+tmi_token = oauth:your_actual_token  # From Twitch console
+client_id = your_client_id           # Twitch application ID
+nickname = YourBotName                # Bot's username
+owner = YourUsername                 # Your Twitch username
 ```
-Launch ansv.py with --tts to enable tts functionality. 
 
+3. Initialize database:
+```bash
+python utils/db_setup.py
+```
 
-
-- **!ansv speak**
-  -  Generates and sends a message.
-
-- **!ansv start**
-  -  Enables ansv in a channel.
-
-- **!ansv stop**
-  -  Disables ansv in a channel.
-
-- **!ansv time**
-  -  Sets the time interval between automated messages. (disabled by default)
-
-- **!ansv lines**
-  -  Sets the number of chat lines required before the bot sends an automated message. (100 by default)
-
-- **!ansv trust**
-  -  Adds a user to the list of trusted users for a channel. 
-
-- **!ansv join**
-  -  Makes the ansv join a new channel.
-
-- **!ansv part**
-  -  Makes the ansv leave a channel.
+> **Warning**: Never commit settings.conf! It contains sensitive credentials. We've added it to .gitignore for you.
