@@ -8,6 +8,7 @@ from flask import (
     redirect,
 )
 from flask_socketio import SocketIO
+from flask_socketio import emit, disconnect  # Add missing imports
 from flask_cors import CORS  # Import CORS
 import sqlite3
 from datetime import datetime
@@ -15,13 +16,15 @@ from utils.markov_handler import MarkovHandler
 import os
 from utils.bot import setup_bot
 from utils.db_setup import ensure_db_setup
-from threading import Thread
+from threading import Thread, Lock
 import asyncio
 import logging
+from utils.tts import process_text
 
 app = Flask(__name__)
-CORS(app)  
-socketio = SocketIO(app)
+app.config['SECRET_KEY'] = os.getenv('WEB_SECRET_KEY', 'default-insecure-key')  # Read from settings.conf
+CORS(app, supports_credentials=True)  # Update CORS config
+socketio = SocketIO(app, cors_allowed_origins="*")  # Restrict in production
 
 db_file = "messages.db"
 markov_handler = MarkovHandler(cache_directory="cache")
@@ -34,6 +37,9 @@ markov_handler.load_models()
 #logging.getLogger('werkzeug').disabled = True
 logging.getLogger('werkzeug').setLevel(logging.ERROR)
 #app.logger.setLevel(logging.ERROR)
+
+# Add thread locking for bot control
+bot_lock = Lock()
 
 @app.route('/send_markov_message/<channel_name>', methods=['POST'])
 def send_markov_message(channel_name):
@@ -68,12 +74,14 @@ def toggle_tts():
 
 def run_bot(enable_tts=False):
     global bot_instance
-    db_file = "messages.db"
-    ensure_db_setup(db_file)
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    bot_instance = setup_bot(db_file, rebuild_cache=False, enable_tts=enable_tts)
-    loop.run_until_complete(bot_instance.start())
+    with bot_lock:  # Prevent concurrent access
+        if not bot_instance:
+            db_file = "messages.db"
+            ensure_db_setup(db_file)
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            bot_instance = setup_bot(db_file, rebuild_cache=False, enable_tts=enable_tts)
+            loop.run_until_complete(bot_instance.start())
 
 
 @app.route('/start_bot', methods=['POST'])
@@ -553,15 +561,15 @@ def save_channel_settings():
 @app.route("/get-channels")
 def get_channels():
     try:
-        conn = sqlite3.connect(db_file)
-        c = conn.cursor()
-        c.execute(
-            "SELECT channel_name, tts_enabled, voice_enabled, join_channel, owner, trusted_users, ignored_users, use_general_model, lines_between_messages, time_between_messages FROM channel_configs"
-        )
-        channels = c.fetchall()
-        return jsonify(channels)
+        with sqlite3.connect(db_file) as conn:  # Auto-closes connection
+            c = conn.cursor()
+            c.execute(
+                "SELECT channel_name, tts_enabled, voice_enabled, join_channel, owner, trusted_users, ignored_users, use_general_model, lines_between_messages, time_between_messages FROM channel_configs"
+            )
+            channels = c.fetchall()
+            return jsonify(channels)
     except sqlite3.Error as e:
-        print(f"SQLite error in get_channels: {e}")
+        app.logger.error(f"Database error: {e}")
         return jsonify([])
 
 
@@ -700,7 +708,67 @@ def get_last_10_tts_files_with_last_id(db_file):
 #     app.run(debug=True, host="0.0.0.0", port=5001)
 
 
+# Add SocketIO events for real-time updates
+@socketio.on('connect')
+def handle_connect(auth):  # Add proper parameters
+    app.logger.info('Client connected')
+    emit('status_update', {'bot_running': bot_running})
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    app.logger.info('Client disconnected')
+
+@socketio.on('request_update')
+def handle_update_request(data):  # Add proper parameters
+    emit('full_update', {
+        'bot_status': bot_running,
+        'channels': get_channels(),
+        'stats': get_stats_data()
+    })
+
+
+def run_webapp():
+    from webapp import app, socketio
+    try:
+        socketio.run(app, host="0.0.0.0", port=5001, debug=False)
+    except KeyboardInterrupt:
+        print("Web server shutting down...")
+    finally:
+        print("Cleaning up web resources...")
+        # Add any web-specific cleanup here
+
+
 if __name__ == "__main__":
     #markov_handler.load_models()
-    socketio.run(app, debug=True, host="0.0.0.0", port=5001)
+    run_webapp()
+
+__all__ = ['app', 'socketio']
+
+@app.route('/trigger-tts', methods=['POST'])
+def trigger_tts():
+    data = request.json
+    channel = data.get('channel')
+    message = data.get('message')
+    
+    if not channel or not message:
+        return jsonify({'success': False, 'error': 'Missing channel or message'}), 400
+    
+    try:
+        # Send message through normal bot flow
+        coroutine = bot_instance.send_message_to_channel(channel, message)
+        asyncio.run_coroutine_threadsafe(coroutine, bot_instance.loop)
+        
+        # Process TTS
+        tts_file = process_text(message, channel, db_file)
+        
+        return jsonify({
+            'success': True,
+            'message': 'TTS processed successfully',
+            'tts_file': tts_file,
+            'new_id': new_id  # Return the database ID
+        })
+        # Notify all clients
+        socketio.emit('new_tts_entry', {'id': new_id})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 

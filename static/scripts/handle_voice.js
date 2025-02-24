@@ -2,20 +2,16 @@ function handleVoicePresetChange() {
     let voicePresetSelect = document.getElementById("voicePreset");
     let customVoiceRow = document.getElementById("customVoiceRow");
 
-    if (voicePresetSelect && customVoiceRow) {
-        if (voicePresetSelect.value === "custom") {
-            customVoiceRow.style.display = "";
-            fetchAndShowCustomVoices(); // Ensure this function is defined
-        } else {
-            customVoiceRow.style.display = "none";
-        }
+    if (!voicePresetSelect) {
+        console.error("Voice preset select element not found");
+        return;
+    }
+
+    if (voicePresetSelect.value === "custom") {
+        customVoiceRow.style.display = "";
+        fetchAndShowCustomVoices(); // Ensure this function is defined
     } else {
-        if (!voicePresetSelect) {
-            console.error("voicePreset element not found");
-        }
-        if (!customVoiceRow) {
-            console.error("customVoiceRow element not found");
-        }
+        customVoiceRow.style.display = "none";
     }
 }
 
