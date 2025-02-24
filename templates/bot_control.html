@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 
 {% extends 'base.html' %}
@@ -35,4 +34,92 @@
         </div>
     </div>
 </div>
+
+<div class="card mb-4">
+    <div class="card-header bg-primary text-white">
+        <h5 class="mb-0"><i class="fas fa-comment-dots me-2"></i>Custom TTS Message</h5>
+    </div>
+    <div class="card-body">
+        <div class="mb-3">
+            <label for="ttsChannel" class="form-label">Channel:</label>
+            <select class="form-select" id="ttsChannel">
+                <!-- Channels will be populated by JavaScript -->
+            </select>
+        </div>
+        <div class="mb-3">
+            <label for="ttsMessage" class="form-label">Message:</label>
+            <textarea class="form-control" id="ttsMessage" rows="3"></textarea>
+        </div>
+        <button class="btn btn-warning" onclick="sendCustomTTS()">
+            <i class="fas fa-bullhorn me-2"></i>Send TTS
+        </button>
+    </div>
+</div>
+
+<script>
+function populateChannels() {
+    fetch('/get-channels')
+        .then(response => response.json())
+        .then(channels => {
+            const select = document.getElementById('ttsChannel');
+            select.innerHTML = channels.map(channel => 
+                `<option value="${channel[0]}">${channel[0]}</option>`
+            ).join('');
+        });
+}
+
+function sendCustomTTS() {
+    const channel = document.getElementById('ttsChannel').value;
+    const message = document.getElementById('ttsMessage').value;
+    
+    if (!message) {
+        alert('Please enter a message');
+        return;
+    }
+
+    fetch('/trigger-tts', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({channel, message})
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('TTS message sent successfully!');
+            document.getElementById('ttsMessage').value = '';
+        } else {
+            alert('Error: ' + (data.error || 'Failed to send TTS'));
+        }
+    });
+}
+
+// Populate channels on page load
+document.addEventListener('DOMContentLoaded', populateChannels);
+
+// Add this to your existing socket.io code
+socketio.on('new_tts_entry', function(data) {
+    // Refresh the table
+    fetch('/latest-messages')
+        .then(response => response.json())
+        .then(data => {
+            updateTTSTable(data);
+        });
+});
+
+function updateTTSTable(entries) {
+    const tbody = document.querySelector('#ttsTable tbody');
+    tbody.innerHTML = entries.map(entry => `
+        <tr>
+            <td>${entry.channel}</td>
+            <td>${new Date(entry.timestamp).toLocaleString()}</td>
+            <td>${entry.message}</td>
+            <td>
+                <audio controls>
+                    <source src="/tts-audio/${entry.file_path}" type="audio/wav">
+                </audio>
+            </td>
+        </tr>
+    `).join('');
+}
+</script>
 {% endblock %}

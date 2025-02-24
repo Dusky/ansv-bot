@@ -242,7 +242,7 @@ class Bot(commands.Bot):
         if self.text:
             self.general_model = markovify.Text(self.text)
             general_cache_file_path = os.path.join(cache_directory, "general_markov_model.json")
-            if self.should_update_cache('general', last_cache_build_times.get("general_markov_model.json")):
+            if self.should_update_cache('general_markov_model.json', last_cache_build_times.get("general_markov_model.json")):
                 self.save_general_model_to_cache(general_cache_file_path)
                 general_cache_status = f"{GREEN}Updated{RESET}"
             else:

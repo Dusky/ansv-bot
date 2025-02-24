@@ -142,7 +142,17 @@ def process_text(input_text, channel_name, db_file='./messages.db'):
         final_audio_array = np.concatenate(all_audio_pieces)
         scipy.io.wavfile.write(full_path, rate=model.generation_config.sample_rate, data=final_audio_array)
 
-        log_tts_file(message_id, channel_name, timestamp, full_path, voice_preset, input_text, db_file)
+        # Store in database
+        conn = sqlite3.connect(db_file)
+        c = conn.cursor()
+        c.execute('''INSERT INTO tts_logs 
+                    (channel, timestamp, voice_preset, file_path, message)
+                    VALUES (?, ?, ?, ?, ?)''',
+                (channel_name, datetime.now().isoformat(), voice_preset, full_path, input_text))
+        conn.commit()
+        new_id = c.lastrowid  # Get the ID of the new entry
+        conn.close()
+        
         notify_new_audio_available(channel_name, message_id)
 
         return full_path
