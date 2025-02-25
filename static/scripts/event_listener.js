@@ -323,6 +323,18 @@ document.addEventListener("DOMContentLoaded", function () {
       rebuildGeneralCache();
     });
   }
+
+  // Populate channels for message generation if the element exists
+  const channelForMessage = document.getElementById('channelForMessage');
+  if (channelForMessage) {
+    populateMessageChannels();
+  }
+
+  // Also populate the models if modelSelector exists
+  const modelSelector = document.getElementById('modelSelector');
+  if (modelSelector) {
+    populateModels();
+  }
 });
 
 if (botControlTab && mainContent && mainTab) {
@@ -334,4 +346,31 @@ if (botControlTab && mainContent && mainTab) {
     mainTab.classList.remove("active");
     settingsTab.classList.remove("active");
   });
+}
+
+// Function to populate model selector
+function populateModels() {
+  fetch('/get-available-models')
+    .then(response => response.json())
+    .then(models => {
+      const selector = document.getElementById('modelSelector');
+      if (selector) {
+        selector.innerHTML = '';
+        
+        // Add default "General" model
+        const generalOption = document.createElement('option');
+        generalOption.value = 'general';
+        generalOption.textContent = 'General';
+        selector.appendChild(generalOption);
+        
+        // Add channel-specific models
+        models.forEach(model => {
+          const option = document.createElement('option');
+          option.value = model;
+          option.textContent = model;
+          selector.appendChild(option);
+        });
+      }
+    })
+    .catch(error => console.error('Error loading models:', error));
 }

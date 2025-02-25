@@ -154,4 +154,117 @@ function loadLatestData() {
     });
 }
 
+// Function to populate the channel selector in Generate Message section
+function populateMessageChannels() {
+    fetch('/get-channels')
+        .then(response => response.json())
+        .then(channels => {
+            const selector = document.getElementById('channelForMessage');
+            if (selector) {
+                // Clear existing options
+                selector.innerHTML = '';
+                
+                // Add channels to dropdown
+                channels.forEach(channel => {
+                    const option = document.createElement('option');
+                    option.value = channel[0];
+                    option.textContent = channel[0];
+                    selector.appendChild(option);
+                });
+                
+                // If no channels, add a placeholder
+                if (channels.length === 0) {
+                    const option = document.createElement('option');
+                    option.disabled = true;
+                    option.textContent = 'No channels available';
+                    selector.appendChild(option);
+                }
+            }
+        })
+        .catch(error => console.error('Error loading channels for message generation:', error));
+}
+
+// Update the generateMessage function to use the selected channel
+function generateMessage() {
+    const modelSelect = document.getElementById('modelSelector');
+    const channelSelect = document.getElementById('channelForMessage');
+    const messageContainer = document.getElementById('generatedMessageContainer');
+    const messageElement = document.getElementById('generatedMessage');
+    
+    // Show loading state
+    messageContainer.classList.remove('d-none');
+    messageElement.innerHTML = 'Generating message...';
+    
+    // Get selected values
+    const model = modelSelect.value;
+    const channel = channelSelect.value;
+    
+    fetch('/generate-message', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ model: model, channel: channel })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.message) {
+            messageElement.textContent = data.message;
+        } else {
+            messageElement.textContent = 'Failed to generate message.';
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        messageElement.textContent = 'Error generating message.';
+    });
+}
+
+// Function to check bot status and update UI
+function checkBotStatus() {
+    fetch('/bot-status')
+        .then(response => response.json())
+        .then(data => {
+            const statusIndicator = document.getElementById('botStatusIndicator');
+            const controlButtons = document.querySelectorAll('.bot-control-btn');
+            
+            if (statusIndicator) {
+                if (data.status === 'running') {
+                    statusIndicator.innerHTML = '<span class="badge bg-success">Running</span>';
+                    // Enable control buttons that require a running bot
+                    controlButtons.forEach(btn => {
+                        if (btn.dataset.requireRunning === 'true') {
+                            btn.disabled = false;
+                        }
+                    });
+                } else {
+                    statusIndicator.innerHTML = '<span class="badge bg-danger">Stopped</span>';
+                    // Disable control buttons that require a running bot
+                    controlButtons.forEach(btn => {
+                        if (btn.dataset.requireRunning === 'true') {
+                            btn.disabled = true;
+                        }
+                    });
+                }
+            }
+        })
+        .catch(error => {
+            console.error('Error checking bot status:', error);
+            // Set status to unknown on error
+            const statusIndicator = document.getElementById('botStatusIndicator');
+            if (statusIndicator) {
+                statusIndicator.innerHTML = '<span class="badge bg-warning">Unknown</span>';
+            }
+        });
+}
+
+// Call this function when page loads and periodically
+document.addEventListener('DOMContentLoaded', function() {
+    // Check immediately
+    checkBotStatus();
+    
+    // Then check every 10 seconds
+    setInterval(checkBotStatus, 10000);
+});
+
 
