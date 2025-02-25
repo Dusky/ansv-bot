@@ -64,48 +64,22 @@ def send_markov_message(channel_name):
 
 @app.route('/bot_status')
 def bot_status():
-    """Check if the bot is running by looking for multiple signals"""
-    
+    """Check if the bot is running"""
     try:
-        # Method 1: Check for PID file
-        pid_file = "bot.pid"
-        if os.path.exists(pid_file):
-            with open(pid_file, "r") as f:
-                pid = int(f.read().strip())
-                
-            # Check if process with this PID exists
+        is_running = False
+        if os.path.exists('bot.pid'):
             try:
-                os.kill(pid, 0)  # Signal 0 doesn't kill the process, just checks if it exists
-                return jsonify({"status": "running", "pid": pid})
-            except OSError:
-                # Process not running, but PID file exists - stale file
+                with open('bot.pid', 'r') as pid_file:
+                    pid = int(pid_file.read().strip())
+                    os.kill(pid, 0)  # Checks if process exists
+                    is_running = True
+            except:
                 pass
-        
-        # Method 2: Check for heartbeat file
-        heartbeat_file = "bot_heartbeat.json"
-        if os.path.exists(heartbeat_file):
-            with open(heartbeat_file, "r") as f:
-                import json
-                data = json.load(f)
                 
-                # Check if heartbeat is recent (within last 2 minutes)
-                if time.time() - data.get("timestamp", 0) < 120:
-                    return jsonify({"status": "running", "heartbeat": data})
-        
-        # Method 3: Try to check process by name (fallback)
-        import subprocess
-        result = subprocess.run(["pgrep", "-f", "python.*ansv.py"], capture_output=True, text=True)
-        
-        if result.returncode == 0:
-            pids = result.stdout.strip().split('\n')
-            if pids:
-                return jsonify({"status": "running", "pid": pids[0]})
-        
-        return jsonify({"status": "stopped"})
-    
+        return jsonify({"running": is_running})  # Use 'running' field, not 'status'
     except Exception as e:
-        print(f"Error checking bot status: {e}")
-        return jsonify({"status": "unknown", "error": str(e)})
+        app.logger.error(f"Error checking bot status: {e}")
+        return jsonify({"running": False, "error": str(e)})
 
 
 @app.route('/toggle_tts', methods=['POST'])
@@ -390,27 +364,46 @@ def generate_message(channel_name):
         app.logger.error(f"Error in generate_message_route: {str(e)}")
         return jsonify({"error": f"Internal server error: {str(e)}"}), 500
 
-def generate_message_route(channel_name):
+@app.route("/generate-message", methods=["POST"])
+def generate_message_post():
+    """Generate a message using the selected model and channel"""
     try:
-        message = markov_handler.generate_message(channel_name)
+        data = request.json
+        model = data.get('model')
+        
+        # Log the request
+        app.logger.info(f"Generating message with model: {model}")
+        
+        # Use the existing markov_handler to generate the message
+        message = markov_handler.generate_message(model)
+            
         if message:
             return jsonify({"message": message})
-        return jsonify({"error": "No message could be generated1"}), 400
-    except FileNotFoundError:
-        return jsonify({"error": "Model file not found"}), 404
+        else:
+            return jsonify({"error": "Failed to generate message"}), 400
     except Exception as e:
-        app.logger.error(f"Server Error: {str(e)}")
-        return jsonify({"error": "Internal server error"}), 500
+        app.logger.error(f"Error generating message: {str(e)}")
+        return jsonify({"error": f"Internal server error: {str(e)}"}), 500
 
 
-@app.route("/available-models")
+@app.route('/available-models')
 def available_models():
+    """Get a list of available Markov models"""
     try:
-        models = markov_handler.get_available_models()
+        # Get all models from the cache directory
+        models = []
+        if os.path.exists('cache'):
+            for file in os.listdir('cache'):
+                if file.endswith('_model.json'):
+                    model_name = file.replace('_model.json', '')
+                    if model_name != 'general_markov':  # Skip the general model
+                        models.append(model_name)
+        
+        app.logger.info(f"Available models: {models}")
         return jsonify(models)
     except Exception as e:
-        app.logger.error(f"Error in available_models: {str(e)}")
-        return jsonify({"error": f"Internal server error: {str(e)}"}), 500
+        app.logger.error(f"Error getting available models: {e}")
+        return jsonify([])
 
 
 @app.route("/new-audio-notification", methods=["POST"])
@@ -879,24 +872,6 @@ def serve_tts_audio(filename):
     # Return the audio file
     return send_from_directory('static/tts_output', filename)
 
-@app.route('/get-available-models')
-def get_available_models():
-    """Get a list of available Markov models"""
-    try:
-        # Get all models from the cache directory
-        models = []
-        if os.path.exists('cache'):
-            for file in os.listdir('cache'):
-                if file.endswith('_model.json'):
-                    model_name = file.replace('_model.json', '')
-                    if model_name != 'general_markov':  # Skip the general model
-                        models.append(model_name)
-        
-        return jsonify(models)
-    except Exception as e:
-        app.logger.error(f"Error getting available models: {e}")
-        return jsonify([])
-
 @app.route('/rebuild-channel-model/<channel_name>', methods=['POST'])
 def rebuild_channel_model(channel_name):
     """Rebuild the Markov model for a specific channel"""
@@ -914,4 +889,74 @@ def rebuild_channel_model(channel_name):
     except Exception as e:
         app.logger.error(f"Error rebuilding channel model: {e}")
         return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
+
+@app.route('/get-stats')
+def get_stats():
+    """Get statistics for all channels"""
+    try:
+        stats = []
+        
+        # Get all log files in the logs directory
+        logs_directory = 'logs'
+        cache_directory = 'cache'
+        
+        if not os.path.exists(logs_directory):
+            app.logger.warning(f"Logs directory '{logs_directory}' does not exist")
+            return jsonify([])
+            
+        # Get list of channels from log files
+        channels = []
+        for file in os.listdir(logs_directory):
+            if file.endswith('.txt'):
+                channel_name = file.replace('.txt', '')
+                channels.append(channel_name)
+        
+        # Get stats for each channel
+        for channel in channels:
+            log_file = f"{logs_directory}/{channel}.txt"
+            cache_file = f"{cache_directory}/{channel}_model.json"
+            
+            # Get log file size and line count
+            line_count = 0
+            log_size = 0
+            if os.path.exists(log_file):
+                log_size = os.path.getsize(log_file)
+                with open(log_file, 'r', encoding='utf-8', errors='ignore') as f:
+                    line_count = sum(1 for _ in f)
+            
+            # Get cache file size
+            cache_size = 0
+            if os.path.exists(cache_file):
+                cache_size = os.path.getsize(cache_file)
+            
+            # Format sizes
+            log_size_formatted = format_size(log_size)
+            cache_size_formatted = format_size(cache_size)
+            
+            stats.append({
+                'name': channel,
+                'log_file': f"{channel}.txt",
+                'cache_file': f"{channel}_model.json" if os.path.exists(cache_file) else None,
+                'log_size': log_size_formatted,
+                'cache_size': cache_size_formatted,
+                'line_count': line_count
+            })
+        
+        return jsonify(stats)
+    except Exception as e:
+        app.logger.error(f"Error getting stats: {e}")
+        return jsonify([]), 500
+
+def format_size(size_bytes):
+    """Format file size in bytes to human-readable format"""
+    if size_bytes == 0:
+        return "0 B"
+    
+    size_names = ("B", "KB", "MB", "GB", "TB")
+    i = 0
+    while size_bytes >= 1024 and i < len(size_names) - 1:
+        size_bytes /= 1024
+        i += 1
+    
+    return f"{size_bytes:.2f} {size_names[i]}"
 

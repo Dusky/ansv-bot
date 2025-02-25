@@ -481,13 +481,28 @@ if (botControlTab && mainContent && mainTab) {
 // Function to populate model selector
 function populateModels() {
   console.log("Populating models");
-  fetch('/get-available-models')
-    .then(response => response.json())
+  
+  // Show loading state in the selector
+  const selector = document.getElementById('modelSelector');
+  if (selector) {
+    selector.innerHTML = '<option>Loading models...</option>';
+    selector.disabled = true;
+  }
+  
+  fetch('/available-models')
+    .then(response => {
+      if (!response.ok) {
+        throw new Error(`Failed to load models: ${response.status} ${response.statusText}`);
+      }
+      return response.json();
+    })
     .then(models => {
-      const selector = document.getElementById('modelSelector');
+      console.log("Models received:", models);
+      
       if (selector) {
         // Clear existing options
         selector.innerHTML = '';
+        selector.disabled = false;
         
         // Add default "General" model
         const generalOption = document.createElement('option');
@@ -496,19 +511,36 @@ function populateModels() {
         selector.appendChild(generalOption);
         
         // Add channel-specific models
-        models.forEach(model => {
-          const option = document.createElement('option');
-          option.value = model;
-          option.textContent = model;
-          selector.appendChild(option);
-        });
-        
-        console.log(`Populated model selector with ${models.length + 1} options`);
+        if (models.length > 0) {
+          models.forEach(model => {
+            const option = document.createElement('option');
+            option.value = model;
+            option.textContent = model;
+            selector.appendChild(option);
+          });
+          
+          console.log(`Populated model selector with ${models.length + 1} options`);
+        } else {
+          console.warn("No models returned from server");
+          
+          // Add a placeholder if no models found
+          const noModelsOption = document.createElement('option');
+          noModelsOption.disabled = true;
+          noModelsOption.textContent = 'No models available';
+          selector.appendChild(noModelsOption);
+        }
       } else {
         console.warn("Model selector element not found");
       }
     })
-    .catch(error => console.error('Error loading models:', error));
+    .catch(error => {
+      console.error('Error loading models:', error);
+      
+      if (selector) {
+        selector.innerHTML = '<option>Error loading models</option>';
+        selector.disabled = false;
+      }
+    });
 }
 
 function updateBotStatusUI(statusData) {
@@ -561,29 +593,24 @@ function setupKeyboardShortcuts() {
 // Function to set up autoplay toggle
 function setupAutoplayToggle() {
   const autoplayElement = document.getElementById("autoplay");
+  if (!autoplayElement) return; // Exit if element doesn't exist
+  
   const muteIcon = document.getElementById("muteIcon");
   const unmuteIcon = document.getElementById("unmuteIcon");
-
-  if (!autoplayElement || !muteIcon || !unmuteIcon) return;
-
-  // Set the UI based on stored preferences
-  const isMuted = localStorage.getItem("muteStatus") === "true";
-  autoplayElement.checked = !isMuted;
-  updateAudioIcons(isMuted);
-
-  autoplayElement.addEventListener("change", function () {
-    const autoplayEnabled = this.checked;
-    updateAudioIcons(!autoplayEnabled);
-    localStorage.setItem("muteStatus", !autoplayEnabled);
-  });
-
-  function updateAudioIcons(isMuted) {
-    if (isMuted) {
-      muteIcon.classList.remove("d-none");
-      unmuteIcon.classList.add("d-none");
-    } else {
+  if (!muteIcon || !unmuteIcon) return; // Exit if icons don't exist
+  
+  // Just initialize with default settings - avoid accessing localStorage
+  muteIcon.classList.remove("d-none");
+  unmuteIcon.classList.add("d-none");
+  
+  // Add simple listener
+  autoplayElement.addEventListener("change", function() {
+    if (this.checked) {
       muteIcon.classList.add("d-none");
       unmuteIcon.classList.remove("d-none");
+    } else {
+      muteIcon.classList.remove("d-none");
+      unmuteIcon.classList.add("d-none");
     }
-  }
+  });
 }

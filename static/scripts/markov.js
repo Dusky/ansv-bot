@@ -14,90 +14,75 @@ function fetchAvailableModels() {
 }
 
 function generateMessage() {
-  const selectedModel = document.getElementById("modelSelector").value;
-  const messageContainer = document.getElementById("generatedMessageContainer");
-  fetch(`/generate-message/${selectedModel}`)
-      .then((response) => {
-          if (!response.ok) {
-              throw new Error(`HTTP error! status: ${response.status}`);
-          }
-          return response.json();
-      })
-      .then((data) => {
-          if (data.message) {
-              document.getElementById("generatedMessage").textContent = data.message;
-              messageContainer.classList.remove("d-none");
-          } else {
-              alert("Failed to generate message. No message returned from server.");
-          }
-      })
-      .catch((error) => {
-          console.error("Error generating message:", error);
-          alert(`Error generating message: ${error}`);
-      });
+  const modelSelect = document.getElementById('modelSelector');
+  const channelSelect = document.getElementById('channelForMessage');
+  const messageContainer = document.getElementById('generatedMessageContainer');
+  const messageElement = document.getElementById('generatedMessage');
+  
+  if (!modelSelect || !messageElement) {
+    console.error("Required elements not found for message generation");
+    return;
+  }
+  
+  // Show loading state
+  messageContainer.classList.remove('d-none');
+  messageElement.innerHTML = 'Generating message...';
+  
+  // Get selected values
+  const model = modelSelect.value;
+  const channel = channelSelect ? channelSelect.value : null;
+  
+  console.log(`Generating message with model: ${model}, channel: ${channel}`);
+  
+  fetch('/generate-message', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ model: model, channel: channel })
+  })
+  .then(response => {
+    if (!response.ok) {
+      throw new Error(`Failed to generate message: ${response.status}`);
+    }
+    return response.json();
+  })
+  .then(data => {
+    if (data.message) {
+      messageElement.textContent = data.message;
+    } else {
+      messageElement.textContent = 'Failed to generate message.';
+    }
+  })
+  .catch(error => {
+    console.error('Error:', error);
+    messageElement.textContent = 'Error generating message.';
+  });
 }
 
 function rebuildCacheForChannel(channelName) {
-    const rebuildButton = document.querySelector(`button[data-channel="${channelName}"]`);
-    if (rebuildButton) {
-        rebuildButton.disabled = true;
-        rebuildButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Rebuilding...';
-
-        fetch(`/rebuild-cache/${channelName}`, { method: 'POST' })
-            .then(response => {
-                console.log('Response received:', response); // Added for debugging
-                if (!response.ok) {
-                    throw new Error(`Failed to rebuild cache: ${response.statusText}`);
-                }
-                return response.json();
-            })
-            .then(data => {
-                console.log('Data:', data); // Added for debugging
-                alert(data.success ? `Cache rebuilt successfully for ${channelName}` : `Failed to rebuild cache for ${channelName}: ${data.message}`);
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                alert(`Error rebuilding cache for ${channelName}: ${error}`);
-            })
-            .finally(() => {
-                rebuildButton.disabled = false;
-                rebuildButton.textContent = 'Rebuild Cache';
-            });
-    } else {
-        console.error(`Rebuild button not found for channel: ${channelName}`);
-    }
-}
-
-/**
- * Send a Markov-generated message to a channel
- * @param {string} channelName - The channel to send the message to
- */
-function sendMarkovMessage(channelName) {
   // Show loading state
-  const button = document.querySelector(`button[data-channel="${channelName}"]`);
+  const button = document.querySelector(`button[data-channel="${channelName}"][data-action="rebuild"]`);
   if (button) {
     const originalText = button.textContent;
-    button.textContent = "Sending...";
+    button.textContent = "Building...";
     button.disabled = true;
     
-    // Call the API to send the message
-    fetch(`/send_markov_message/${channelName}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      }
+    // Call the API to rebuild the model - use the existing endpoint
+    fetch(`/rebuild-channel-model/${channelName}`, {
+      method: 'POST'
     })
     .then(response => response.json())
     .then(data => {
       if (data.success) {
-        showToast(`Message sent to ${channelName}`, 'success');
+        showToast(`Model for ${channelName} rebuilt successfully`, 'success');
       } else {
         showToast(`Failed: ${data.message}`, 'error');
       }
     })
     .catch(error => {
-      console.error('Error sending message:', error);
-      showToast('Error sending message', 'error');
+      console.error('Error rebuilding model:', error);
+      showToast('Error rebuilding model', 'error');
     })
     .finally(() => {
       // Restore button state
@@ -107,6 +92,55 @@ function sendMarkovMessage(channelName) {
       }
     });
   }
+}
+
+/**
+ * Send a Markov-generated message to a channel
+ * @param {string} channelName - The channel to send the message to
+ */
+function sendMarkovMessage(channelName) {
+  // Show loading state
+  const button = document.querySelector(`button[data-channel="${channelName}"]`);
+  if (!button) {
+    console.error(`Button for channel ${channelName} not found`);
+    return;
+  }
+
+  const originalText = button.textContent;
+  button.textContent = "Sending...";
+  button.disabled = true;
+  
+  console.log(`Sending message to channel: ${channelName}`);
+  
+  // Call the API to send the message
+  fetch(`/send_markov_message/${channelName}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    }
+  })
+  .then(response => {
+    if (!response.ok) {
+      throw new Error(`Failed to send message: ${response.status}`);
+    }
+    return response.json();
+  })
+  .then(data => {
+    if (data.success) {
+      showToast(`Message sent to ${channelName}`, 'success');
+    } else {
+      showToast(`Failed: ${data.message}`, 'error');
+    }
+  })
+  .catch(error => {
+    console.error('Error sending message:', error);
+    showToast('Error sending message', 'error');
+  })
+  .finally(() => {
+    // Restore button state
+    button.textContent = originalText;
+    button.disabled = false;
+  });
 }
 
 /**

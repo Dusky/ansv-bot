@@ -222,39 +222,20 @@ function generateMessage() {
 
 // Function to check bot status and update UI
 function checkBotStatus() {
-    fetch('/bot-status')  // Updated endpoint name
+    fetch('/bot_status')
         .then(response => response.json())
         .then(data => {
             const statusIndicator = document.getElementById('botStatusIndicator');
-            const controlButtons = document.querySelectorAll('.bot-control-btn');
-            const isRunning = data.status === 'running';
-            
             if (statusIndicator) {
-                if (isRunning) {
+                if (data.running) {
                     statusIndicator.innerHTML = '<span class="badge bg-success">Running</span>';
-                    // Enable control buttons that require a running bot
-                    controlButtons.forEach(btn => {
-                        if (btn.dataset.requireRunning === 'true') {
-                            btn.disabled = false;
-                        }
-                    });
                 } else {
                     statusIndicator.innerHTML = '<span class="badge bg-danger">Stopped</span>';
-                    // Disable control buttons that require a running bot
-                    controlButtons.forEach(btn => {
-                        if (btn.dataset.requireRunning === 'true') {
-                            btn.disabled = true;
-                        }
-                    });
                 }
             }
-            
-            // Update other UI elements that depend on bot status
-            updateButtonStates(isRunning);
         })
         .catch(error => {
             console.error('Error checking bot status:', error);
-            // Set status to unknown on error
             const statusIndicator = document.getElementById('botStatusIndicator');
             if (statusIndicator) {
                 statusIndicator.innerHTML = '<span class="badge bg-warning">Unknown</span>';
