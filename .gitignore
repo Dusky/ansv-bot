@@ -66,3 +66,5 @@ Thumbs.db
 
 # Dependency marker
 .deps_installed
+bot_heartbeat.json
+bot.pid
