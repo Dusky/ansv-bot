@@ -1,4 +1,3 @@
-
 import configparser
 
 from twitchio.ext import commands
@@ -12,7 +11,11 @@ RED = "\x1b[31m"
 GREEN = "\x1b[32m"
 PURPLE = "\x1b[35m"
 
-async def ansv_command(self, ctx, setting, new_value=None):
+async def ansv_command(self, ctx, setting=None, new_value=None, **kwargs):
+    if setting is None:
+        await ctx.send("ANSV Bot - A Not So Vanilla Twitch Bot")
+        return
+
     # Fetch channel-specific trusted users and owner
     conn = sqlite3.connect(self.db_file)
     c = conn.cursor()
@@ -61,9 +64,6 @@ async def ansv_command(self, ctx, setting, new_value=None):
         else:
             await ctx.send("Unable to generate a message at this time.")
 
-
-
-
     elif setting in ["start", "stop"]:
         # Get the bot owner's name from the configuration file
         config = configparser.ConfigParser()
@@ -101,7 +101,6 @@ async def ansv_command(self, ctx, setting, new_value=None):
 
         action = "enabled" if setting == "start" else "disabled"
         await ctx.send(f"Voice {action} in {target_channel}.")
-        
         
     elif setting in ["time", "lines"]:
         # Convert new_value to an integer
@@ -206,9 +205,6 @@ async def ansv_command(self, ctx, setting, new_value=None):
             else:
                 await ctx.send(f"Already in {new_value} or it's already in the database.")
 
-
-
-
     elif setting == "part":
         if ctx.author.name != self.owner:
             await ctx.send("You do not have permission to use this command.")
@@ -229,7 +225,6 @@ async def ansv_command(self, ctx, setting, new_value=None):
             else:
                 await ctx.send(f"The bot is not in channel: {new_value} or it's not in the database.")
 
-                
     elif setting == "voice_preset":
         # Get the bot owner's name from the configuration file
         config = configparser.ConfigParser()
@@ -309,7 +304,5 @@ async def ansv_command(self, ctx, setting, new_value=None):
 
         status_text = "enabled" if new_tts_status else "disabled"
         await ctx.send(f"TTS {status_text} for channel {target_channel}.")
-
-        conn.close()
-        # Build the model
+    # Build the model
     #self.text_model = markovify.Text(self.text)

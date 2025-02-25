@@ -115,6 +115,10 @@ class Bot(commands.Bot):
         
         self.start_time = time.time()
         
+        self.message_request_check = None
+        
+        self.message_request_check = self.loop.create_task(self.message_request_checker())
+        
     async def send_message_to_channel(self, channel_name, message):
         """Send a message to a specific channel."""
         # Check if channel starts with # (required for Twitch)
@@ -875,6 +879,103 @@ class Bot(commands.Bot):
                 json.dump(data, f)
         except Exception as e:
             print(f"Error updating heartbeat file: {e}")
+
+    async def check_message_requests(self):
+        """Check for message requests from the web interface"""
+        request_file = 'bot_message_request.json'
+        
+        if os.path.exists(request_file):
+            try:
+                with open(request_file, 'r') as f:
+                    import json
+                    data = json.load(f)
+                    
+                # Process the message request
+                if data['action'] == 'send_message':
+                    channel = data['channel']
+                    message = data['message']
+                    
+                    # Send the message
+                    await self.send_message_to_channel(channel, message)
+                    
+                    # Log the successful processing
+                    self.logger.info(f"{GREEN}Processed message request{RESET}: Sent to {PURPLE}#{channel}{RESET}")
+                    
+                # Remove the request file after processing
+                os.remove(request_file)
+            except Exception as e:
+                self.logger.error(f"Error processing message request: {e}")
+                
+                # Rename the file to avoid repeated errors
+                try:
+                    os.rename(request_file, f"{request_file}.error")
+                except:
+                    pass
+
+    async def message_request_checker(self):
+        """Periodically check for message requests"""
+        while True:
+            await self.check_message_requests()
+            await asyncio.sleep(2)  # Check every 2 seconds
+
+    async def handle_speak_command(self, ctx):
+        """Handle the !speak command with improved TTS processing"""
+        channel = ctx.channel.name
+        
+        try:
+            # Get the last message from this channel that wasn't a command
+            conn = sqlite3.connect(self.db_file)
+            c = conn.cursor()
+            c.execute("""
+                SELECT message FROM messages 
+                WHERE channel = ? AND NOT message LIKE '!%' 
+                ORDER BY timestamp DESC LIMIT 1
+            """, (channel,))
+            
+            result = c.fetchone()
+            conn.close()
+            
+            if not result:
+                await ctx.send("No recent messages to speak.")
+                return
+            
+            message_to_speak = result[0]
+            
+            # Check channel TTS settings
+            if not self.is_tts_enabled(channel):
+                await ctx.send("TTS is not enabled for this channel.")
+                return
+            
+            # Only attempt TTS if it's enabled globally
+            if not self.enable_tts:
+                await ctx.send("TTS is not currently enabled globally.")
+                return
+            
+            # Process the TTS with proper error handling
+            success, audio_file = await process_text(channel, message_to_speak)
+            
+            if success and audio_file:
+                # TTS was successful, log and notify
+                await ctx.send(f"Speaking the last message. Audio available at: {audio_file}")
+                
+                # Log the TTS usage in the database for tracking
+                try:
+                    conn = sqlite3.connect(self.db_file)
+                    c = conn.cursor()
+                    c.execute("""
+                        INSERT INTO tts_logs (timestamp, channel, message) 
+                        VALUES (?, ?, ?)
+                    """, (datetime.now().isoformat(), channel, message_to_speak))
+                    conn.commit()
+                    conn.close()
+                except Exception as e:
+                    print(f"Error logging TTS usage: {e}")
+            else:
+                # TTS failed, inform the user
+                await ctx.send("Sorry, there was an error generating the TTS audio.")
+        except Exception as e:
+            print(f"Error in speak command: {e}")
+            await ctx.send(f"Error: {str(e)}")
 
 
 

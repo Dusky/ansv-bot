@@ -4,76 +4,99 @@
 
 
 {% block content %}
-<div class="container mt-4">
-    <div id="botControlContent" class="shadow-lg p-3 mb-5 rounded">
+<div class="container my-4">
         <div class="row">
-            <div class="col">
-                <h2 class="mb-4">Bot Control</h2>
-                <form id="startBotForm" action="{{ url_for('start_bot') }}" method="post">
-                    <div class="form-check">
-                        <!-- Make checkbox interactive only when bot is not running -->
-                        <input class="form-check-input" type="checkbox" name="enable_tts" id="enableTtsCheckbox" {% if enable_tts %}checked{% endif %} {% if bot_running %}disabled{% endif %}>
-                        <label class="form-check-label" for="enableTtsCheckbox">
-                            Enable TTS
-                        </label>
+    <div class="col-md-12">
+      <div class="card border-primary shadow">
+        <div class="card-header bg-primary text-white">
+          <h4 class="mb-0"><i class="fas fa-robot me-2"></i>Bot Control Panel</h4>
+        </div>
+        <div class="card-body">
+          <!-- Bot Status Card -->
+          <div class="row mb-4">
+            <div class="col-md-6">
+              <div class="card h-100">
+                <div class="card-header">
+                  <h5 class="mb-0">Bot Status</h5>
+                </div>
+                <div class="card-body d-flex align-items-center">
+                  <div id="statusContainer" class="d-flex align-items-center">
+                    <div class="spinner-border text-primary me-3" role="status" id="statusSpinner">
+                      <span class="visually-hidden">Loading...</span>
                     </div>
-                    <button id="startBotButton" type="submit" class="btn btn-primary {% if bot_running %}disabled{% endif %}">
-                        {% if bot_running %}Running!{% else %}Start Bot{% endif %}
-                    </button>
-                    
-                </form>
-                <!-- Include Stop Bot Button only if the bot is running -->
-                {% if bot_running %}
-                <form action="{{ url_for('stop_bot') }}" method="post">
-                    <button type="submit" class="btn btn-danger mt-3">Stop Bot</button>
-                </form>
-
-                {% endif %}
+                    <div>
+                      <h3 class="mb-0" id="botStatusText">Checking status...</h3>
+                      <small class="text-muted" id="statusLastUpdated">Last updated: Just now</small>
+                    </div>
             </div>
-
         </div>
     </div>
 </div>
 
-<div class="card mb-4">
-    <div class="card-header bg-primary text-white">
-        <h5 class="mb-0"><i class="fas fa-comment-dots me-2"></i>Custom TTS Message</h5>
+            <div class="col-md-6">
+              <div class="card h-100">
+                <div class="card-header">
+                  <h5 class="mb-0">Runtime Options</h5>
     </div>
     <div class="card-body">
-        <div class="mb-3">
-            <label for="ttsChannel" class="form-label">Channel:</label>
-            <select class="form-select" id="ttsChannel">
-                <!-- Channels will be populated by JavaScript -->
-            </select>
+                  <form id="botOptionsForm" method="POST" action="{{ url_for('start_bot') }}">
+                    <div class="form-check form-switch mb-3">
+                      <input class="form-check-input" type="checkbox" id="enable_tts" name="enable_tts" {{ 'checked' if enable_tts else '' }}>
+                      <label class="form-check-label" for="enable_tts">Enable Text-to-Speech</label>
         </div>
-        <div class="mb-3">
-            <label for="ttsMessage" class="form-label">Message:</label>
-            <textarea class="form-control" id="ttsMessage" rows="3"></textarea>
-        </div>
-        <button class="btn btn-warning" onclick="sendCustomTTS()">
-            <i class="fas fa-bullhorn me-2"></i>Send TTS
+                    
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                      <button type="button" id="startBotBtn" class="btn btn-success" {{ 'disabled' if bot_status.running else '' }}>
+                        <i class="fas fa-play me-2"></i>Start Bot
+                      </button>
+                      <button type="button" id="stopBotBtn" class="btn btn-danger" {{ 'disabled' if not bot_status.running else '' }}>
+                        <i class="fas fa-stop me-2"></i>Stop Bot
         </button>
+                    </div>
+                  </form>
+                  <div id="botStartError" class="alert alert-danger mt-3" style="display: none; white-space: pre-wrap;"></div>
+                </div>
+              </div>
     </div>
 </div>
 
-<div class="card mt-4">
-    <div class="card-header bg-primary text-white">
-        <h5 class="mb-0"><i class="fas fa-history me-2"></i>Recent TTS Messages</h5>
+          <!-- Bot Channels -->
+          <div class="row">
+            <div class="col-md-12">
+              <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                  <h5 class="mb-0">Connected Channels</h5>
+                  <button id="refreshChannelsBtn" class="btn btn-sm btn-outline-primary">
+                    <i class="fas fa-sync-alt me-1"></i>Refresh
+                  </button>
     </div>
     <div class="card-body">
-        <table id="ttsTable" class="table table-striped">
+                  <div class="table-responsive">
+                    <table class="table table-striped table-hover">
             <thead>
                 <tr>
                     <th>Channel</th>
-                    <th>Time</th>
-                    <th>Message</th>
-                    <th>Audio</th>
+                          <th>Status</th>
+                          <th>TTS</th>
+                          <th>Messages Sent</th>
+                          <th>Last Activity</th>
+                          <th>Actions</th>
                 </tr>
             </thead>
-            <tbody>
-                <!-- Will be populated dynamically -->
+                      <tbody id="channelsTableBody">
+                        <tr>
+                          <td colspan="6" class="text-center">Loading channels...</td>
+                        </tr>
             </tbody>
         </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
     </div>
 </div>
 
@@ -81,82 +104,266 @@
 // Initialize Socket.IO connection
 const socketio = io();
 
-function populateChannels() {
+// Check bot status periodically
+function checkBotStatus() {
+  fetch('/bot-status')
+    .then(response => response.json())
+    .then(data => {
+      const statusSpinner = document.getElementById('statusSpinner');
+      const botStatusText = document.getElementById('botStatusText');
+      const statusLastUpdated = document.getElementById('statusLastUpdated');
+      const startBotBtn = document.getElementById('startBotBtn');
+      const stopBotBtn = document.getElementById('stopBotBtn');
+      
+      // Update the timestamp
+      statusLastUpdated.textContent = 'Last updated: ' + new Date().toLocaleTimeString();
+      
+      // Update status display
+      if (data.running) {
+        botStatusText.textContent = 'Running';
+        botStatusText.className = 'mb-0 text-success';
+        startBotBtn.disabled = true;
+        stopBotBtn.disabled = false;
+      } else {
+        botStatusText.textContent = 'Stopped';
+        botStatusText.className = 'mb-0 text-danger';
+        startBotBtn.disabled = false;
+        stopBotBtn.disabled = true;
+      }
+      
+      // Hide spinner
+      statusSpinner.style.display = 'none';
+      
+      // Reflect TTS status
+      const enableTtsCheckbox = document.getElementById('enable_tts');
+      if (enableTtsCheckbox && data.tts_enabled !== undefined) {
+        enableTtsCheckbox.checked = data.tts_enabled;
+      }
+    })
+    .catch(error => {
+      console.error('Error checking bot status:', error);
+      document.getElementById('botStatusText').textContent = 'Error';
+      document.getElementById('botStatusText').className = 'mb-0 text-warning';
+      document.getElementById('statusSpinner').style.display = 'none';
+    });
+}
+
+// Start the bot
+document.getElementById('startBotBtn').addEventListener('click', function() {
+  // Show loading state
+  this.disabled = true;
+  this.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Starting...';
+  
+  // Get TTS setting
+  const enableTts = document.getElementById('enable_tts').checked;
+  
+  fetch('/start_bot', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: `enable_tts=${enableTts ? 'on' : 'off'}`
+  })
+  .then(response => {
+    if (!response.ok) throw new Error('Failed to start bot');
+    return response.text();
+  })
+  .then(() => {
+    showToast('Bot started successfully', 'success');
+    setTimeout(checkBotStatus, 2000); // Check status after a delay
+    loadChannels(); // Refresh channel list
+  })
+  .catch(error => {
+    console.error('Error starting bot:', error);
+    showToast('Failed to start bot', 'error');
+    this.disabled = false;
+    this.innerHTML = '<i class="fas fa-play me-2"></i>Start Bot';
+  });
+});
+
+// Stop the bot
+document.getElementById('stopBotBtn').addEventListener('click', function() {
+  if (confirm('Are you sure you want to stop the bot?')) {
+    // Show loading state
+    this.disabled = true;
+    this.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Stopping...';
+    
+    fetch('/stop_bot', { method: 'POST' })
+      .then(response => {
+        if (!response.ok) throw new Error('Failed to stop bot');
+        return response.text();
+      })
+      .then(() => {
+        showToast('Bot stopped successfully', 'success');
+        setTimeout(checkBotStatus, 2000); // Check status after a delay
+        loadChannels(); // Refresh channel list
+      })
+      .catch(error => {
+        console.error('Error stopping bot:', error);
+        showToast('Failed to stop bot', 'error');
+        this.disabled = false;
+        this.innerHTML = '<i class="fas fa-stop me-2"></i>Stop Bot';
+      });
+  }
+});
+
+// Toggle TTS
+document.getElementById('enable_tts').addEventListener('change', function() {
+  if (document.getElementById('botStatusText').textContent === 'Running') {
+    fetch('/toggle_tts', { method: 'POST' })
+      .then(response => {
+        if (!response.ok) throw new Error('Failed to toggle TTS');
+        return response.text();
+      })
+      .then(() => {
+        const status = this.checked ? 'enabled' : 'disabled';
+        showToast(`TTS ${status} successfully`, 'success');
+      })
+      .catch(error => {
+        console.error('Error toggling TTS:', error);
+        showToast('Failed to toggle TTS', 'error');
+        // Revert checkbox state on error
+        this.checked = !this.checked;
+      });
+  }
+});
+
+// Refresh channels button
+document.getElementById('refreshChannelsBtn').addEventListener('click', function() {
+  this.disabled = true;
+  loadChannels();
+  setTimeout(() => { this.disabled = false; }, 2000);
+});
+
+// Check status on page load and regularly
+document.addEventListener('DOMContentLoaded', function() {
+  checkBotStatus();
+  loadChannels();
+  setInterval(checkBotStatus, 30000); // Check every 30 seconds
+});
+
+function loadChannels() {
+    const tableBody = document.getElementById('channelsTableBody');
+    
+    // Show loading state
+    tableBody.innerHTML = '<tr><td colspan="6" class="text-center">Loading channels...</td></tr>';
+    
     fetch('/get-channels')
         .then(response => response.json())
         .then(channels => {
-            const select = document.getElementById('ttsChannel');
-            select.innerHTML = channels.map(channel => 
-                `<option value="${channel[0]}">${channel[0]}</option>`
-            ).join('');
+        if (channels.length === 0) {
+          tableBody.innerHTML = '<tr><td colspan="6" class="text-center">No channels connected</td></tr>';
+          return;
+        }
+        
+        // Clear table
+        tableBody.innerHTML = '';
+        
+        // Add row for each channel
+        channels.forEach(channel => {
+          const row = document.createElement('tr');
+          
+          // Channel name with Twitch link
+          const nameCell = document.createElement('td');
+          const link = document.createElement('a');
+          link.href = `https://twitch.tv/${channel.name}`;
+          link.target = '_blank';
+          link.textContent = channel.name;
+          nameCell.appendChild(link);
+          
+          // Channel status
+          const statusCell = document.createElement('td');
+          const statusBadge = document.createElement('span');
+          statusBadge.className = `badge ${channel.connected ? 'bg-success' : 'bg-danger'}`;
+          statusBadge.textContent = channel.connected ? 'Connected' : 'Disconnected';
+          statusCell.appendChild(statusBadge);
+          
+          // TTS status
+          const ttsCell = document.createElement('td');
+          const ttsBadge = document.createElement('span');
+          ttsBadge.className = `badge ${channel.tts_enabled ? 'bg-success' : 'bg-secondary'}`;
+          ttsBadge.textContent = channel.tts_enabled ? 'Enabled' : 'Disabled';
+          ttsCell.appendChild(ttsBadge);
+          
+          // Messages sent
+          const messagesCell = document.createElement('td');
+          messagesCell.textContent = channel.messages_sent || '0';
+          
+          // Last activity
+          const activityCell = document.createElement('td');
+          activityCell.textContent = channel.last_activity || 'Never';
+          
+          // Actions
+          const actionsCell = document.createElement('td');
+          const joinBtn = document.createElement('button');
+          joinBtn.className = 'btn btn-sm btn-outline-primary me-1';
+          joinBtn.innerHTML = '<i class="fas fa-sign-in-alt me-1"></i>Join';
+          joinBtn.onclick = () => joinChannel(channel.name);
+          
+          const leaveBtn = document.createElement('button');
+          leaveBtn.className = 'btn btn-sm btn-outline-danger';
+          leaveBtn.innerHTML = '<i class="fas fa-sign-out-alt me-1"></i>Leave';
+          leaveBtn.onclick = () => leaveChannel(channel.name);
+          
+          actionsCell.appendChild(joinBtn);
+          actionsCell.appendChild(leaveBtn);
+          
+          // Add all cells to the row
+          row.appendChild(nameCell);
+          row.appendChild(statusCell);
+          row.appendChild(ttsCell);
+          row.appendChild(messagesCell);
+          row.appendChild(activityCell);
+          row.appendChild(actionsCell);
+          
+          // Add row to table
+          tableBody.appendChild(row);
         });
+      })
+      .catch(error => {
+        console.error('Error loading channels:', error);
+        tableBody.innerHTML = '<tr><td colspan="6" class="text-center text-danger">Failed to load channels</td></tr>';
+      });
 }
 
-function sendCustomTTS() {
-    const channel = document.getElementById('ttsChannel').value;
-    const message = document.getElementById('ttsMessage').value;
-    
-    if (!message) {
-        alert('Please enter a message');
-        return;
-    }
-
-    fetch('/trigger-tts', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({channel, message})
+function joinChannel(channelName) {
+    fetch(`/join-channel/${channelName}`, {
+      method: 'POST'
     })
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            alert('TTS message sent successfully!');
-            document.getElementById('ttsMessage').value = '';
+        showToast(`Joined channel: ${channelName}`, 'success');
+        loadChannels(); // Refresh the channels list
         } else {
-            alert('Error: ' + (data.error || 'Failed to send TTS'));
+        showToast(`Failed to join channel: ${data.message}`, 'error');
         }
     })
     .catch(error => {
-        console.error('Error:', error);
-        alert('Network error occurred while sending TTS');
+      console.error('Error joining channel:', error);
+      showToast('Error joining channel', 'error');
     });
 }
 
-// Populate channels on page load
-document.addEventListener('DOMContentLoaded', function() {
-    populateChannels();
-    // Also load latest TTS messages
-    fetch('/latest-messages')
+function leaveChannel(channelName) {
+    if (confirm(`Are you sure you want to leave the channel: ${channelName}?`)) {
+      fetch(`/leave-channel/${channelName}`, {
+        method: 'POST'
+      })
         .then(response => response.json())
         .then(data => {
-            updateTTSTable(data);
-        })
-        .catch(error => console.error('Error loading TTS messages:', error));
-});
-
-// Add this to your existing socket.io code
-socketio.on('new_tts_entry', function(data) {
-    // Refresh the table
-    fetch('/latest-messages')
-        .then(response => response.json())
-        .then(data => {
-            updateTTSTable(data);
-        });
-});
-
-function updateTTSTable(entries) {
-    const tbody = document.querySelector('#ttsTable tbody');
-    tbody.innerHTML = entries.map(entry => `
-        <tr>
-            <td>${entry.channel}</td>
-            <td>${new Date(entry.timestamp).toLocaleString()}</td>
-            <td>${entry.message}</td>
-            <td>
-                <audio controls>
-                    <source src="/tts-audio/${entry.file_path}" type="audio/wav">
-                </audio>
-            </td>
-        </tr>
-    `).join('');
+        if (data.success) {
+          showToast(`Left channel: ${channelName}`, 'success');
+          loadChannels(); // Refresh the channels list
+        } else {
+          showToast(`Failed to leave channel: ${data.message}`, 'error');
+        }
+      })
+      .catch(error => {
+        console.error('Error leaving channel:', error);
+        showToast('Error leaving channel', 'error');
+      });
+    }
 }
 </script>
 {% endblock %}

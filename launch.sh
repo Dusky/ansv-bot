@@ -421,11 +421,21 @@ EOF
                 ;;
         esac
         
+        # Download required NLTK resources
+        echo -e "${CYAN}📦 Downloading NLTK resources for TTS...${NC}"
+        python -c "import nltk; nltk.download('punkt')"
+        
         # Clean up
         rm "$TMP_REQ"
         
         check_tts_models
+        
+        # Download voice presets
+        download_voice_presets
     fi
+    
+    # Create a marker file to indicate dependencies were installed
+    touch .deps_installed
 }
 
 clean_install() {
@@ -477,6 +487,15 @@ model = BarkModel.from_pretrained('suno/bark-small', cache_dir='$TTS_MODELS_DIR'
 model._get_speaker_embedding('$preset')
 print('Voice preset downloaded successfully!')
 " || echo -e "${RED}Failed to download voice preset${NC}"
+}
+
+# Add standard voice presets to download during setup
+download_voice_presets() {
+    echo -e "${CYAN}🎤 Downloading standard voice presets...${NC}"
+    # Download standard presets
+    for preset in "v2/en_speaker_0" "v2/en_speaker_1" "v2/en_speaker_5" "v2/en_speaker_6" "v2/en_speaker_9"; do
+        download_voice_preset "$preset"
+    done
 }
 
 # Runtime Execution with Flair
