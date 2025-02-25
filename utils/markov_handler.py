@@ -1,6 +1,7 @@
 import os
 import markovify
 import logging
+import json
 
 
 class MarkovHandler:
@@ -52,19 +53,37 @@ class MarkovHandler:
 
 
 
-    def generate_message(self, channel_name):
-        """Generate a message from the model corresponding to the given channel."""
-        model = self.models.get(channel_name)
-        if model:
-            message = model.make_sentence()
-            if message:
-                self.logger.info(f"{message}")
-                return message
+    def generate_message(self, channel_name=None):
+        """Generate a message using the specified channel's model, or the general model if None"""
+        try:
+            if channel_name is None or channel_name == 'general':
+                # Use the general model
+                model_file = os.path.join(self.cache_directory, "general_markov_model.json")
+                model_name = "general_markov"
             else:
-                self.logger.warning(f"Failed to generate message for {channel_name}")
-        else:
-            self.logger.warning(f"No model found for channel: {channel_name}")
-        return None
+                # Use the channel-specific model
+                model_file = os.path.join(self.cache_directory, f"{channel_name}_model.json")
+                model_name = channel_name
+            
+            # Check if model exists
+            if not os.path.exists(model_file):
+                self.logger.error(f"Model file not found: {model_file}")
+                return None
+            
+            # Load the model
+            model = self.models.get(model_name)
+            if not model:
+                self.logger.info(f"Loading model: {model_name}")
+                with open(model_file, 'r') as f:
+                    model_data = json.load(f)
+                self.models[model_name] = model_data
+                model = model_data
+            
+            # Generate message
+            return self._generate_from_model(model)
+        except Exception as e:
+            self.logger.error(f"Error generating message: {e}")
+            return None
 
     def get_available_models(self):
         """Get a list of available models from the cache directory."""

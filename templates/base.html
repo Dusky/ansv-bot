@@ -26,6 +26,7 @@
   <script src="{{ url_for('static', filename='scripts/data_handler.js') }}"></script>
   <script src="https://cdn.socket.io/4.0.0/socket.io.min.js" crossorigin="anonymous"></script>
   <script src="{{ url_for('static', filename='scripts/notification.js') }}"></script>
+  <script src="{{ url_for('static', filename='scripts/stats.js') }}"></script>
   
   <script>
     function updateBotStatus() {
@@ -69,24 +70,19 @@
         <div class="collapse navbar-collapse" id="navbarNav">
           <ul class="navbar-nav me-auto mb-2 mb-lg-0">
             <li class="nav-item">
-              <a class="nav-link {{ 'active' if request.endpoint == 'main' else '' }}" id="mainTab" data-bs-toggle="tab"
-                href="{{ url_for('main') }}">Main</a>
+              <a class="nav-link {{ 'active' if request.endpoint == 'main' else '' }}" href="{{ url_for('main') }}">Main</a>
             </li>
             <li class="nav-item">
-              <a class="nav-link {{ 'active' if request.endpoint == 'settings' else '' }}" id="settingsTab"
-                data-bs-toggle="tab" href="{{ url_for('settings') }}">Settings</a>
+              <a class="nav-link {{ 'active' if request.endpoint == 'settings' else '' }}" href="{{ url_for('settings') }}">Settings</a>
             </li>
             <li class="nav-item">
-              <a class="nav-link {{ 'active' if request.endpoint == 'stats' else '' }}" id="statsTab"
-                data-bs-toggle="tab" href="{{ url_for('stats') }}">Brain</a>
+              <a class="nav-link {{ 'active' if request.endpoint == 'stats' else '' }}" href="{{ url_for('stats') }}">Brain</a>
             </li>
             <li class="nav-item">
-              <a class="nav-link {{ 'active' if request.endpoint == 'bot_control' else '' }}" id="botControlTab" data-bs-toggle="tab" href="{{ url_for('bot_control') }}">
+              <a class="nav-link {{ 'active' if request.endpoint == 'bot_control' else '' }}" href="{{ url_for('bot_control') }}">
                 Bot Control <i id="botStatusIcon" class="bi"></i>
-            </a>
-            
-            
-
+              </a>
+            </li>
           </ul>
 
 
