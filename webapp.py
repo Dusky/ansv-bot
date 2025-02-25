@@ -6,6 +6,7 @@ from flask import (
     make_response,
     url_for,
     redirect,
+    send_from_directory,
 )
 from flask_socketio import SocketIO
 from flask_socketio import emit, disconnect  # Add missing imports
@@ -654,10 +655,38 @@ def add_channel():
         conn.close()
 
 
-@app.route("/latest-messages")
-def latest_messages():
-    tts_files = get_last_10_tts_files_with_last_id(db_file)
-    return jsonify(format_data_for_frontend(tts_files))
+@app.route('/latest-messages', methods=['GET'])
+def get_latest_messages():
+    try:
+        conn = sqlite3.connect(db_file)
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        
+        # Get latest TTS messages from database
+        c.execute("""
+            SELECT channel, timestamp, voice_preset, file_path, message 
+            FROM tts_logs 
+            ORDER BY timestamp DESC 
+            LIMIT 10
+        """)
+        
+        rows = c.fetchall()
+        conn.close()
+        
+        # Format the data for the frontend
+        formatted_entries = []
+        for row in rows:
+            formatted_entries.append({
+                'channel': row['channel'],
+                'timestamp': row['timestamp'],
+                'voice_preset': row['voice_preset'],
+                'file_path': row['file_path'],
+                'message': row['message']
+            })
+            
+        return jsonify(formatted_entries)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route("/check-updates/<int:last_id>")
@@ -746,20 +775,26 @@ __all__ = ['app', 'socketio']
 
 @app.route('/trigger-tts', methods=['POST'])
 def trigger_tts():
-    data = request.json
-    channel = data.get('channel')
-    message = data.get('message')
-    
-    if not channel or not message:
-        return jsonify({'success': False, 'error': 'Missing channel or message'}), 400
-    
     try:
+        data = request.json
+        channel = data.get('channel')
+        message = data.get('message')
+        
+        if not channel or not message:
+            return jsonify({'success': False, 'error': 'Missing channel or message'}), 400
+        
         # Send message through normal bot flow
         coroutine = bot_instance.send_message_to_channel(channel, message)
         asyncio.run_coroutine_threadsafe(coroutine, bot_instance.loop)
         
         # Process TTS
-        tts_file = process_text(message, channel, db_file)
+        tts_file, new_id = process_text(message, channel, db_file)
+        
+        if not tts_file or not new_id:
+            raise Exception("TTS processing failed")
+        
+        # Notify all clients BEFORE returning
+        socketio.emit('new_tts_entry', {'id': new_id})
         
         return jsonify({
             'success': True,
@@ -767,8 +802,15 @@ def trigger_tts():
             'tts_file': tts_file,
             'new_id': new_id  # Return the database ID
         })
-        # Notify all clients
-        socketio.emit('new_tts_entry', {'id': new_id})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/tts-audio/<path:filename>')
+def serve_tts_audio(filename):
+    # Security check to prevent directory traversal
+    if '..' in filename or filename.startswith('/'):
+        return "Invalid file path", 400
+        
+    # Return the audio file
+    return send_from_directory('static/tts_output', filename)
 

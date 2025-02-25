@@ -24,6 +24,9 @@ MUSIC="🎵"
 VENV_DIR=".venv"
 CONFIG_FILE="settings.conf"
 EXAMPLE_CONFIG="settings.example.conf"
+TTS_MODELS_DIR="models/tts"
+TTS_OUTPUT_DIR="static/outputs"
+TTS_VOICES_DIR="voices"
 
 # ASCII Art Banner with Animation Frames
 print_banner() {
@@ -75,13 +78,17 @@ first_run_wizard() {
     read -p "$(echo -e ${ALIEN}" Your Twitch username? ➤ ")" owner
     read -p "$(echo -e ${GLOBE}" Channels to join (comma-separated)? ➤ ")" channels
     
-    sed -i.bak "
-        s/tmi_token = .*/tmi_token = oauth:your_token_here/
-        s/client_id = .*/client_id = your_client_id_here/
-        s/nickname = .*/nickname = $bot_name/
-        s/owner = .*/owner = $owner/
-        s/channels = .*/channels = $channels/
-    " "$CONFIG_FILE"
+    # Create config with proper sections
+    cat > "$CONFIG_FILE" << EOF
+[auth]
+tmi_token = oauth:your_token_here
+client_id = your_client_id_here
+nickname = $bot_name
+owner = $owner
+
+[channels]
+channels = $channels
+EOF
     
     echo -e "\n${PARTY} ${GREEN}All set! Let's get this party started!${NC}"
     first_run_dance
@@ -104,6 +111,8 @@ show_status() {
     echo -e "${ROCKET} Bot Running:    $(ps aux | grep [a]nsv.py | wc -l)"
     echo -e "${GLOBE} Web Interface:  $(netstat -tuln | grep ':5001' | wc -l)"
     echo -e "${MUSIC} TTS Enabled:    ${TTS:-false}"
+    echo -e "${MUSIC} Voice Models:   $(find "$HF_HOME/hub" -type d -name "snapshots" 2>/dev/null | wc -l)"
+    echo -e "${MUSIC} Voice Presets:  $(find "$TTS_VOICES_DIR" -name "*.npz" 2>/dev/null | wc -l)"
     echo -e "${BRAIN} Models Loaded:  $(ls cache/*.json 2>/dev/null | wc -l)"
     echo -e "${ROBOT} Messages in DB: $(sqlite3 messages.db "SELECT COUNT(*) FROM messages" 2>/dev/null)"
     echo -e "${TOOLS} Python Version: $(python3.11 --version 2>&1 | cut -d' ' -f2)"
@@ -176,10 +185,19 @@ start_bot() {
     [ "$WEB" = true ] && command+=" --web"
     [ "$TTS" = true ] && command+=" --tts"
     [ "$REBUILD" = true ] && command+=" --rebuild-cache"
+    if [ -n "$VOICE_PRESET" ]; then
+        command+=" --voice-preset $VOICE_PRESET"
+    fi
     
     kill $LOAD_PID
     echo -e "\n${GREEN}${FIRE} BLAST OFF! ${FIRE}${NC}"
+    trap 'echo "Caught signal, shutting down cleanly..."; kill -TERM $PID 2>/dev/null' INT TERM
     eval $command
+    EXIT_CODE=$?
+    if [ $EXIT_CODE -ne 0 ]; then
+        echo -e "${RED}Bot exited with error code $EXIT_CODE${NC}"
+    fi
+    exit $EXIT_CODE
 }
 
 # Helper Functions
@@ -216,47 +234,62 @@ dev_server() {
 
 # Main Execution
 parse_arguments() {
-    # If any arguments provided, use command-line mode
-    if [ $# -gt 0 ]; then
-        # First pass: process all flags
-        while [[ $# -gt 0 ]]; do
-            case $1 in
-                --web) WEB=true ;;
-                --tts) TTS=true ;;
-                --rebuild) REBUILD=true ;;
-                --dev) DEV=true ;;
-                --web-only) WEB_ONLY=true ;;
-                --clean) CLEAN=true ;;
-                -h|--help) show_help; exit 0 ;;
-                *) echo -e "${RED}Unknown option: $1${NC}"; exit 1 ;;
-            esac
-            shift
-        done
-        
-        # Second pass: execute commands based on flags
-        if [ "$CLEAN" = true ]; then
-            clean_install
-            # After clean install, continue with other commands
-            [ "$TTS" = true ] && TTS=true
-        fi
-        
-        # Handle post-clean operations
-        if [ "$DEV" = true ]; then
-            dev_server
-            exit 0
-        elif [ "$WEB_ONLY" = true ]; then
-            start_web
-            exit 0
-        elif [ "$CLEAN" = true ]; then
-            # If clean was only command, start normally
-            start_bot
-            exit 0
-        fi
-        start_bot
-    else
-        # No arguments - show interactive menu
-        interactive_menu
+    # Default values
+    WEB=false
+    TTS=false
+    REBUILD=false
+    DEV=false
+    WEB_ONLY=false
+    CLEAN=false
+    VOICE_PRESET=""
+    
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --web) WEB=true ;;
+            --tts) TTS=true ;;
+            --voice-preset)
+                VOICE_PRESET="$2"
+                shift 
+                ;;
+            --download-models) 
+                export HF_HOME="${PWD}/.hf_cache"
+                source $VENV_DIR/bin/activate
+                prepare_tts_directories
+                check_tts_models
+                download_voice_preset "v2/en_speaker_6"
+                echo -e "${GREEN}✅ Models downloaded successfully!${NC}"
+                exit 0 
+                ;;
+            --rebuild) REBUILD=true ;;
+            --dev) DEV=true ;;
+            --web-only) WEB_ONLY=true ;;
+            --clean) CLEAN=true ;;
+            -h|--help) show_help; exit 0 ;;
+            *) echo -e "${RED}Unknown option: $1${NC}"; exit 1 ;;
+        esac
+        shift
+    done
+    
+    # Second pass: execute commands based on flags
+    if [ "$CLEAN" = true ]; then
+        clean_install
+        # After clean install, continue with other commands
+        [ "$TTS" = true ] && TTS=true
     fi
+    
+    # Handle post-clean operations
+    if [ "$DEV" = true ]; then
+        dev_server
+        exit 0
+    elif [ "$WEB_ONLY" = true ]; then
+        start_web
+        exit 0
+    elif [ "$CLEAN" = true ]; then
+        # If clean was only command, start normally
+        start_bot
+        exit 0
+    fi
+    start_bot
 }
 
 show_help() {
@@ -267,6 +300,8 @@ show_help() {
     echo "${YELLOW}Options:${NC}"
     echo "  --web       : Enable web interface with bot"
     echo "  --tts       : Enable TTS functionality"
+    echo "  --voice-preset PRESET : Use specific voice preset (e.g., v2/en_speaker_6)"
+    echo "  --download-models : Only download TTS models and exit"
     echo "  --rebuild   : Rebuild Markov cache at startup"
     echo "  --dev       : Start web interface in development mode"
     echo "  --web-only  : Start web interface without bot"
@@ -275,6 +310,8 @@ show_help() {
     echo
     echo "${YELLOW}Examples:${NC}"
     echo "  ./launch.sh --web --tts      # Bot + Web + TTS"
+    echo "  ./launch.sh --tts --voice-preset v2/en_speaker_9  # Use specific voice"
+    echo "  ./launch.sh --download-models # Pre-download models"
     echo "  ./launch.sh --dev            # Dev server with hot reload"
 }
 
@@ -321,33 +358,56 @@ install_requirements() {
     export HF_HUB_DISABLE_PROGRESS_BARS=1
     export HF_HUB_DISABLE_IMPLICIT_TOKEN=1
     
+    # Ensure we're in the virtual environment
+    source $VENV_DIR/bin/activate
+    
     pip install -r requirements.txt
     
     if [ "$TTS" = true ]; then
         echo -e "${MUSIC} Installing TTS dependencies...${NC}"
+        prepare_tts_directories
+        
+        # Create a temporary requirements file with pinned versions to avoid dependency resolution issues
+        TMP_REQ=$(mktemp)
+        cat > "$TMP_REQ" << EOF
+accelerate==0.26.1
+transformers==4.36.2
+scipy==1.11.4
+numpy==1.26.2
+huggingface-hub==0.19.4
+soundfile==0.12.1
+nltk==3.8.1
+EOF
+
+        # Install dependencies with pinned versions first
+        echo -e "${CYAN}Installing core dependencies with pinned versions...${NC}"
+        pip install -r "$TMP_REQ" --no-cache-dir
+        
+        # Then install Bark from GitHub
+        echo -e "${CYAN}Installing Bark from GitHub...${NC}"
+        pip install --no-deps git+https://github.com/suno-ai/bark.git@main
+        
         # Platform-specific PyTorch installation
         case "$PLATFORM" in
             "macos")
                 echo "Installing PyTorch for macOS..."
-                pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
-                # Install Bark from GitHub
-                pip install git+https://github.com/suno-ai/bark.git@main
-                grep -v -E "nvidia-|triton" requirements-tts.txt | pip install --timeout=60 --retries 3 -r /dev/stdin
+                pip install torch==2.1.2 torchaudio==2.1.2 --index-url https://download.pytorch.org/whl/cpu
                 ;;
             "linux"|"windows")
                 if command -v nvidia-smi &> /dev/null; then
                     echo "Installing PyTorch with CUDA support..."
-                    pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121
-                    pip install git+https://github.com/suno-ai/bark.git@main
-                    pip install --timeout=60 --retries 3 -r requirements-tts.txt
+                    pip install torch==2.1.2 torchaudio==2.1.2 --index-url https://download.pytorch.org/whl/cu121
                 else
                     echo "Installing PyTorch CPU version..."
-                    pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
-                    pip install git+https://github.com/suno-ai/bark.git@main
-                    grep -v "nvidia-" requirements-tts.txt | pip install --timeout=60 --retries 3 -r /dev/stdin
+                    pip install torch==2.1.2 torchaudio==2.1.2 --index-url https://download.pytorch.org/whl/cpu
                 fi
                 ;;
         esac
+        
+        # Clean up
+        rm "$TMP_REQ"
+        
+        check_tts_models
     fi
 }
 
@@ -360,6 +420,46 @@ clean_install() {
     install_requirements
     export CLEAN_INSTALL_DONE=true
     echo -e "${GREEN}✅ Fresh environment created!${NC}"
+}
+
+prepare_tts_directories() {
+    echo -e "${CYAN}📂 Setting up TTS directories...${NC}"
+    mkdir -p "$TTS_MODELS_DIR"
+    mkdir -p "$TTS_OUTPUT_DIR"
+    mkdir -p "$TTS_VOICES_DIR"
+    
+    # Create channel-specific output directories from settings
+    if [ -f "$CONFIG_FILE" ]; then
+        channels=$(grep -A 1 "channels =" "$CONFIG_FILE" | tail -1 | tr -d ' ' | tr ',' ' ')
+        for channel in $channels; do
+            mkdir -p "$TTS_OUTPUT_DIR/$channel"
+        done
+    fi
+}
+
+check_tts_models() {
+    echo -e "${CYAN}🔍 Checking TTS models...${NC}"
+    
+    # Basic presence check
+    if [ ! -d "$HF_HOME/hub" ]; then
+        echo -e "${YELLOW}⚠️ No Hugging Face models found. First run will download models.${NC}"
+        echo -e "${YELLOW}   This may take a while (1-2GB). Get some coffee! ☕${NC}"
+    else
+        model_count=$(find "$HF_HOME/hub" -type d -name "snapshots" | wc -l)
+        echo -e "${GREEN}✅ Found $model_count cached model(s)${NC}"
+    fi
+}
+
+download_voice_preset() {
+    preset="$1"
+    echo -e "${CYAN}🎤 Downloading voice preset: $preset...${NC}"
+    
+    python -c "
+from transformers import BarkModel
+model = BarkModel.from_pretrained('suno/bark-small', cache_dir='$TTS_MODELS_DIR')
+model._get_speaker_embedding('$preset')
+print('Voice preset downloaded successfully!')
+" || echo -e "${RED}Failed to download voice preset${NC}"
 }
 
 # Runtime Execution with Flair
