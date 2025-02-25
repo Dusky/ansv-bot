@@ -68,49 +68,84 @@ function rebuildCacheForChannel(channelName) {
     }
 }
 
-
-function sendMarkovMessageToChannel(channelName) {
-    // Correctly select the specific button for the channel
-    const button = document.querySelector(`button[data-channel='${channelName}'][class*='send-message-btn']`);
-    if (!button) return; // Exit if button not found
-  
-    button.classList.add('in-countdown'); // Mark button as in countdown
+/**
+ * Send a Markov-generated message to a channel
+ * @param {string} channelName - The channel to send the message to
+ */
+function sendMarkovMessage(channelName) {
+  // Show loading state
+  const button = document.querySelector(`button[data-channel="${channelName}"]`);
+  if (button) {
+    const originalText = button.textContent;
+    button.textContent = "Sending...";
     button.disabled = true;
-    button.innerText = 'Sending...';
-  
+    
+    // Call the API to send the message
     fetch(`/send_markov_message/${channelName}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ channelName: channelName })
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      }
     })
-    .then(response => {
-      if (!response.ok) throw new Error("Network response was not ok");
-      return response.json();
-    })
+    .then(response => response.json())
     .then(data => {
-      let countdown = 5;
-      const intervalId = setInterval(() => {
-        if (countdown <= 0) {
-          clearInterval(intervalId);
-          button.classList.remove('in-countdown'); // Remove countdown marker
-          button.disabled = false;
-          button.innerText = 'Send Message';
-        } else {
-          button.innerText = `Wait (${countdown}s)`;
-          countdown -= 1;
-        }
-      }, 1000);
+      if (data.success) {
+        showToast(`Message sent to ${channelName}`, 'success');
+      } else {
+        showToast(`Failed: ${data.message}`, 'error');
+      }
     })
     .catch(error => {
-      console.error("Error:", error);
-      button.classList.remove('in-countdown'); // Ensure countdown marker is removed in error case
-      button.disabled = false;
-      button.innerText = 'Send Message';
+      console.error('Error sending message:', error);
+      showToast('Error sending message', 'error');
+    })
+    .finally(() => {
+      // Restore button state
+      if (button) {
+        button.textContent = originalText;
+        button.disabled = false;
+      }
     });
   }
+}
 
-
-
+/**
+ * Rebuild the Markov model for a specific channel
+ * @param {string} channelName - The channel to rebuild the model for
+ */
+function rebuildChannelModel(channelName) {
+  // Show loading state
+  const button = document.querySelector(`button[data-channel="${channelName}"][data-action="rebuild"]`);
+  if (button) {
+    const originalText = button.textContent;
+    button.textContent = "Building...";
+    button.disabled = true;
+    
+    // Call the API to rebuild the model
+    fetch(`/rebuild-channel-model/${channelName}`, {
+      method: 'POST'
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.success) {
+        showToast(`Model for ${channelName} rebuilt successfully`, 'success');
+      } else {
+        showToast(`Failed: ${data.message}`, 'error');
+      }
+    })
+    .catch(error => {
+      console.error('Error rebuilding model:', error);
+      showToast('Error rebuilding model', 'error');
+    })
+    .finally(() => {
+      // Restore button state
+      if (button) {
+        button.textContent = originalText;
+        button.disabled = false;
+      }
+    });
+  }
+}
 
 function rebuildAllCaches() {
   const rebuildAllButton = document.getElementById('rebuildAllCachesBtn');

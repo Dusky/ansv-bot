@@ -1,4 +1,8 @@
 function saveChannelSettings() {
+  if (!validateChannelForm()) {
+    return; // Stop if validation fails
+  }
+
   var selectedChannel = document.getElementById("channelSelect").value;
   var isAddChannel = selectedChannel === "add_channel";
   var channelName = isAddChannel
@@ -32,14 +36,24 @@ function saveChannelSettings() {
   };
 
   if (isAddChannel) {
-    addNewChannel(updatedData);
+    addNewChannel(updatedData, function() {
+      // Reload channel list without full page refresh
+      fetchChannels();
+      // Reset the form
+      document.getElementById("channelSelect").selectedIndex = 0;
+      checkForAddChannelOption(document.getElementById("channelSelect"));
+      
+      showToast('Channel added successfully!', 'success');
+    });
   } else {
-    updateChannelSettings(updatedData);
+    updateChannelSettings(updatedData, function() {
+      showToast('Settings saved successfully!', 'success');
+    });
   }
 }
 
 
-function updateChannelSettings(data) {
+function updateChannelSettings(data, callback) {
   fetch("/update-channel-settings", {
     method: "POST",
     headers: {
@@ -50,7 +64,12 @@ function updateChannelSettings(data) {
     .then((response) => response.json())
     .then((result) => {
       if (result.success) {
-        alert("Channel settings updated successfully.");
+        // Call callback instead of alert if provided
+        if (typeof callback === 'function') {
+          callback();
+        } else {
+          alert("Channel settings updated successfully.");
+        }
       } else {
         alert("Failed to update settings: " + result.message);
       }
@@ -67,7 +86,7 @@ function handleSaveResponse(data) {
     alert("Failed to save settings: " + data.message);
   }
 }
-function addNewChannel(data) {
+function addNewChannel(data, callback) {
   fetch("/add-channel", {
     method: "POST",
     headers: {
@@ -78,7 +97,12 @@ function addNewChannel(data) {
     .then((response) => response.json())
     .then((result) => {
       if (result.success) {
-        alert("Channel added: " + result.message);
+        // Call callback instead of alert if provided
+        if (typeof callback === 'function') {
+          callback();
+        } else {
+          alert("Channel added: " + result.message);
+        }
       } else {
         alert("Failed to add channel: " + result.message);
       }
@@ -144,33 +168,26 @@ function resetFormForNewChannel() {
 function fetchChannels() {
   fetch("/get-channels")
     .then((response) => response.json())
-    .then((data) => {
-      var channelSelect = document.getElementById("channelSelect");
-      channelSelect.innerHTML = ""; // Clear existing options
-
-      // Re-add the default 'Select a channel...' option
-      var defaultOption = document.createElement("option");
-      defaultOption.value = "";
-      defaultOption.text = "Select a channel...";
-      defaultOption.disabled = true;
-      defaultOption.selected = true;
-      channelSelect.appendChild(defaultOption);
-
-      // Append other channel options
-      data.forEach((channel) => {
-        var option = document.createElement("option");
-        option.value = channel[0];
-        option.text = channel[0];
-        channelSelect.appendChild(option);
-      });
-
-      // Add 'Add Channel' option
-      var addChannelOption = document.createElement("option");
-      addChannelOption.value = "add_channel";
-      addChannelOption.text = "Add Channel";
-      channelSelect.appendChild(addChannelOption);
+    .then((channels) => {
+      let channelSelect = document.getElementById("channelSelect");
+      if (channelSelect) {
+        // Clear existing options except the first two
+        while (channelSelect.options.length > 2) {
+          channelSelect.remove(2);
+        }
+        
+        // Add channel options
+        channels.forEach((channel) => {
+          let option = document.createElement("option");
+          option.value = channel[0];
+          option.text = channel[0];
+          channelSelect.add(option);
+        });
+      }
     })
-    .catch((error) => console.error("Error fetching channels:", error));
+    .catch((error) => {
+      console.error("Error fetching channels:", error);
+    });
 }
 
 
@@ -212,23 +229,87 @@ function fetchChannelSettings(channelName) {
 function checkForAddChannelOption(selectElement) {
   var addChannelDiv = document.getElementById("addChannelDiv");
   var channelConfigForm = document.getElementById("channelConfig");
-  var newChannelNameInput = document.getElementById("newChannelName"); // Get the new channel name input
-
+  
   if (selectElement.value === "add_channel") {
-    resetFormForNewChannel(); // Reset form fields for new channel
-    addChannelDiv.style.display = "block"; // Show the additional field for the new channel name
-    newChannelNameInput.style.display = "block"; // Ensure new channel name input is visible
-    channelConfigForm.style.display = "none"; // Hide the channel configuration form
+    // Show add channel form, hide config form
+    addChannelDiv.style.display = "block";
+    if (channelConfigForm) {
+      channelConfigForm.style.display = "none";
+    }
+  } else if (selectElement.value !== "") {
+    // Load channel config
+    addChannelDiv.style.display = "none";
+    
+    // Fetch channel settings
+    fetch("/get-channel-settings/" + selectElement.value)
+      .then(response => response.json())
+      .then(data => {
+        if (data.error) {
+          console.error("Error loading channel settings:", data.error);
+          return;
+        }
+        
+        // Populate the form with channel data
+        if (channelConfigForm) {
+          channelConfigForm.style.display = "block";
+          
+          // Set checkbox values
+          document.getElementById("ttsEnabled").checked = data.tts_enabled === 1;
+          document.getElementById("voiceEnabled").checked = data.voice_enabled === 1;
+          document.getElementById("joinChannel").checked = data.join_channel === 1;
+          document.getElementById("useGeneralModel").checked = data.use_general_model === 1;
+          
+          // Set text field values
+          document.getElementById("owner").value = data.owner || "";
+          document.getElementById("trustedUsers").value = data.trusted_users || "";
+          document.getElementById("ignoredUsers").value = data.ignored_users || "";
+          document.getElementById("linesBetweenMessages").value = data.lines_between_messages || 0;
+          document.getElementById("timeBetweenMessages").value = data.time_between_messages || 0;
+        }
+      })
+      .catch(error => {
+        console.error("Error fetching channel settings:", error);
+      });
   } else {
-    addChannelDiv.style.display = "none"; // Hide the additional field for the new channel name
-    newChannelNameInput.style.display = "none"; // Hide new channel name input
-    channelConfigForm.style.display = "block"; // Show the channel configuration form
-    fetchChannelSettings(selectElement.value); // Fetch settings for the selected channel
+    // No channel selected, hide both forms
+    addChannelDiv.style.display = "none";
+    if (channelConfigForm) {
+      channelConfigForm.style.display = "none";
+    }
   }
 }
 
 function handleError(error) {
   console.error("Error:", error);
   alert("An error occurred while saving settings.");
+}
+
+// Make sure this function is called on page load
+document.addEventListener("DOMContentLoaded", function() {
+  var channelSelect = document.getElementById("channelSelect");
+  if (channelSelect) {
+    fetchChannels();
+  }
+});
+
+function validateChannelForm() {
+  // Get form elements
+  const linesBetween = document.getElementById('linesBetweenMessages');
+  const timeBetween = document.getElementById('timeBetweenMessages');
+  
+  // Validate numeric inputs
+  if (linesBetween && isNaN(parseInt(linesBetween.value))) {
+    alert('Lines between messages must be a number');
+    linesBetween.focus();
+    return false;
+  }
+  
+  if (timeBetween && isNaN(parseInt(timeBetween.value))) {
+    alert('Time between messages must be a number');
+    timeBetween.focus();
+    return false;
+  }
+  
+  return true;
 }
 

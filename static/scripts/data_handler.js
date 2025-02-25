@@ -222,14 +222,15 @@ function generateMessage() {
 
 // Function to check bot status and update UI
 function checkBotStatus() {
-    fetch('/bot-status')
+    fetch('/bot-status')  // Updated endpoint name
         .then(response => response.json())
         .then(data => {
             const statusIndicator = document.getElementById('botStatusIndicator');
             const controlButtons = document.querySelectorAll('.bot-control-btn');
+            const isRunning = data.status === 'running';
             
             if (statusIndicator) {
-                if (data.status === 'running') {
+                if (isRunning) {
                     statusIndicator.innerHTML = '<span class="badge bg-success">Running</span>';
                     // Enable control buttons that require a running bot
                     controlButtons.forEach(btn => {
@@ -247,6 +248,9 @@ function checkBotStatus() {
                     });
                 }
             }
+            
+            // Update other UI elements that depend on bot status
+            updateButtonStates(isRunning);
         })
         .catch(error => {
             console.error('Error checking bot status:', error);
@@ -265,6 +269,33 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Then check every 10 seconds
     setInterval(checkBotStatus, 10000);
+});
+
+function showLoading() {
+  const overlay = document.getElementById('loadingOverlay');
+  if (overlay) overlay.style.display = 'flex';
+}
+
+function hideLoading() {
+  const overlay = document.getElementById('loadingOverlay');
+  if (overlay) overlay.style.display = 'none';
+}
+
+// Auto-refresh stats data periodically
+function setupStatsAutoRefresh() {
+  const statsContainer = document.getElementById('statsContainer');
+  if (statsContainer) {
+    // Initial load
+    loadStats();
+    
+    // Refresh every 2 minutes
+    setInterval(loadStats, 120000);
+  }
+}
+
+// Call this from your DOMContentLoaded event
+document.addEventListener('DOMContentLoaded', function() {
+  setupStatsAutoRefresh();
 });
 
 

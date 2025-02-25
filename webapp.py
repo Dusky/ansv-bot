@@ -309,8 +309,32 @@ def rebuild_general_cache_route():
 def set_theme(theme):
     try:
         app.logger.info(f"Setting theme to: {theme}")
-        resp = make_response(redirect(url_for("main")))
-        resp.set_cookie("theme", theme, max_age=30 * 24 * 60 * 60)
+        
+        # Map the theme parameter to a valid Bootswatch theme
+        valid_themes = {
+            'dark': 'darkly', 
+            'light': 'flatly',
+            'darkly': 'darkly',
+            'flatly': 'flatly',
+            'cyborg': 'cyborg',
+            'slate': 'slate',
+            'solar': 'solar',
+            'superhero': 'superhero',
+            'vapor': 'vapor'
+        }
+        
+        theme_to_set = valid_themes.get(theme, 'darkly')  # Default to darkly if invalid
+        
+        # Create a response
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            # For AJAX requests, return JSON
+            resp = jsonify({'success': True, 'theme': theme_to_set})
+        else:
+            # For direct requests, redirect to the main page
+            resp = make_response(redirect(url_for("main")))
+            
+        # Set the cookie in either case
+        resp.set_cookie("theme", theme_to_set, max_age=30 * 24 * 60 * 60)
         return resp
     except Exception as e:
         app.logger.error(f"Error in set_theme: {e}")
@@ -854,4 +878,40 @@ def serve_tts_audio(filename):
         
     # Return the audio file
     return send_from_directory('static/tts_output', filename)
+
+@app.route('/get-available-models')
+def get_available_models():
+    """Get a list of available Markov models"""
+    try:
+        # Get all models from the cache directory
+        models = []
+        if os.path.exists('cache'):
+            for file in os.listdir('cache'):
+                if file.endswith('_model.json'):
+                    model_name = file.replace('_model.json', '')
+                    if model_name != 'general_markov':  # Skip the general model
+                        models.append(model_name)
+        
+        return jsonify(models)
+    except Exception as e:
+        app.logger.error(f"Error getting available models: {e}")
+        return jsonify([])
+
+@app.route('/rebuild-channel-model/<channel_name>', methods=['POST'])
+def rebuild_channel_model(channel_name):
+    """Rebuild the Markov model for a specific channel"""
+    try:
+        app.logger.info(f"Rebuilding model for channel: {channel_name}")
+        
+        if markov_handler:
+            success = markov_handler.build_model_for_channel(channel_name)
+            if success:
+                return jsonify({'success': True, 'message': f'Model for {channel_name} rebuilt successfully'})
+            else:
+                return jsonify({'success': False, 'message': 'Failed to rebuild channel model'}), 400
+        else:
+            return jsonify({'success': False, 'message': 'Markov handler not initialized'}), 500
+    except Exception as e:
+        app.logger.error(f"Error rebuilding channel model: {e}")
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
 
