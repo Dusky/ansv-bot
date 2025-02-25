@@ -1,113 +1,25 @@
 # Configuration files
 settings.conf
-settings*.local.conf
+*.local.conf
 
-# Local databases
+# Databases
 *.db
 *.sqlite
+*.sqlite3
 
-# Virtual environments
-.venv/
-
-# IDE files
-.vscode/
-.idea/
-
-# Cache and logs
-__pycache__/
-*.log
-cache/
-models/
-
-*.pyc
-colors.json
-app.log
-messages.db
-settings.conf
-*.wav
-settings.conf
-logs
-cache
-env
-env\*
-logs/firestarman.txt
-logs/patbaer.txt
-.vscode/settings.json
-logs/firestarman.txt
-logs/misokoneko.txt
-logs/patstaresat.txt
-*.npz
-*.mp3
-voices/gets_hurt-24-0116-0130-08-SPK-en_female_inten.mp3_info.txt
-voices/oops_i_farted-24-0116-0152-44-SPK-en_female_inten.mp3_info.txt
-voices/taco_bell-24-0116-0124-31-SPK-en_speaker_9.mp3_info.txt
-voices/unsure_how_best-24-0116-0133-27-SPK-en_speaker_9.mp3_info.txt
-voices/æ-24-0124-1745-34-SPK-en_speaker_9.mp3_info.txt
-cache/aegies_model.json
-cache/batzooka_model.json
-cache/egancaerwyn_model.json
-cache/firestarman_model.json
-cache/general_markov_model.json
-cache/imyt_model.json
-cache/matthiasmythos_model.json
-cache/misokoneko_model.json
-cache/patbaer_model.json
-cache/patstaresat_model.json
-cache/ray_model.json
-cache/sad_compositions_model.json
-cache/saltybet_model.json
-cache/sefi_model.json
-cache/the_windbag_model.json
-cache/voidburger_model.json
-cache/zoasty_model.json
-logs/aegies.txt
-logs/batzooka.txt
-logs/egancaerwyn.txt
-logs/firestarman.txt
-logs/imyt.txt
-logs/matthiasmythos.txt
-logs/ray.txt
-logs/sad_compositions.txt
-logs/saltybet.txt
-logs/sefi.txt
-logs/the_windbag.txt
-logs/voidburger.txt
-logs/zoasty.txt
-settings.conf
-cache/general_markov_model.json
-env/bin/accelerate
-env/bin/accelerate-config
-env/bin/accelerate-estimate-memory
-env/bin/accelerate-launch
-env/bin/activate
-env/bin/activate.csh
-env/bin/activate.fish
-env/bin/Activate.ps1
-env/bin/coloredlogs
-env/bin/convert-caffe2-to-onnx
-env/bin/convert-onnx-to-caffe2
-env/bin/datasets-cli
-env/bin/f2py
-env/bin/flask
-env/bin/get_gprof
-cache/general_markov_model.json
-logs/firestarman.txt
-logs/imyt.txt
-cache/aegies_model.json
-cache/firestarman_model.json
-cache/imyt_model.json
-cache/patstaresat_model.json
-logs/imyt.txt
-
-# Dependency marker file
-.deps_installed
-logs/*.txt
 # Python cache files
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
+
+# Virtual environments
+.venv/
+env/
+venv/
+
+# Build and package files
 build/
 develop-eggs/
 dist/
@@ -124,25 +36,33 @@ wheels/
 .installed.cfg
 *.egg
 
-# Logs and databases
-*.log
-*.sqlite
-*.sqlite3
-*.db
-logs/
-
-# Cached models and outputs
-cache/
-.hf_cache/
-static/outputs/
-
 # IDE files
-.idea/
 .vscode/
+.idea/
 *.swp
 *.swo
+
+# Logs
+*.log
+logs/
+
+# Cache and models
+cache/
+models/
+.hf_cache/
+
+# Media files
+*.wav
+*.mp3
+*.npz
+voices/**/*.txt
+
+# Generated outputs
+static/outputs/
 
 # OS specific files
 .DS_Store
 Thumbs.db
-logs/firestarman.txt
+
+# Dependency marker
+.deps_installed

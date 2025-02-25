@@ -113,6 +113,8 @@ class Bot(commands.Bot):
         
         self._joined_channels = set()
         
+        self.start_time = time.time()
+        
     async def send_message_to_channel(self, channel_name, message):
         """Send a message to a specific channel."""
         # Check if channel starts with # (required for Twitch)
@@ -646,6 +648,17 @@ class Bot(commands.Bot):
         # Print status table
         await self.print_channel_status()
         
+        # Create PID file
+        try:
+            with open("bot.pid", "w") as f:
+                f.write(str(os.getpid()))
+        except Exception as e:
+            print(f"Error creating PID file: {e}")
+        
+        # Create initial heartbeat file and start heartbeat update task
+        self.update_heartbeat_file()
+        self.loop.create_task(self.heartbeat_task())
+        
         # Extra verification for channels of interest
         for channel in self.channels:
             if channel in self._joined_channels:
@@ -784,6 +797,12 @@ class Bot(commands.Bot):
         try:
             # Disconnect the bot from all channels
             await self.close()
+            
+            # Remove status files
+            for file in ["bot.pid", "bot_heartbeat.json"]:
+                if os.path.exists(file):
+                    os.remove(file)
+                
             # Perform any additional cleanup tasks, such as closing database connections or saving data
             print("Bot stopped successfully.")
         except Exception as e:
@@ -833,6 +852,29 @@ class Bot(commands.Bot):
             return False
         finally:
             conn.close()
+
+    async def heartbeat_task(self):
+        """Update the heartbeat file periodically."""
+        while True:
+            self.update_heartbeat_file()
+            await asyncio.sleep(30)  # Update every 30 seconds
+
+    def update_heartbeat_file(self):
+        """Write current bot status to heartbeat file."""
+        try:
+            import json
+            
+            data = {
+                "timestamp": time.time(),
+                "nick": self.nick,
+                "channels": list(self._joined_channels),
+                "uptime": time.time() - self.start_time
+            }
+            
+            with open("bot_heartbeat.json", "w") as f:
+                json.dump(data, f)
+        except Exception as e:
+            print(f"Error updating heartbeat file: {e}")
 
 
 

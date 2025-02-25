@@ -21,6 +21,7 @@ from threading import Thread, Lock
 import asyncio
 import logging
 from utils.tts import process_text
+import time
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('WEB_SECRET_KEY', 'default-insecure-key')  # Read from settings.conf
@@ -63,8 +64,48 @@ def send_markov_message(channel_name):
 
 @app.route('/bot_status')
 def bot_status():
-    global bot_running 
-    return jsonify({'running': bot_running})
+    """Check if the bot is running by looking for multiple signals"""
+    
+    try:
+        # Method 1: Check for PID file
+        pid_file = "bot.pid"
+        if os.path.exists(pid_file):
+            with open(pid_file, "r") as f:
+                pid = int(f.read().strip())
+                
+            # Check if process with this PID exists
+            try:
+                os.kill(pid, 0)  # Signal 0 doesn't kill the process, just checks if it exists
+                return jsonify({"status": "running", "pid": pid})
+            except OSError:
+                # Process not running, but PID file exists - stale file
+                pass
+        
+        # Method 2: Check for heartbeat file
+        heartbeat_file = "bot_heartbeat.json"
+        if os.path.exists(heartbeat_file):
+            with open(heartbeat_file, "r") as f:
+                import json
+                data = json.load(f)
+                
+                # Check if heartbeat is recent (within last 2 minutes)
+                if time.time() - data.get("timestamp", 0) < 120:
+                    return jsonify({"status": "running", "heartbeat": data})
+        
+        # Method 3: Try to check process by name (fallback)
+        import subprocess
+        result = subprocess.run(["pgrep", "-f", "python.*ansv.py"], capture_output=True, text=True)
+        
+        if result.returncode == 0:
+            pids = result.stdout.strip().split('\n')
+            if pids:
+                return jsonify({"status": "running", "pid": pids[0]})
+        
+        return jsonify({"status": "stopped"})
+    
+    except Exception as e:
+        print(f"Error checking bot status: {e}")
+        return jsonify({"status": "unknown", "error": str(e)})
 
 
 @app.route('/toggle_tts', methods=['POST'])
