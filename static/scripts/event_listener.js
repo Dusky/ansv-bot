@@ -42,6 +42,33 @@ document.addEventListener("DOMContentLoaded", function () {
 
   // Add keyboard shortcuts
   setupKeyboardShortcuts();
+
+  // Fix muteIcon/unmuteIcon null reference error 
+  // by adding proper null checks before accessing properties
+  const autoplayElement = document.getElementById("autoplay");
+  const muteIcon = document.getElementById("muteIcon");
+  const unmuteIcon = document.getElementById("unmuteIcon");
+  
+  // Set the UI based on stored preferences
+  const isMuted = localStorage.getItem("muteStatus") === "true";
+  
+  // Only attempt to modify elements if they exist
+  if (autoplayElement) {
+    autoplayElement.checked = !isMuted;
+  }
+  
+  // Update icons function
+  function updateIcons() {
+    if (muteIcon && unmuteIcon) {
+      muteIcon.classList.toggle('d-none', !isMuted);
+      unmuteIcon.classList.toggle('d-none', isMuted);
+    }
+  }
+  
+  // Call the function if elements exist
+  if (muteIcon || unmuteIcon) {
+    updateIcons();
+  }
 });
 
 // Function to set up event listeners for buttons
@@ -216,7 +243,9 @@ const unmuteIcon = document.getElementById("unmuteIcon");
 
 // Set the UI based on stored preferences
 const isMuted = localStorage.getItem("muteStatus") === "true";
-autoplayElement.checked = !isMuted;
+if (autoplayElement) {
+    autoplayElement.checked = !isMuted;
+}
 updateIcons(isMuted);
 
 autoplayElement.addEventListener("change", function () {

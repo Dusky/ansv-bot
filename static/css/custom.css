@@ -1,0 +1,42 @@
+/* Custom color classes for cards */
+.border-purple {
+    border-color: #6f42c1 !important;
+}
+
+.bg-purple {
+    background-color: #6f42c1 !important;
+    color: white !important;
+}
+
+/* Audio player styling */
+#audio-player {
+    width: 100%;
+    margin-top: 10px;
+}
+
+/* TTS message cards */
+.tts-message-card {
+    transition: all 0.2s ease;
+}
+
+.tts-message-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+}
+
+/* Status indicators */
+.status-indicator {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-right: 5px;
+}
+
+.status-online {
+    background-color: #28a745;
+}
+
+.status-offline {
+    background-color: #dc3545;
+} 

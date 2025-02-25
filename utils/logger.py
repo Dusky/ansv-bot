@@ -6,15 +6,20 @@ import os
 from .color_control import ColorManager 
 from logging.handlers import RotatingFileHandler
 
-YELLOW = "\x1b[33m" #xterm colors. dunno why tbh
+# ANSI color codes for consistent styling
+YELLOW = "\x1b[33m"
 RESET = "\x1b[0m"
 RED = "\x1b[31m"
 GREEN = "\x1b[32m"
 PURPLE = "\x1b[35m"
+CYAN = "\x1b[36m"
+BLUE = "\x1b[34m"
+BRIGHT_GREEN = "\x1b[92m"
+BRIGHT_RED = "\x1b[91m"
+BRIGHT_YELLOW = "\x1b[93m"
+BRIGHT_BLUE = "\x1b[94m"
 
-
-APP_LOG_FILE = 'app.log' 
-
+APP_LOG_FILE = 'app.log'
 
 class Logger:
     def __init__(self):
@@ -43,7 +48,7 @@ class Logger:
             # Add the handlers to the logger
             self.logger.addHandler(file_handler)
 
-            # If you have a custom handler, add it too
+            # Add the custom handler for colorized terminal output
             custom_handler = CustomHandler()
             custom_handler.setFormatter(formatter)
             self.logger.addHandler(custom_handler)
@@ -144,20 +149,62 @@ class Logger:
         except Exception as e:
             print(f"Failed to log sanitized message to {APP_LOG_FILE}: {str(e)}")
     
-    def log_warning(self, message): ## I AM NOT GOOD AT DEBUGGING LOOK AT THIS MESS
-        self.logger.warning(message)
+    def log_warning(self, message):
+        """Log a warning with consistent yellow styling"""
+        # Use the same two-tone style for warnings
+        parts = message.split(':', 1) if ':' in message else [message, '']
+        if len(parts) > 1:
+            formatted_msg = f"{YELLOW}{parts[0]}:{BRIGHT_YELLOW}{parts[1]}{RESET}"
+        else:
+            formatted_msg = f"{YELLOW}{message}{RESET}"
+        self.logger.warning(formatted_msg)
+    
+    def log_error(self, message):
+        """Log an error with consistent red styling"""
+        # Use the same two-tone style for errors
+        parts = message.split(':', 1) if ':' in message else [message, '']
+        if len(parts) > 1:
+            formatted_msg = f"{RED}{parts[0]}:{BRIGHT_RED}{parts[1]}{RESET}"
+        else:
+            formatted_msg = f"{RED}{message}{RESET}"
+        self.logger.error(formatted_msg)
+    
+    def log_success(self, message):
+        """Log a success message with green styling"""
+        # Special method for success messages like bot events
+        parts = message.split(':', 1) if ':' in message else [message, '']
+        if len(parts) > 1:
+            formatted_msg = f"{GREEN}{parts[0]}:{BRIGHT_GREEN}{parts[1]}{RESET}"
+        else:
+            formatted_msg = f"{GREEN}{message}{RESET}"
+        self.logger.info(formatted_msg)
+    
+    def log_event(self, event_type, details):
+        """Log a bot event with consistent styling"""
+        # For capturing important events like channel joins, messages, etc.
+        event_msg = f"{PURPLE}{event_type}{RESET}: {CYAN}{details}{RESET}"
+        self.logger.info(event_msg)
+        
+    def log_command(self, user, command, result=None):
+        """Log a command execution with consistent styling"""
+        # For tracking command usage with who used it and the result
+        user_colored = f"\x1b[38;5;{self.color_manager.get_user_color(user)}m{user}\x1b[0m"
+        cmd_msg = f"{BLUE}Command{RESET}: {user_colored} used {BRIGHT_BLUE}{command}{RESET}"
+        if result:
+            cmd_msg += f" → {result}"
+        self.logger.info(cmd_msg)
 
     def log_info(self, message, color=None):
-        if color:
-            message = f"{color}{message}{Fore.RESET}"
-        self.logger.info(message)
-
-    def log_error(self, message):
-        self.logger.error(message)
-
-    def info(self, message, color=None):
-        if color:
-            message = f"{color}{message}{Fore.RESET}"
+        """Log an info message with optional color"""
+        if color is None:
+            # Default two-tone style for info messages
+            parts = message.split(':', 1) if ':' in message else [message, '']
+            if len(parts) > 1:
+                message = f"{GREEN}{parts[0]}:{CYAN}{parts[1]}{RESET}"
+            else:
+                message = f"{GREEN}{message}{RESET}"
+        else:
+            message = f"{color}{message}{RESET}"
         self.logger.info(message)
 
     def print_message(self, message):
@@ -195,6 +242,35 @@ class Logger:
 #####################################################
 class CustomHandler(logging.StreamHandler):
     def emit(self, record):
-        if 'Successfully logged onto Twitch WS' in str(record.msg):
+        msg_str = str(record.msg)
+        
+        # Skip colorizing if the message already contains color codes
+        if '\x1b[' in msg_str:
+            super().emit(record)
+            return
+        
+        # Colorize common Twitch bot messages
+        if 'Successfully logged onto Twitch WS' in msg_str:
             record.msg = f"{GREEN}Successfully logged onto Twitch {PURPLE}Bot is now ready. {RESET}"
+        elif 'Connected to' in msg_str and 'channel' in msg_str:
+            # Format channel connection messages
+            record.msg = msg_str.replace('Connected to', f"{GREEN}Connected to{RESET}")
+            record.msg = record.msg.replace('channel', f"{PURPLE}channel{RESET}")
+        elif 'Disconnected from' in msg_str:
+            # Format channel disconnection messages
+            record.msg = msg_str.replace('Disconnected from', f"{RED}Disconnected from{RESET}")
+        elif 'Received message from' in msg_str:
+            # Format received message notifications
+            parts = msg_str.split(':', 1)
+            if len(parts) > 1:
+                record.msg = f"{BLUE}{parts[0]}:{CYAN}{parts[1]}{RESET}"
+        elif 'Sending message to' in msg_str:
+            # Format outgoing message notifications
+            parts = msg_str.split(':', 1)
+            if len(parts) > 1:
+                record.msg = f"{GREEN}Sending message to{PURPLE}{parts[1]}{RESET}"
+        elif 'Error' in msg_str or 'Failed' in msg_str:
+            # Format error messages
+            record.msg = f"{RED}{msg_str}{RESET}"
+            
         super().emit(record)

@@ -116,7 +116,7 @@ function sendMarkovMessage(channelName) {
   fetch(`/send_markov_message/${channelName}`, {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json',
+      'Content-Type': 'application/json'
     }
   })
   .then(response => {
@@ -127,9 +127,10 @@ function sendMarkovMessage(channelName) {
   })
   .then(data => {
     if (data.success) {
-      showToast(`Message sent to ${channelName}`, 'success');
+      showToast(`Message ${data.message.includes('request') ? 'queued' : 'sent'} to ${channelName}`, 'success');
     } else {
       showToast(`Failed: ${data.message}`, 'error');
+      console.error('Error sending message:', data.message);
     }
   })
   .catch(error => {
