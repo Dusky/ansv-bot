@@ -272,7 +272,7 @@ class Bot(commands.Bot):
                 is_joined = f"#{channel}" in self._joined_channels
                 join_status = f"{GREEN}joined{RESET}" if is_joined else f"{RED}not joined{RESET}"
                 
-                # Format time and lines settings - use actual values not "N/A"
+                # Format time and lines settings
                 time_status = f"{GREEN}{time_between}{RESET}" if time_between > 0 else f"{RED}0{RESET}"
                 lines_status = f"{GREEN}{lines_between}{RESET}" if lines_between > 0 else f"{RED}0{RESET}"
                 
@@ -632,7 +632,6 @@ class Bot(commands.Bot):
 
     async def event_ready(self):
         """Handle the bot ready event."""
-        print(f"Successfully logged onto Twitch Bot is now ready. ")
         print(f"Bot is ready! | {self.nick}")
         
         # Initialize channel configs
@@ -647,11 +646,12 @@ class Bot(commands.Bot):
         # Print status table
         await self.print_channel_status()
         
-        # Extra verification for firestarman
-        if "#firestarman" in self._joined_channels:
-            print(f"{GREEN}✓ Successfully joined #firestarman channel!{RESET}")
-        else:
-            print(f"{RED}✗ Failed to join #firestarman channel - will retry in next periodic check{RESET}")
+        # Extra verification for channels of interest
+        for channel in self.channels:
+            if channel in self._joined_channels:
+                print(f"{GREEN}✓ Successfully joined {channel} channel!{RESET}")
+            else:
+                print(f"{RED}✗ Failed to join {channel} channel - will retry in next periodic check{RESET}")
 
     def get_user_color(self, username):
         """Get a consistent color number for a user."""
