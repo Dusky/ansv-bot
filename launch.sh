@@ -167,16 +167,33 @@ interactive_menu() {
     done
 }
 
-# Let's add some fun to existing functions
+# Add this function near the top with other helper functions
+need_dependencies_check() {
+    # Create a marker file when dependencies are installed
+    local DEPS_MARKER=".deps_installed"
+    
+    # If marker doesn't exist or is older than 7 days, return true (need check)
+    if [ ! -f "$DEPS_MARKER" ] || [ $(find "$DEPS_MARKER" -mtime +7 -print 2>/dev/null | wc -l) -gt 0 ]; then
+        return 0 # true, need to check deps
+    else
+        return 1 # false, no need to check deps
+    fi
+}
+
+# Then modify the start_bot function
 start_bot() {
     echo -e "\n${GREEN}${ROCKET} Launch sequence initiated! ${ROCKET}${NC}"
     show_loading &
     LOAD_PID=$!
     
-    # Only check deps if not coming from clean install
-    if [ -z "$CLEAN_INSTALL_DONE" ]; then
+    # Only check deps if not coming from clean install and deps need checking
+    if [ -z "$CLEAN_INSTALL_DONE" ] && need_dependencies_check; then
         check_dependencies
         install_requirements
+        # Create or update the deps marker file
+        touch .deps_installed
+    else
+        echo -e "${GREEN}Using existing dependencies${NC}"
     fi
     
     source $VENV_DIR/bin/activate
@@ -468,4 +485,12 @@ check_venv
 check_config
 [ ! -f "$CONFIG_FILE" ] && first_run_wizard
 check_security
-parse_arguments "$@" 
+
+# Check if arguments were provided
+if [ $# -eq 0 ]; then
+    # No arguments, show interactive menu
+    interactive_menu
+else
+    # Parse command line arguments
+    parse_arguments "$@"
+fi 
