@@ -15,8 +15,9 @@ import numpy as np
 VOICES_DIRECTORY = './voices'
 db_file = 'messages.db'
 
-
-
+# Define original stdout and stderr globals
+original_stdout = sys.stdout
+original_stderr = sys.stderr
 
 def fetch_latest_message():
     try:
@@ -34,12 +35,15 @@ def fetch_latest_message():
 
 def get_voice_preset(channel_name, db_file):
     try:
-        #print(f"Getting voice preset for channel: {channel_name}")
+        # Check for default preset from command line
+        default_preset = os.environ.get("DEFAULT_VOICE_PRESET")
+        if default_preset:
+            return default_preset
+        
         conn = sqlite3.connect(db_file)
         c = conn.cursor()
         c.execute("SELECT voice_preset FROM channel_configs WHERE channel_name = ?", (channel_name,))
         result = c.fetchone()
-        #print(f"Voice preset for channel {channel_name}: {result[0] if result else 'v2/en_speaker_5'}")
         return result[0] if result else 'v2/en_speaker_5'
     finally:
         conn.close()
@@ -73,7 +77,7 @@ def process_text_thread(input_text, channel_name, db_file='./messages.db'):
     silence_output()
 
     try:
-        process_text(input_text, channel_name, db_file)
+        return process_text(input_text, channel_name, db_file)
     finally:
         # Restore original stdout and stderr
         sys.stdout = original_stdout
@@ -95,27 +99,30 @@ def load_custom_voice(voice_name):
 
 
 def process_text(input_text, channel_name, db_file='./messages.db'):
-    # Initialize TTS and other setups
-    if 'AutoProcessor' not in globals():
-        initialize_tts()
-
-    # Define message_id at the start of the function
-    message_id = int(time.time())
-
-    # Get voice preset or custom voice
-    voice_preset = get_voice_preset(channel_name, db_file)
-    custom_voice_data = load_custom_voice(voice_preset)
-
-    # Generate file name and output directory
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    filename = f"{channel_name}-{timestamp}.wav"
-    channel_directory = os.path.join("static/outputs", channel_name)
-    if not os.path.exists(channel_directory):
-        os.makedirs(channel_directory)
-
-    full_path = os.path.join(channel_directory, filename)
-
     try:
+        voice_preset = get_voice_preset(channel_name, db_file)
+        if not voice_preset:
+            voice_preset = 'v2/en_speaker_5'  # Default fallback
+        
+        # Initialize TTS and other setups
+        if 'AutoProcessor' not in globals():
+            initialize_tts()
+
+        # Define message_id at the start of the function
+        message_id = int(time.time())
+
+        # Get voice preset or custom voice
+        custom_voice_data = load_custom_voice(voice_preset)
+
+        # Generate file name and output directory
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        filename = f"{channel_name}-{timestamp}.wav"
+        channel_directory = os.path.join("static/outputs", channel_name)
+        if not os.path.exists(channel_directory):
+            os.makedirs(channel_directory)
+
+        full_path = os.path.join(channel_directory, filename)
+
         # TTS processing
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         processor = AutoProcessor.from_pretrained("suno/bark-small")
@@ -153,15 +160,13 @@ def process_text(input_text, channel_name, db_file='./messages.db'):
         new_id = c.lastrowid  # Get the ID of the new entry
         conn.close()
         
-        notify_new_audio_available(channel_name, message_id)
+        notify_new_audio_available(channel_name, new_id)
 
-        return full_path
+        return full_path, new_id  # Return both values
 
     except Exception as e:
         print(f"[TTS] An error occurred during TTS processing: {e}")
-        return None
-
-
+        return None, None
 
 
 def split_sentence(sentence, max_length):
@@ -178,11 +183,8 @@ def split_sentence(sentence, max_length):
     
 def start_tts_processing(input_text, channel_name, db_file='./messages.db'):
     tts_thread = threading.Thread(target=process_text_thread, args=(input_text, channel_name, db_file), daemon=True)
-
     tts_thread.start()
 
-
-    
 def notify_new_audio_available(channel_name, message_id):
     # Define the URL of the Flask endpoint
     url = 'http://localhost:5001/new-audio-notification'  # Update with the correct URL if needed

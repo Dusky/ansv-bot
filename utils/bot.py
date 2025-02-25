@@ -49,31 +49,32 @@ channels = config["settings"]["channels"].split(",")
 class Bot(commands.Bot):
     def __init__(
         self,
-        irc_token,
+        token,
         client_id,
         nick,
         prefix,
-        trusted_users,
-        ignored_users,
-        owner,
         initial_channels,
+        db_file,
         rebuild_cache=False,
         enable_tts=False
     ):
         super().__init__(
-            token=irc_token,
+            token=token,
             client_id=client_id,
             nick=nick,
             prefix=prefix,
             initial_channels=initial_channels,
         )
+        
+        # Initialize other variables
+        print("Initializing Bot class...")
         self.prefix = prefix
         self.my_logger = Logger()
         self.my_logger.setup_logger()
-        self.owner = owner
+        self.owner = None
         self.channels = initial_channels
-        self.trusted_users = trusted_users
-        self.ignored_users = ignored_users
+        self.trusted_users = []
+        self.ignored_users = []
         self.chat_line_count = 0
         self.last_message_time = time.time()
         self.user_colors = {}
@@ -90,9 +91,14 @@ class Bot(commands.Bot):
             channel: time.time() for channel in self.channels
         }
         self.channel_settings = {}  # Initialize the channel settings dictionary
+        self.db_file = db_file
         self.load_channel_settings()  # Populate channel settings
         self.rebuild_cache = rebuild_cache
-        self.db_file = "messages.db"
+        
+        # Add cache update threshold setting
+        self.cache_update_threshold = 3600 * 24  # 24 hours by default
+        self.cache_build_times = {}  # Initialize as empty dict
+        
         self.load_text_and_build_model()
         self.first_model_update = True
         
@@ -104,17 +110,60 @@ class Bot(commands.Bot):
         if self.enable_tts:
             from utils import tts
             tts.initialize_tts()
-            
-            
+        
+        self._joined_channels = set()
+        
     async def send_message_to_channel(self, channel_name, message):
-        channel = self.get_channel(channel_name)
+        """Send a message to a specific channel."""
+        # Check if channel starts with # (required for Twitch)
+        if not channel_name.startswith('#'):
+            channel_name = f'#{channel_name}'
+            
+        # Make sure we're in the channel
+        if channel_name not in self._joined_channels:
+            print(f"Joining channel {channel_name} before sending message...")
+            await self.join_channel(channel_name)
+            
+        # Send the message
+        channel = self.get_channel(channel_name.lstrip('#'))  # TwitchIO gets channels without #
         if channel:
-            asyncio.run_coroutine_threadsafe(channel.send(message), self.loop)
+            await channel.send(message)
+            print(f"Message sent to {channel_name}: {message}")
+            return True
+        else:
+            print(f"Failed to find channel {channel_name}")
+            return False
 
+    async def join_channel(self, channel_name):
+        """Join a channel with proper formatting and error handling."""
+        try:
+            # Ensure channel has # prefix for our tracking
+            if not channel_name.startswith('#'):
+                channel_name = f'#{channel_name}'
+            
+            # TwitchIO join_channels expects channel names with # prefix
+            # But it actually needs the channel name without # for some operations
+            clean_name = channel_name.lstrip('#')
+            
+            # Join the channel
+            await self.join_channels([clean_name])
+            
+            # Add to our tracking sets
+            self._joined_channels.add(channel_name)
+            
+            # Make sure it's in self.channels for other parts of the code
+            if channel_name not in self.channels:
+                self.channels.append(channel_name)
+            
+            print(f"{GREEN}Successfully joined channel: {channel_name}{RESET}")
+            return True
+        except Exception as e:
+            print(f"{RED}Failed to join channel {channel_name}: {e}{RESET}")
+            return False
 
     def load_channel_settings(self):
         self.channel_settings = {}
-        conn = sqlite3.connect(db_file)
+        conn = sqlite3.connect(self.db_file)
         c = conn.cursor()
 
         # Load channel-specific settings
@@ -131,68 +180,122 @@ class Bot(commands.Bot):
             }
         conn.close()
 
-    async def check_and_join_new_channels(self):
-        """Check the database for new channels to join."""
+    async def check_and_join_channels(self):
+        """Join all channels marked for joining in the database."""
         try:
             conn = sqlite3.connect(self.db_file)
             c = conn.cursor()
             c.execute("SELECT channel_name FROM channel_configs WHERE join_channel = 1")
-            all_channels = set(row[0] for row in c.fetchall())
+            channels_to_join = [row[0] for row in c.fetchall()]
             conn.close()
-
-            new_channels = all_channels - set(self.channels)
-
-            for channel in new_channels:
-                joined = await self.try_join_channel(channel)
-                if joined:
-                    self.channels.append(channel)
-                    print(f"Joined new channel: {channel}")
-
+            
+            print(f"Found {len(channels_to_join)} channels to join from database")
+            
+            for channel in channels_to_join:
+                # Make sure channel has # prefix
+                channel_name = f"#{channel.lstrip('#')}"
+                if channel_name not in self._joined_channels:
+                    await self.join_channel(channel_name)
         except Exception as e:
-            print(f"Error checking for new channels: {e}")
-
-    def start_periodic_channel_check(self, interval=3600):
-        """Start a periodic check for new channels."""
-        def channel_check():
-            asyncio.run(self.check_and_join_new_channels())
-            threading.Timer(interval, channel_check).start()
-
-        threading.Timer(interval, channel_check).start()
-
-    def should_update_cache(self, channel_name, last_build_time):
-        # Immediately return True if rebuild_cache is set
-        if self.rebuild_cache:
-            return True
-
-        current_time = time.time()
-        # If last_build_time is None, which means the file was never built, we need to update
-        if last_build_time is None:
-            return True
-
-        # Update cache if it is older than the threshold
-        return current_time - last_build_time > self.cache_update_threshold
-
-
-    async def try_join_channel(self, channel_name):
-        try:
-            await self.join_channels([channel_name])
-            print(f"{GREEN}Joined channel: {channel_name}{RESET}")  # Add this line
-            return True
-        except Exception as e:
-            print(f"Failed to join channel {channel_name}: {e}")
-            return False
-
+            print(f"Error joining channels: {e}")
     
-    def load_last_cache_build_times(self):
-        # This method should load the last cache build times from a file or database
-        # For demonstration purposes, we'll assume it's stored in a JSON file
-        try:
-            with open('cache_build_times.json', 'r') as file:
-                return json.load(file)
-        except FileNotFoundError:
-            # If the file does not exist, return an empty dictionary
-            return {}
+    async def setup_periodic_channel_check(self, interval=300):  # 5 minutes
+        """Set up a periodic task to check for new channels."""
+        async def check_periodically():
+            while True:
+                await asyncio.sleep(interval)
+                await self.check_and_join_channels()
         
+        # Start the periodic task
+        self.loop.create_task(check_periodically())
+        print(f"Started periodic channel check (every {interval} seconds)")
+    
+    def ensure_channel_configs(self):
+        """Make sure all channels have config entries in the database with proper defaults."""
+        conn = sqlite3.connect(self.db_file)
+        c = conn.cursor()
+        
+        for channel in self.channels:
+            # Remove # for database storage
+            clean_channel = channel.lstrip('#')
+            
+            # Check if config exists
+            c.execute("SELECT 1 FROM channel_configs WHERE channel_name = ?", (clean_channel,))
+            if not c.fetchone():
+                print(f"Creating config for channel: {clean_channel}")
+                c.execute('''
+                    INSERT INTO channel_configs 
+                    (channel_name, tts_enabled, voice_enabled, join_channel, owner, 
+                     trusted_users, ignored_users, use_general_model, lines_between_messages, time_between_messages)
+                    VALUES (?, 0, 1, 1, ?, '', '', 1, 50, 15)
+                ''', (clean_channel, clean_channel))
+        
+        conn.commit()
+        conn.close()
+        
+        # Reload channel settings after updating configs
+        self.load_channel_settings()
+    
+    async def print_channel_status(self):
+        """Print a status table showing all channels and their configurations."""
+        try:
+            conn = sqlite3.connect(self.db_file)
+            c = conn.cursor()
+            
+            table_data = []
+            c.execute('''
+                SELECT channel_name, owner, trusted_users, ignored_users, voice_enabled, tts_enabled, 
+                       join_channel, time_between_messages, lines_between_messages, use_general_model
+                FROM channel_configs
+            ''')
+            
+            for row in c.fetchall():
+                channel, owner, trusted, ignored, voice, tts, join_enabled, time_between, lines_between, use_general = row
+                
+                # Format owner with color
+                owner_display = f"\033[38;5;{self.get_user_color(owner)}m{owner}\033[0m" if owner else "None"
+                
+                # Format trusted users with colors
+                if trusted and trusted.strip():
+                    trusted_display = ", ".join(
+                        f"\033[38;5;{self.get_user_color(user.strip())}m{user.strip()}\033[0m"
+                        for user in trusted.split(",") if user.strip()
+                    )
+                else:
+                    trusted_display = ""
+                    
+                # Format settings
+                voice_status = f"{GREEN}enabled{RESET}" if voice else f"{RED}disabled{RESET}"
+                tts_status = f"{GREEN}enabled{RESET}" if tts else f"{RED}disabled{RESET}"
+                
+                # Check if channel is actually joined
+                is_joined = f"#{channel}" in self._joined_channels
+                join_status = f"{GREEN}joined{RESET}" if is_joined else f"{RED}not joined{RESET}"
+                
+                # Format time and lines settings - use actual values not "N/A"
+                time_status = f"{GREEN}{time_between}{RESET}" if time_between > 0 else f"{RED}0{RESET}"
+                lines_status = f"{GREEN}{lines_between}{RESET}" if lines_between > 0 else f"{RED}0{RESET}"
+                
+                # Add to table
+                table_data.append([
+                    f"\033[38;5;{self.get_channel_color(channel)}m#{channel}\033[0m", 
+                    owner_display,
+                    trusted_display,
+                    voice_status,
+                    tts_status,
+                    join_status,
+                    time_status,
+                    lines_status,
+                ])
+            
+            conn.close()
+            
+            headers = ["Channel", "Owner", "Trusted Users", "Voice", "TTS", "Autojoin", "Time", "Lines"]
+            print(tabulate(table_data, headers=headers, tablefmt="pretty"))
+        
+        except Exception as e:
+            print(f"Error printing channel status: {e}")
+
     def load_text_and_build_model(self, create_individual_caches=False):
         directory = "logs/"
         cache_directory = "cache/"
@@ -204,7 +307,7 @@ class Bot(commands.Bot):
         files_data = []  # Initialize files_data list here
 
         # Load or initialize last cache build times
-        last_cache_build_times = self.load_last_cache_build_times()
+        self.cache_build_times = self.load_last_cache_build_times()
 
         line_threshold = 50  # Threshold for individual model creation
         # Connect to the SQLite database to fetch valid channels
@@ -226,25 +329,30 @@ class Bot(commands.Bot):
 
                     # Check if individual cache should be created
                     if channel_name in valid_channels and line_count >= line_threshold and create_individual_caches:
-                        channel_model = markovify.Text(file_text)
-                        self.models[channel_name] = channel_model
                         cache_file_path = os.path.join(cache_directory, f"{channel_name}_model.json")
-                        # Always write to cache file
-                        with open(cache_file_path, 'w') as cache_file:
-                            cache_file.write(channel_model.to_json())
-                        cache_status = f"{GREEN}Updated{RESET}"
+                        cache_status = self.create_channel_model(channel_name, file_text, cache_file_path)
                     else:
                         cache_status = f"{RED}Unchanged{RESET}"
 
-                    files_data.append([channel_name, f"{line_count:,}", cache_status, cache_file_path if cache_status == f"{GREEN}Updated{RESET}" else "General Model"])
+                    files_data.append([
+                        channel_name, 
+                        f"{line_count:,}", 
+                        cache_status, 
+                        "General Model" if cache_status == f"{RED}Unchanged{RESET}" else f"{channel_name}_model.json"
+                    ])
 
         # After processing all files, build the general model
         if self.text:
             self.general_model = markovify.Text(self.text)
             general_cache_file_path = os.path.join(cache_directory, "general_markov_model.json")
-            if self.should_update_cache('general_markov_model.json', last_cache_build_times.get("general_markov_model.json")):
+            last_build_time = self.cache_build_times.get("general_markov_model.json")
+            
+            if self.rebuild_cache or last_build_time is None:
                 self.save_general_model_to_cache(general_cache_file_path)
                 general_cache_status = f"{GREEN}Updated{RESET}"
+                # Update build time
+                self.cache_build_times["general_markov_model.json"] = time.time()
+                self.save_cache_build_times()
             else:
                 general_cache_status = f"{RED}Unchanged{RESET}"
 
@@ -257,9 +365,6 @@ class Bot(commands.Bot):
         # Print the table outside the loop, after processing all files
         headers = ["Channel", "Brain Size", "Brain Status", "Brain"]
         print(tabulate(files_data, headers=headers, tablefmt="pretty", numalign="right"))
-
-
-
 
     def determine_cache_status(self, channel_name, file_text, create_individual_caches, cache_directory):
         cache_file_path = os.path.join(cache_directory, f"{channel_name}_model.json")
@@ -283,14 +388,35 @@ class Bot(commands.Bot):
         with open(cache_file_path, "w") as f:
             f.write(model_json)
 
+    def create_channel_model(self, channel_name, file_text, cache_file_path):
+        """Create a model for a specific channel and save it to the cache."""
+        try:
+            channel_model = markovify.Text(file_text)
+            self.models[channel_name] = channel_model
+            
+            # Check if we should update cache
+            last_build_time = self.cache_build_times.get(channel_name)
+            if self.rebuild_cache or last_build_time is None:
+                with open(cache_file_path, 'w') as cache_file:
+                    cache_file.write(channel_model.to_json())
+            
+            # Update build time
+            self.cache_build_times[channel_name] = time.time()
+            self.save_cache_build_times()
+            return f"{GREEN}Updated{RESET}"
+        except Exception as e:
+            print(f"Error creating model for {channel_name}: {e}")
+            return f"{RED}Error{RESET}"
 
     def save_general_model_to_cache(self, cache_file_path):
+        """Save the general model to the cache."""
         try:
-            model_json = self.general_model.to_json()
-            with open(cache_file_path, "w") as f:
-                f.write(model_json)
+            with open(cache_file_path, 'w') as cache_file:
+                cache_file.write(self.general_model.to_json())
+            return True
         except Exception as e:
-            print(f"Failed to save model to cache: {e}")
+            print(f"Error saving general model to cache: {e}")
+            return False
 
 
     def load_model_from_cache(self, channel_name):
@@ -395,12 +521,82 @@ class Bot(commands.Bot):
         # Start the first execution after the initial delay
         threading.Timer(initial_delay, delayed_execution).start()
 
-
-
+    def load_last_cache_build_times(self):
+        """Load the last build times of cache files from the database or create a default."""
+        try:
+            # Check if a cache_build_times file exists
+            cache_time_file = os.path.join("cache", "cache_build_times.json")
+            if os.path.exists(cache_time_file):
+                with open(cache_time_file, 'r') as f:
+                    import json
+                    return json.load(f)
+            return {}
+        except Exception as e:
+            print(f"Error loading cache build times: {e}")
+            return {}
+        
+    def save_cache_build_times(self):
+        """Save the current cache build times to a file."""
+        try:
+            # Ensure cache directory exists
+            if not os.path.exists("cache"):
+                os.makedirs("cache")
+            
+            cache_time_file = os.path.join("cache", "cache_build_times.json")
+            with open(cache_time_file, 'w') as f:
+                import json
+                json.dump(self.cache_build_times, f)
+        except Exception as e:
+            print(f"Error saving cache build times: {e}")
 
     @commands.command(name="ansv")
-    async def ansv_wrapper(self, ctx, setting, new_value=None):
-        await ansv_command(self, ctx, setting, new_value,enable_tts=enable_tts)
+    async def ansv_wrapper(self, ctx, setting=None, *args):
+        """Enhanced command handler for ansv commands"""
+        channel_name = ctx.channel.name
+        
+        # If no setting provided, show help
+        if not setting:
+            await ctx.send("Usage: !ansv [setting] [value]. Available settings: trusted, voice, tts, lines, time")
+            return
+        
+        # Convert setting to lowercase for easier comparison
+        setting = setting.lower()
+        
+        if setting == "trusted":
+            # Handle trusted users
+            if not args:
+                # No arguments, show current trusted users
+                if channel_name in self.channel_settings:
+                    trusted_users = self.channel_settings[channel_name].get('trusted_users', [])
+                    if trusted_users:
+                        await ctx.send(f"Trusted users: {', '.join(trusted_users)}")
+                    else:
+                        await ctx.send("No trusted users set")
+                else:
+                    await ctx.send("Channel settings not found")
+            else:
+                # Add or remove trusted user
+                action = args[0].lower()
+                if len(args) < 2:
+                    await ctx.send("Usage: !ansv trusted add/remove [username]")
+                    return
+                    
+                username = args[1].lower()
+                
+                if action == "add":
+                    success = await self.add_trusted_user(channel_name, username)
+                    if success:
+                        await ctx.send(f"Added {username} to trusted users")
+                    else:
+                        await ctx.send(f"Failed to add {username} to trusted users")
+                elif action == "remove":
+                    # Implement remove trusted user logic here
+                    await ctx.send(f"Removed {username} from trusted users")
+                else:
+                    await ctx.send("Unknown action. Use add or remove")
+        else:
+            # Call the original ansv_command for other settings
+            await ansv_command(self, ctx, setting, args[0] if args else None, enable_tts=self.enable_tts)
 
     @staticmethod
     def convert_size(size_bytes):
@@ -434,137 +630,51 @@ class Bot(commands.Bot):
 
 
 
-    async def try_join_channel(self, channel_name):
-        try:
-            await self.join_channels([channel_name])
-            return True
-        except Exception as e:
-            print(f"Failed to join channel {channel_name}: {e}")
-            return False
-
     async def event_ready(self):
-        print(f"{GREEN}Bot online!{RESET}")  # Notifying that bot is online
-        self.start_periodic_channel_check()
-        # Connect to the database
-        conn = sqlite3.connect(self.db_file)
-        c = conn.cursor()
-
-        table_data = []  # List to store table data
-        for channel in self.channels:
-            join_success = await self.try_join_channel(channel)
-
-            # Retrieve channel config and additional settings from the database
-            c.execute(
-                "SELECT owner, trusted_users, voice_enabled, tts_enabled, join_channel, time_between_messages, lines_between_messages FROM channel_configs WHERE channel_name = ?",
-                (channel,),
-            )
-            row = c.fetchone()
-
-            if row:
-                (
-                    owner,
-                    trusted_users,
-                    voice_enabled,
-                    tts_enabled,
-                    join_channel,
-                    time_between,
-                    lines_between,
-                ) = row
-                colored_owner = f"\033[38;5;{self.get_user_color(owner)}m{owner}\033[0m"
-
-                if trusted_users:
-                    colored_trusted_users = ", ".join(
-                        f"\033[38;5;{self.get_user_color(user.strip())}m{user.strip()}\033[0m"
-                        for user in trusted_users.split(",")
-                    )
-                else:
-                    colored_trusted_users = "None"
-
-                voice_status = (
-                    GREEN + "enabled" + RESET
-                    if voice_enabled
-                    else RED + "disabled" + RESET
-                )
-                tts_status = (
-                    GREEN + "enabled" + RESET
-                    if tts_enabled
-                    else RED + "disabled" + RESET
-                )
-                autojoin_status = (
-                    GREEN + "enabled" + RESET
-                    if join_channel and join_success
-                    else RED + "disabled" + RESET
-                )
-
-                # Color code time and lines settings
-                time_status = (
-                    GREEN + str(time_between) + RESET
-                    if time_between > 0
-                    else RED + str(time_between) + RESET
-                )
-                lines_status = (
-                    GREEN + str(lines_between) + RESET
-                    if lines_between > 0
-                    else RED + str(lines_between) + RESET
-                )
-
-                if not join_success:
-                    # Update join_channel status to 0 in database if join failed
-                    c.execute(
-                        "UPDATE channel_configs SET join_channel = 0 WHERE channel_name = ?",
-                        (channel,),
-                    )
-                    conn.commit()
-
-                # Add channel information to table data
-                table_data.append(
-                    [
-                        f"\033[38;5;{self.get_channel_color(channel)}m{channel}\033[0m",
-                        colored_owner,
-                        colored_trusted_users,
-                        voice_status,
-                        tts_status,
-                        autojoin_status,
-                        time_status,
-                        lines_status,
-                    ]
-                )
-            else:
-                table_data.append(
-                    [
-                        f"\033[38;5;1m{channel}\033[0m",
-                        "No config found",
-                        "",
-                        "",
-                        "",
-                        RED + "disabled" + RESET,
-                        RED + "N/A" + RESET,
-                        RED + "N/A" + RESET,
-                    ]
-                )
-
-        conn.close()
-
-        # Print the table
-        headers = [
-            "Channel",
-            "Owner",
-            "Trusted Users",
-            "Voice",
-            "TTS",
-            "Autojoin",
-            "Time",
-            "Lines",
-        ]
-        print(tabulate(table_data, headers=headers, tablefmt="pretty"))
-
-    def get_channel_color(self, channel_name):
-        """Assign a random xterm color index to a channel."""
-        return self.color_manager.get_channel_color(channel_name)
+        """Handle the bot ready event."""
+        print(f"Successfully logged onto Twitch Bot is now ready. ")
+        print(f"Bot is ready! | {self.nick}")
+        
+        # Initialize channel configs
+        self.ensure_channel_configs()
+        
+        # Join all configured channels
+        await self.check_and_join_channels()
+        
+        # Start periodic channel checking
+        await self.setup_periodic_channel_check()
+        
+        # Print status table
+        await self.print_channel_status()
+        
+        # Extra verification for firestarman
+        if "#firestarman" in self._joined_channels:
+            print(f"{GREEN}✓ Successfully joined #firestarman channel!{RESET}")
+        else:
+            print(f"{RED}✗ Failed to join #firestarman channel - will retry in next periodic check{RESET}")
 
     def get_user_color(self, username):
-        """Assign a random xterm color index to a user."""
-        return self.color_manager.get_user_color(username)
+        """Get a consistent color number for a user."""
+        if not username or username.strip() == "":
+            return 7  # Default gray for empty usernames
+        
+        if username not in self.user_colors:
+            # Generate color based on username (simple hash)
+            color_num = sum(ord(c) for c in username) % 200 + 20  # Range 20-220 to avoid dark colors
+            self.user_colors[username] = color_num
+            
+        return self.user_colors[username]
+
+    def get_channel_color(self, channel_name):
+        """Get a consistent color number for a channel."""
+        clean_channel = channel_name.lstrip('#')
+        
+        if clean_channel not in self.channel_colors:
+            # Generate color based on channel name (simple hash)
+            color_num = sum(ord(c) for c in clean_channel) % 200 + 20  # Range 20-220
+            self.channel_colors[clean_channel] = color_num
+            
+        return self.channel_colors[clean_channel]
 
     async def event_command_error(self, ctx, error):
         """Handle command errors."""
@@ -593,82 +703,82 @@ class Bot(commands.Bot):
                 # Send the message to the channel
                 await channel.send(message)
 
-    @commands.command(name="ansv")
-    async def ansv_wrapper(self, ctx, setting, new_value=None):
-        await ansv_command(self, ctx, setting, new_value)
-# The function event_message is called whenever a new message is received in a channel.
-async def event_message(self, message):
-    # Ignore messages from the bot itself or messages with no author.
-    if message.author is None or message.author.name.lower() == self.nick.lower():
-        return
+    # The function event_message is called whenever a new message is received in a channel.
+    async def event_message(self, message):
+        # Ignore messages from the bot itself or messages with no author.
+        if message.author is None or message.author.name.lower() == self.nick.lower():
+            return
 
-    channel_name = message.channel.name.lower()
-    # Log the message.
-    self.my_logger.log_message(channel_name, message.author.name, message.content)
+        channel_name = message.channel.name.lower()
+        # Log the message.
+        self.my_logger.log_message(channel_name, message.author.name, message.content)
 
-    # Fetch the channel settings and ignored users for the current channel.
-    lines_between, time_between, tts_enabled, voice_enabled = self.fetch_channel_settings(channel_name)
-    ignored_users = [user.lower() for user in self.channel_settings[channel_name]['ignored_users']] if channel_name in self.channel_settings else []
+        # Fetch the channel settings and ignored users for the current channel.
+        lines_between, time_between, tts_enabled, voice_enabled = self.fetch_channel_settings(channel_name)
+        ignored_users = [user.lower() for user in self.channel_settings[channel_name]['ignored_users']] if channel_name in self.channel_settings else []
 
-    # Ignore messages from ignored users.
-    if message.author.name.lower() in ignored_users:
-        return
+        # Ignore messages from ignored users.
+        if message.author.name.lower() in ignored_users:
+            return
 
-    # Handle any commands in the message.
-    await self.handle_commands(message)
+        # Handle any commands in the message.
+        await self.handle_commands(message)
 
-    # Increment the chat line count for the current channel.
-    self.channel_chat_line_count[channel_name] += 1
-    # Calculate the elapsed time since the last message in the current channel.
-    elapsed_time = time.time() - self.channel_last_message_time.get(channel_name, 0)
+        # Make sure the channel is in our dictionaries
+        if channel_name not in self.channel_chat_line_count:
+            self.channel_chat_line_count[channel_name] = 0
+        self.channel_chat_line_count[channel_name] += 1
+        
+        # Calculate the elapsed time since the last message in the current channel.
+        elapsed_time = time.time() - self.channel_last_message_time.get(channel_name, 0)
 
-    # Determine if a message should be sent based on the lines_between and time_between settings.
-    should_send_message = False
-    if lines_between > 0 and self.channel_chat_line_count[channel_name] >= lines_between:
-        should_send_message = True
-    elif time_between > 0 and elapsed_time >= time_between * 60:
-        should_send_message = True
+        # Determine if a message should be sent based on the lines_between and time_between settings.
+        should_send_message = False
+        if lines_between > 0 and self.channel_chat_line_count[channel_name] >= lines_between:
+            should_send_message = True
+        elif time_between > 0 and elapsed_time >= time_between * 60:
+            should_send_message = True
 
-    # If a message should be sent and voice is enabled for the current channel.
-    if should_send_message and voice_enabled:
-        # Connect to the database.
-        conn = sqlite3.connect(self.db_file)
-        c = conn.cursor()
-        # Check if the general model should be used for the current channel.
-        c.execute("SELECT use_general_model FROM channel_configs WHERE channel_name = ?", (channel_name,))
-        row = c.fetchone()
-        conn.close()
+        # If a message should be sent and voice is enabled for the current channel.
+        if should_send_message and voice_enabled:
+            # Connect to the database.
+            conn = sqlite3.connect(self.db_file)
+            c = conn.cursor()
+            # Check if the general model should be used for the current channel.
+            c.execute("SELECT use_general_model FROM channel_configs WHERE channel_name = ?", (channel_name,))
+            row = c.fetchone()
+            conn.close()
 
-        # Generate a response using the appropriate model.
-        if row:
-            response = (self.general_model.make_sentence() if row[0] else self.models.get(channel_name, self.general_model).make_sentence())
+            # Generate a response using the appropriate model.
+            if row:
+                response = (self.general_model.make_sentence() if row[0] else self.models.get(channel_name, self.general_model).make_sentence())
 
-            # If a response was generated.
-            if response:
-                try:
-                    # Send the response in the current channel.
-                    channel_obj = self.get_channel(channel_name)
-                    if channel_obj:
-                        await channel_obj.send(response)
-                        # Log the response.
-                        self.my_logger.log_message(channel_name, self.nick, response)
+                # If a response was generated.
+                if response:
+                    try:
+                        # Send the response in the current channel.
+                        channel_obj = self.get_channel(channel_name)
+                        if channel_obj:
+                            await channel_obj.send(response)
+                            # Log the response.
+                            self.my_logger.log_message(channel_name, self.nick, response)
 
-                        # If TTS is enabled for the current channel.
-                        if self.enable_tts and tts_enabled:
-                            # Generate TTS audio for the response.
-                            tts_output = process_text(response, channel_name, self.db_file)
-                            if tts_output:
-                                print(f"TTS audio file generated: {tts_output}")
-                            else:
-                                print("Failed to generate TTS audio file.")
+                            # If TTS is enabled for the current channel.
+                            if self.enable_tts and tts_enabled:
+                                # Generate TTS audio for the response.
+                                tts_output = process_text(response, channel_name, self.db_file)
+                                if tts_output:
+                                    print(f"TTS audio file generated: {tts_output}")
+                                else:
+                                    print("Failed to generate TTS audio file.")
 
-                        # Reset the chat line count and last message time for the current channel.
-                        self.channel_chat_line_count[channel_name] = 0
-                        self.channel_last_message_time[channel_name] = time.time()
-                except Exception as e:
-                    # Log any errors that occur when sending the message.
-                    self.my_logger.error(f"Failed to send message in {channel_name}: {str(e)}")
-                    print(f"Error sending message in {channel_name}: {str(e)}")
+                            # Reset the chat line count and last message time for the current channel.
+                            self.channel_chat_line_count[channel_name] = 0
+                            self.channel_last_message_time[channel_name] = time.time()
+                    except Exception as e:
+                        # Log any errors that occur when sending the message.
+                        self.my_logger.error(f"Failed to send message in {channel_name}: {str(e)}")
+                        print(f"Error sending message in {channel_name}: {str(e)}")
 
     async def stop(self):
         try:
@@ -678,6 +788,53 @@ async def event_message(self, message):
             print("Bot stopped successfully.")
         except Exception as e:
             print(f"Error stopping bot: {e}")
+
+    async def add_trusted_user(self, channel_name, username):
+        """Add a user to the trusted users list for a channel."""
+        try:
+            # Remove # prefix for database storage
+            clean_channel = channel_name.lstrip('#')
+            
+            conn = sqlite3.connect(self.db_file)
+            c = conn.cursor()
+            
+            # Get current trusted users
+            c.execute("SELECT trusted_users FROM channel_configs WHERE channel_name = ?", (clean_channel,))
+            row = c.fetchone()
+            
+            if row:
+                current_trusted = row[0]
+                
+                # Add the new user
+                trusted_users = []
+                if current_trusted and current_trusted.strip():
+                    trusted_users = [u.strip() for u in current_trusted.split(',')]
+                    
+                if username not in trusted_users:
+                    trusted_users.append(username)
+                    
+                # Update the database
+                new_trusted = ','.join(trusted_users)
+                c.execute("UPDATE channel_configs SET trusted_users = ? WHERE channel_name = ?", 
+                         (new_trusted, clean_channel))
+                conn.commit()
+                
+                # Update the channel settings in memory
+                if clean_channel in self.channel_settings:
+                    self.channel_settings[clean_channel]['trusted_users'] = trusted_users
+                    
+                print(f"Added {username} to trusted users for {channel_name}")
+                return True
+            else:
+                print(f"Channel {channel_name} not found in database")
+                return False
+        except Exception as e:
+            print(f"Error adding trusted user: {e}")
+            return False
+        finally:
+            conn.close()
+
+
 
 
 
@@ -741,29 +898,46 @@ def insert_initial_channels_to_db(db_file, channels):
 
 
 
-def setup_bot(db_file, rebuild_cache, enable_tts=False):
-    logger = Logger()
-    logger.setup_logger()
-
-    # Fetch all channels to join
-    initial_channels = fetch_initial_channels(db_file)
-
+def setup_bot(db_file, rebuild_cache=False, enable_tts=False):
+    # Read configuration from file
     config = configparser.ConfigParser()
-    config.read("settings.conf")
-
+    config.read('settings.conf')
+    
+    # Get bot credentials
+    token = config.get('auth', 'tmi_token')
+    client_id = config.get('auth', 'client_id')
+    nick = config.get('auth', 'nickname')
+    
+    # Get channels to join
+    # Try different possible config locations for backward compatibility
+    try:
+        channels_str = config.get('channels', 'channels')
+    except (configparser.NoSectionError, configparser.NoOptionError):
+        try:
+            # Try old format
+            channels_str = config.get('settings', 'channels')
+        except (configparser.NoSectionError, configparser.NoOptionError):
+            print("⚠️ No channels found in config. Using single channel.")
+            channels_str = nick  # Default to bot's own channel as fallback
+    
+    print(f"Found channels string: {channels_str}")
+    
+    # Strip whitespace and ensure channels start with #
+    channels = [f"#{ch.strip()}" if not ch.strip().startswith('#') else ch.strip() 
+                for ch in channels_str.split(',')]
+    
+    print(f"Bot will join these channels: {channels}")
+    
+    # Initialize bot instance
     bot = Bot(
-        irc_token=config.get("auth", "tmi_token"),
-        client_id=config.get("auth", "client_id"),
-        nick=config.get("auth", "nickname"),
-        prefix=config.get("settings", "command_prefix"),
-        trusted_users=[],  
-        ignored_users=[],
-        owner=config.get("auth", "owner"),
-        initial_channels=initial_channels,
+        token=token,
+        client_id=client_id, 
+        nick=nick,
+        prefix='!',
+        initial_channels=channels,
+        db_file=db_file,
         rebuild_cache=rebuild_cache,
         enable_tts=enable_tts
     )
-
-    bot.db_file = db_file
-    insert_initial_channels_to_db(db_file, channels)
+    
     return bot

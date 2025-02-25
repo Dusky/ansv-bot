@@ -56,7 +56,31 @@
     </div>
 </div>
 
+<div class="card mt-4">
+    <div class="card-header bg-primary text-white">
+        <h5 class="mb-0"><i class="fas fa-history me-2"></i>Recent TTS Messages</h5>
+    </div>
+    <div class="card-body">
+        <table id="ttsTable" class="table table-striped">
+            <thead>
+                <tr>
+                    <th>Channel</th>
+                    <th>Time</th>
+                    <th>Message</th>
+                    <th>Audio</th>
+                </tr>
+            </thead>
+            <tbody>
+                <!-- Will be populated dynamically -->
+            </tbody>
+        </table>
+    </div>
+</div>
+
 <script>
+// Initialize Socket.IO connection
+const socketio = io();
+
 function populateChannels() {
     fetch('/get-channels')
         .then(response => response.json())
@@ -90,11 +114,24 @@ function sendCustomTTS() {
         } else {
             alert('Error: ' + (data.error || 'Failed to send TTS'));
         }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Network error occurred while sending TTS');
     });
 }
 
 // Populate channels on page load
-document.addEventListener('DOMContentLoaded', populateChannels);
+document.addEventListener('DOMContentLoaded', function() {
+    populateChannels();
+    // Also load latest TTS messages
+    fetch('/latest-messages')
+        .then(response => response.json())
+        .then(data => {
+            updateTTSTable(data);
+        })
+        .catch(error => console.error('Error loading TTS messages:', error));
+});
 
 // Add this to your existing socket.io code
 socketio.on('new_tts_entry', function(data) {
