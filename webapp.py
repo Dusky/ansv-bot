@@ -485,28 +485,73 @@ def rebuild_all_caches():
 
 @app.route('/api/stats')
 def api_stats():
-    """Get overall bot statistics"""
+    """Get overall bot statistics in the format expected by event_listener.js"""
     from utils.web_utils import get_db_stats
     
     try:
-        stats = get_db_stats()
+        # Get stats from database first
+        db_stats = get_db_stats()
         
-        # Add model information
-        stats['models'] = get_available_models()
+        # Now build the format expected by event_listener.js
+        logs_directory = 'logs'
+        cache_directory = 'cache'
+        all_channels = set()
+        converted_stats = []
         
-        # Add system info
-        import platform
-        system_info = {
-            'python_version': platform.python_version(),
-            'platform': platform.platform(),
-            'hostname': platform.node()
-        }
-        stats['system'] = system_info
+        # Add channels from cache files
+        if os.path.exists(cache_directory):
+            for file in os.listdir(cache_directory):
+                if file.endswith('_model.json') and file != 'cache_build_times.json':
+                    channel_name = file.replace('_model.json', '')
+                    if channel_name != 'general_markov':  # Skip general model for now
+                        all_channels.add(channel_name)
         
-        return jsonify(stats)
+        # Get line counts per channel (for non-general models)
+        channel_line_counts = {}
+        if os.path.exists(logs_directory):
+            for channel in all_channels:
+                log_file = f"{logs_directory}/{channel}.txt"
+                if os.path.exists(log_file):
+                    with open(log_file, 'r', encoding='utf-8', errors='ignore') as f:
+                        line_count = sum(1 for _ in f)
+                    channel_line_counts[channel] = line_count
+        
+        # Calculate total line count for general model
+        total_line_count = sum(channel_line_counts.values())
+        
+        # Add the general model first
+        general_cache_file = f"{cache_directory}/general_markov_model.json"
+        general_cache_size = 0
+        if os.path.exists(general_cache_file):
+            general_cache_size = os.path.getsize(general_cache_file)
+            
+        converted_stats.append({
+            'channel': 'General Model',
+            'cache': 'general_markov_model.json',
+            'log': 'N/A',
+            'cache_size': general_cache_size,
+            'line_count': total_line_count
+        })
+        
+        # Add each channel model
+        for channel in all_channels:
+            cache_file = f"{cache_directory}/{channel}_model.json"
+            cache_size = 0
+            if os.path.exists(cache_file):
+                cache_size = os.path.getsize(cache_file)
+                
+            converted_stats.append({
+                'channel': channel,
+                'cache': f"{channel}_model.json",
+                'log': f"{channel}.txt" if os.path.exists(f"{logs_directory}/{channel}.txt") else 'N/A',
+                'cache_size': cache_size,
+                'line_count': channel_line_counts.get(channel, 0)
+            })
+        
+        return jsonify(converted_stats)
     except Exception as e:
         app.logger.error(f"Error getting stats: {e}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify([]), 500
 
 
 @app.route('/rebuild-general-cache', methods=['POST'])

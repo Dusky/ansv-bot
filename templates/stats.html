@@ -6,45 +6,61 @@
     <div class="row mb-4 fade-in">
         <div class="col-md-12">
             <div class="card shadow">
-                <div class="card-header bg-primary text-white">
+                <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
                     <h5 class="mb-0"><i class="fas fa-brain me-2"></i>Markov Model Overview</h5>
+                    <div>
+                        <span class="badge bg-success me-2" id="healthStatus">Healthy</span>
+                        <span class="badge bg-light text-dark last-update-badge">Updated: <span id="lastUpdateTime">Just now</span></span>
+                    </div>
                 </div>
                 <div class="card-body">
                     <!-- Metrics Row -->
                     <div class="row mb-4">
                         <div class="col-md-3">
-                            <div class="card border-success h-100">
+                            <div class="card border-success h-100 dashboard-card" data-bs-toggle="tooltip" title="Total size of all model cache files">
                                 <div class="card-body text-center">
                                     <i class="fas fa-database stat-icon text-success"></i>
                                     <h3 class="stat-value" id="totalCacheSize">--</h3>
                                     <div class="stat-label">Total Cache Size</div>
+                                    <div class="progress mt-2" style="height: 4px;">
+                                        <div class="progress-bar bg-success" id="cacheSizeProgress" style="width: 0%"></div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
                         <div class="col-md-3">
-                            <div class="card border-info h-100">
+                            <div class="card border-info h-100 dashboard-card" data-bs-toggle="tooltip" title="Total number of messages processed across all channels">
                                 <div class="card-body text-center">
                                     <i class="fas fa-file-alt stat-icon text-info"></i>
                                     <h3 class="stat-value" id="totalLines">--</h3>
-                                    <div class="stat-label">Total Lines Processed</div>
+                                    <div class="stat-label">Total Messages</div>
+                                    <div class="progress mt-2" style="height: 4px;">
+                                        <div class="progress-bar bg-info" id="messagesProgress" style="width: 0%"></div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
                         <div class="col-md-3">
-                            <div class="card border-warning h-100">
+                            <div class="card border-warning h-100 dashboard-card" data-bs-toggle="tooltip" title="Number of channels with trained models">
                                 <div class="card-body text-center">
                                     <i class="fas fa-hashtag stat-icon text-warning"></i>
                                     <h3 class="stat-value" id="channelCount">--</h3>
                                     <div class="stat-label">Channels</div>
+                                    <div class="progress mt-2" style="height: 4px;">
+                                        <div class="progress-bar bg-warning" id="channelsProgress" style="width: 0%"></div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
                         <div class="col-md-3">
-                            <div class="card border-primary h-100">
+                            <div class="card border-primary h-100 dashboard-card" data-bs-toggle="tooltip" title="Date of last cache rebuild">
                                 <div class="card-body text-center">
                                     <i class="fas fa-sync-alt stat-icon text-primary"></i>
                                     <h3 class="stat-value" id="lastRebuild">--</h3>
                                     <div class="stat-label">Last Rebuilt</div>
+                                    <div id="rebuildTimer" class="small text-muted mt-1">
+                                        <i class="fas fa-clock"></i> <span id="timeSinceRebuild">--</span>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -61,7 +77,7 @@
                             </button>
                         </div>
                         <div>
-                            <button id="refreshStatsBtn" class="btn btn-outline-primary btn-action">
+                            <button id="refreshStatsBtn" class="btn btn-outline-primary btn-action" data-bs-toggle="tooltip" data-bs-placement="top" title="Refresh statistics">
                                 <i class="fas fa-redo me-1"></i>Refresh
                             </button>
                         </div>
@@ -75,7 +91,15 @@
     <div class="card shadow mb-4">
         <div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center">
             <h5 class="mb-0"><i class="fas fa-list me-2"></i>Channel Brain Details</h5>
-            <div>
+            <div class="d-flex">
+                <div class="me-2">
+                    <select class="form-select form-select-sm" id="sortSelector">
+                        <option value="name">Sort by Name</option>
+                        <option value="size" selected>Sort by Size</option>
+                        <option value="messages">Sort by Messages</option>
+                        <option value="activity">Sort by Activity</option>
+                    </select>
+                </div>
                 <div class="input-group input-group-sm">
                     <input type="text" class="form-control" id="channelSearch" placeholder="Search channels...">
                     <button class="btn btn-outline-light" type="button" id="clearSearchBtn">
@@ -85,20 +109,24 @@
             </div>
         </div>
         <div class="card-body p-0">
+            <div class="alert alert-info m-2 d-none" id="modelStatusInfo">
+                <i class="fas fa-info-circle me-2"></i>
+                <span id="modelStatusMessage">Loading model information...</span>
+            </div>
             <div class="table-responsive">
                 <table class="table table-striped table-hover mb-0">
                     <thead class="table-dark">
-                    <tr>
-                        <th>Channel</th>
-                        <th>Cache File</th>
-                        <th>Log File</th>
-                        <th>Cache Size</th>
-                        <th>Line Count</th>
-                            <th>Usage</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody id="statsContainer">
+                        <tr>
+                            <th style="width: 15%">Channel</th>
+                            <th style="width: 12%">Cache File</th>
+                            <th style="width: 12%">Log File</th>
+                            <th style="width: 12%">Cache Size</th>
+                            <th style="width: 10%">Messages</th>
+                            <th style="width: 24%">Model Health</th>
+                            <th style="width: 15%">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="statsContainer">
                         <tr>
                             <td colspan="7" class="text-center">
                                 <div id="loadingIndicator" class="spinner-border text-primary my-3" role="status">
@@ -108,6 +136,23 @@
                         </tr>
                     </tbody>
                 </table>
+            </div>
+        </div>
+        <div class="card-footer bg-light d-flex justify-content-between align-items-center py-2">
+            <div>
+                <small class="text-muted">
+                    <i class="fas fa-circle text-success me-1" style="font-size: 0.6rem;"></i>Base threshold 
+                    <i class="fas fa-circle text-info mx-1" style="font-size: 0.6rem;"></i>Relative size
+                    <span class="badge bg-warning text-dark mx-1">Needs training</span>
+                    <span class="badge bg-info mx-1">Adequate</span>
+                    <span class="badge bg-success mx-1">Well-trained</span>
+                </small>
+            </div>
+            <div>
+                <small class="text-muted">
+                    <span id="filteredCount">0</span> channels displayed of <span id="totalCount">0</span> total
+                    <span id="botStatusIndicator" class="ms-2 badge bg-danger">Bot Offline</span>
+                </small>
             </div>
         </div>
     </div>
@@ -163,21 +208,37 @@
 
 <script>
     document.addEventListener('DOMContentLoaded', function() {
-        // Activate tooltips
-        const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
-        [...tooltipTriggerList].map(tooltipTriggerEl => new bootstrap.Tooltip(tooltipTriggerEl));
+        // Initialize tooltips
+        initTooltips();
         
         // Initialize search functionality
         initSearch();
     });
     
+    // Function to initialize tooltips that can be called after dynamic content is added
+    function initTooltips() {
+        try {
+            const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+            tooltipTriggerList.forEach(el => {
+                try {
+                    new bootstrap.Tooltip(el);
+                } catch (e) {
+                    console.warn('Could not initialize tooltip for element:', el, e);
+                }
+            });
+        } catch (e) {
+            console.warn('Error initializing tooltips:', e);
+        }
+    }
+    
     function initSearch() {
         const searchInput = document.getElementById('channelSearch');
         const clearBtn = document.getElementById('clearSearchBtn');
+        const sortSelector = document.getElementById('sortSelector');
         
         if (!searchInput || !clearBtn) return;
         
-        searchInput.addEventListener('input', function() {A
+        searchInput.addEventListener('input', function() {
             filterChannels(this.value.toLowerCase());
         });
         
@@ -185,10 +246,19 @@
             searchInput.value = '';
             filterChannels('');
         });
+        
+        // Add sort selector functionality
+        if (sortSelector) {
+            sortSelector.addEventListener('change', function() {
+                sortChannelTable(this.value);
+            });
+        }
     }
     
     function filterChannels(query) {
         const rows = document.querySelectorAll('#statsContainer tr');
+        const filteredCountElement = document.getElementById('filteredCount');
+        let visibleCount = 0;
         
         rows.forEach(row => {
             const channelName = row.querySelector('td:first-child')?.textContent.toLowerCase();
@@ -197,10 +267,89 @@
             
             if (channelName.includes(query)) {
                 row.style.display = '';
+                visibleCount++;
             } else {
                 row.style.display = 'none';
             }
         });
+        
+        // Update the filtered count
+        if (filteredCountElement) {
+            filteredCountElement.textContent = visibleCount;
+        }
+    }
+    
+    function sortChannelTable(sortBy) {
+        const tbody = document.getElementById('statsContainer');
+        if (!tbody) return;
+        
+        const rows = Array.from(tbody.querySelectorAll('tr'));
+        
+        // Skip if there are no rows or loading indicator is present
+        if (rows.length === 0 || rows[0].querySelector('#loadingIndicator')) return;
+        
+        // Sort the rows based on the selected criteria
+        rows.sort((rowA, rowB) => {
+            // Skip rows with no data cells
+            if (!rowA.querySelector('td') || !rowB.querySelector('td')) return 0;
+            
+            // General model always at the top
+            const channelA = rowA.querySelector('td:first-child')?.textContent;
+            const channelB = rowB.querySelector('td:first-child')?.textContent;
+            
+            if (channelA === 'General Model') return -1;
+            if (channelB === 'General Model') return 1;
+            
+            switch (sortBy) {
+                case 'name':
+                    return channelA.localeCompare(channelB);
+                    
+                case 'size':
+                    // Extract cache size values
+                    const sizeA = extractNumericValue(rowA.querySelector('td:nth-child(4)')?.textContent);
+                    const sizeB = extractNumericValue(rowB.querySelector('td:nth-child(4)')?.textContent);
+                    return sizeB - sizeA; // Sort by size descending
+                    
+                case 'messages':
+                    // Extract message count values
+                    const messagesA = parseInt(rowA.querySelector('td:nth-child(5)')?.textContent || '0');
+                    const messagesB = parseInt(rowB.querySelector('td:nth-child(5)')?.textContent || '0');
+                    return messagesB - messagesA; // Sort by message count descending
+                    
+                case 'activity':
+                    // Check if row has a progress bar (as a proxy for activity)
+                    const activityA = rowA.querySelector('.progress-bar.bg-info')?.style.width || '0%';
+                    const activityB = rowB.querySelector('.progress-bar.bg-info')?.style.width || '0%';
+                    return parseFloat(activityB) - parseFloat(activityA); // Sort by activity descending
+                    
+                default:
+                    return 0;
+            }
+        });
+        
+        // Reappend the sorted rows
+        rows.forEach(row => tbody.appendChild(row));
+    }
+    
+    // Helper function to extract numeric value from formatted strings like "1.23 MB"
+    function extractNumericValue(text) {
+        if (!text) return 0;
+        
+        // Extract the number portion
+        const matches = text.match(/^([\d.]+)/);
+        if (!matches || !matches[1]) return 0;
+        
+        const value = parseFloat(matches[1]);
+        const unit = text.trim().split(' ')[1];
+        
+        // Convert to a common unit (KB) for comparison
+        switch (unit) {
+            case 'B': return value / 1024;
+            case 'KB': return value;
+            case 'MB': return value * 1024;
+            case 'GB': return value * 1024 * 1024;
+            default: return value;
+        }
     }
     
     function loadBuildTimes() {

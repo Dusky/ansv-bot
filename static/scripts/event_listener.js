@@ -191,22 +191,70 @@ function updateButtonTheme() {
   }
 }
 
+// Global bot status variable - accessible to all scripts
+window.globalBotStatus = {
+  running: false,
+  connected: false,
+  tts_enabled: false,
+  last_checked: new Date()
+};
+
+// Global function to update button states based on bot status
 function updateButtonStates(isBotRunning) {
-  const messageButtons = document.querySelectorAll(".send-message-btn");
-  messageButtons.forEach(button => {
+  console.log("Updating all message buttons - bot running:", isBotRunning);
+  
+  // Store the status in the global variable
+  window.globalBotStatus.running = isBotRunning;
+  window.globalBotStatus.last_checked = new Date();
+  
+  // Update all message buttons
+  document.querySelectorAll(".send-message-btn, .btn-primary[data-channel]").forEach(button => {
     if (!button.classList.contains('in-countdown')) {
       button.disabled = !isBotRunning;
+      
+      // Add visual indication
+      if (!isBotRunning) {
+        button.title = "Bot is not running";
+        if (!button.classList.contains('disabled')) {
+          button.classList.add('disabled');
+        }
+      } else {
+        button.title = "";
+        if (button.classList.contains('disabled')) {
+          button.classList.remove('disabled');
+        }
+      }
     }
   });
+  
+  // Update status indicators if they exist
+  const botStatusIndicator = document.getElementById('botStatusIndicator');
+  if (botStatusIndicator) {
+    botStatusIndicator.className = isBotRunning ? 'ms-2 badge bg-success' : 'ms-2 badge bg-danger';
+    botStatusIndicator.innerHTML = isBotRunning ? 'Bot Online' : 'Bot Offline';
+  }
 }
 
+// Global function to fetch bot status and update UI
 function fetchBotStatusAndUpdateUI() {
   fetch("/api/bot-status")
     .then(response => response.json())
-    .then(data => updateButtonStates(data.running))
-    .catch(error => console.error("Error fetching bot status:", error));
+    .then(data => {
+      console.log("Bot status response:", data);
+      updateButtonStates(data.running);
+      
+      // Also store connected status and TTS status
+      if (data.connected !== undefined) window.globalBotStatus.connected = data.connected;
+      if (data.tts_enabled !== undefined) window.globalBotStatus.tts_enabled = data.tts_enabled;
+    })
+    .catch(error => {
+      console.error("Error fetching bot status:", error);
+      updateButtonStates(false); // Assume bot is not running on error
+    });
 }
 
+// Initial check and periodic updates
+document.addEventListener('DOMContentLoaded', fetchBotStatusAndUpdateUI);
 setInterval(fetchBotStatusAndUpdateUI, 30000); // 30 seconds
 
 // startBotButton event listener is already defined in setupButtonListeners()
@@ -371,9 +419,20 @@ function loadStats() {
   let loadingIndicator = document.getElementById("loadingIndicator");
   if (loadingIndicator) loadingIndicator.style.display = "block";
 
+  // Update the channel count display
+  updateChannelCount();
+
   fetch("/api/stats")
     .then((response) => response.json())
     .then((data) => {
+      console.log("API stats data:", data);
+      
+      // Safety check - make sure data is an array
+      if (!Array.isArray(data)) {
+        console.error("API stats data is not an array:", data);
+        throw new Error("Invalid data format - expected an array");
+      }
+      
       statsContainer.innerHTML = "";
 
       data.forEach((stat) => {
@@ -387,14 +446,26 @@ function loadStats() {
 
         let cacheCell = createCell(stat.cache);
         let logCell = createCell(stat.log);
-        let cacheSizeCell = createCell(formatFileSize(stat.cache_size));
-        let lineCountCell = createCell(stat.line_count.toString());
+        
+        // Make sure cache_size is properly formatted
+        let cacheSizeValue = typeof stat.cache_size === 'number' 
+          ? formatFileSize(stat.cache_size) 
+          : stat.cache_size || '0 B';
+          
+        let cacheSizeCell = createCell(cacheSizeValue);
+        
+        // Make sure line_count is a string
+        let lineCountValue = stat.line_count !== undefined 
+          ? stat.line_count.toString() 
+          : '0';
+          
+        let lineCountCell = createCell(lineCountValue);
         let actionsCell = document.createElement("td");
 
         // Append existing Rebuild Cache button
         if (stat.channel !== "General Model") {
           let rebuildCacheButton = createActionButton(
-            "btn-warning rebuild-cache-btn",
+            "btn-warning rebuild-cache-btn me-2",
             "Rebuild",
             stat.channel,
             rebuildCacheForChannel
@@ -405,7 +476,7 @@ function loadStats() {
         // Append new Send Message button
         if (stat.channel !== "General Model") {
           let sendMessageButton = createActionButton(
-            "btn-success send-message-btn ml-2" ,
+            "btn-success send-message-btn",
             "Send Message",
             stat.channel,
             sendMarkovMessageToChannel
@@ -428,8 +499,38 @@ function loadStats() {
     })
     .catch((error) => {
       console.error("Error fetching stats:", error);
-      if (statsContainer) statsContainer.innerHTML = "Failed to load data.";
+      if (statsContainer) {
+        statsContainer.innerHTML = '<tr><td colspan="6" class="text-danger">Failed to load data: ' + error.message + '</td></tr>';
+      }
+      if (loadingIndicator) loadingIndicator.style.display = "none";
     });
+}
+
+// Function to update the channel count display
+function updateChannelCount() {
+  const channelCountElement = document.getElementById('channelCount');
+  if (!channelCountElement) return;
+  
+  fetch("/get-stats")
+    .then(response => response.json())
+    .then(data => {
+      console.log("Channel count data:", data);
+      
+      // Count channels but exclude the general model
+      const channelCount = Array.isArray(data) ? 
+        data.filter(channel => 
+          channel.name !== 'general_markov' && 
+          channel.name !== 'General Model'
+        ).length : 0;
+      
+      console.log("Counted channels:", channelCount);
+      channelCountElement.textContent = channelCount;
+    })
+    .catch(error => {
+      console.error("Error updating channel count:", error);
+      channelCountElement.textContent = "?";
+    });
+}
 }
 
 function createCell(content) {
