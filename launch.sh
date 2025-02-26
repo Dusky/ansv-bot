@@ -394,6 +394,8 @@ numpy==1.26.2
 huggingface-hub==0.19.4
 soundfile==0.12.1
 nltk==3.8.1
+encodec>=0.1.1
+funcy>=2.0
 EOF
 
         # Install dependencies with pinned versions first
@@ -402,7 +404,7 @@ EOF
         
         # Then install Bark from GitHub
         echo -e "${CYAN}Installing Bark from GitHub...${NC}"
-        pip install --no-deps git+https://github.com/suno-ai/bark.git@main
+        pip install git+https://github.com/suno-ai/bark.git@main
         
         # Platform-specific PyTorch installation
         case "$PLATFORM" in

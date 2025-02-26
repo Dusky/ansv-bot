@@ -5,6 +5,12 @@ function updateTable(data) {
   let tableBody = document.getElementById("ttsFilesBody");
   let isNewData = false;
 
+  // Check if data exists and is not empty
+  if (!data || !Array.isArray(data) || data.length === 0) {
+    console.log("No data to update");
+    return false;
+  }
+
   data.forEach((file) => {
     let messageIdInt = parseInt(file[1]);
     console.log(`Processing messageIdInt: ${messageIdInt}, lastId: ${lastId}`);
@@ -14,7 +20,7 @@ function updateTable(data) {
     }
   });
 
-  if (isNewData) {
+  if (isNewData && data.length > 0) {
     lastId = parseInt(data[0][1]); 
   }
 
@@ -80,25 +86,38 @@ function playAudio(src) {
 
 // Function to check if autoplay is enabled and play the latest file
 function checkAutoplay(data) {
-  let autoplayEnabled = document.getElementById("autoplay").checked;
+  // Get the autoplay checkbox element
+  const autoplayCheckbox = document.getElementById("autoplay");
+  
+  // Check if element exists and if autoplay is enabled
+  if (!autoplayCheckbox) {
+    console.log("Autoplay checkbox not found");
+    return;
+  }
+  
+  const autoplayEnabled = autoplayCheckbox.checked;
 
-  if (autoplayEnabled && data.length > 0) {
-    let latestAudioId = `audio-${data[0][1]}`;
-    let latestAudio = document.getElementById(latestAudioId);
-
-    if (latestAudio) {
-      latestAudio.muted = true; // Start muted to comply with autoplay policies
-      latestAudio
-        .play()
-        .then(() => {
-          console.log("Autoplay started for", latestAudioId);
-          latestAudio.muted = false; // Unmute after starting playback
-        })
-        .catch((error) => {
-          console.error("Autoplay failed for", latestAudioId, ":", error);
-        });
-    } else {
-    }
+  // Check if we have data and autoplay is enabled
+  if (autoplayEnabled && data && Array.isArray(data) && data.length > 0) {
+    // Construct the audio URL directly instead of finding an element
+    const channel = data[0][0]; // channel name
+    const timestamp = data[0][2]; // timestamp
+    const audioPath = `/static/outputs/${channel}/${channel}-${timestamp}.wav`;
+    
+    console.log(`Attempting to autoplay: ${audioPath}`);
+    
+    // Create audio element programmatically
+    const audioPlayer = new Audio(audioPath);
+    audioPlayer.muted = true; // Start muted to comply with autoplay policies
+    
+    audioPlayer.play()
+      .then(() => {
+        console.log("Autoplay started");
+        audioPlayer.muted = false; // Unmute after successfully starting
+      })
+      .catch((error) => {
+        console.error("Autoplay failed:", error);
+      });
   }
 }
 
@@ -222,7 +241,7 @@ function generateMessage() {
 
 // Function to check bot status and update UI
 function checkBotStatus() {
-    fetch('/bot_status')
+    fetch('/api/bot-status')
         .then(response => response.json())
         .then(data => {
             const statusIndicator = document.getElementById('botStatusIndicator');

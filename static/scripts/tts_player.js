@@ -3,7 +3,7 @@ function playTTS(id, channel, timestamp) {
     // Correctly format the audio URL using the timestamp straight from the database
     // The timestamp should now match the file format (YYYYMMDD-HHMMSS)
     const audioFile = `${channel}-${timestamp}.wav`;
-    const audioPath = `/outputs/${channel}/${audioFile}`;
+    const audioPath = `/static/outputs/${channel}/${audioFile}`;
     
     console.log(`Playing audio: ${audioPath}`);
     

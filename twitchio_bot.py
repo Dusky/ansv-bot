@@ -19,18 +19,18 @@ class TwitchIOBot:
                     
                     # Create table if not exists
                     c.execute('''CREATE TABLE IF NOT EXISTS bot_status
-                                (key TEXT PRIMARY KEY, value TEXT)''')
+                                (key TEXT PRIMARY KEY, value TEXT, timestamp TEXT)''')
                     
                     # Update heartbeat timestamp
                     now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                    c.execute("INSERT OR REPLACE INTO bot_status (key, value) VALUES (?, ?)",
-                             ('last_heartbeat', now))
+                    c.execute("INSERT OR REPLACE INTO bot_status (key, value, timestamp) VALUES (?, ?, ?)",
+                             ('last_heartbeat', now, now))
                     
                     # Update current channels with better logging
                     connected_channels = [channel.name for channel in self.connected_channels]
                     print(f"Heartbeat: Connected to {len(connected_channels)} channels: {connected_channels}")
-                    c.execute("INSERT OR REPLACE INTO bot_status (key, value) VALUES (?, ?)",
-                             ('connected_channels', ','.join(connected_channels)))
+                    c.execute("INSERT OR REPLACE INTO bot_status (key, value, timestamp) VALUES (?, ?, ?)",
+                             ('connected_channels', ','.join(connected_channels), now))
                     
                     conn.commit()
                     conn.close()

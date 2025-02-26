@@ -29,6 +29,7 @@ from flask.logging import default_handler
 import sys
 import subprocess
 import socket
+from utils.web_utils import get_available_models
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('WEB_SECRET_KEY', 'default-insecure-key')  # Read from settings.conf
@@ -126,13 +127,18 @@ def send_markov_message(channel_name):
         app.logger.error(f"Error sending message: {e}")
         return jsonify({'success': False, 'message': str(e)})
 
-@app.route('/bot_status')
+@app.route('/bot_status')  # Keep for backwards compatibility
+@app.route('/api/bot-status')  # Standardized endpoint
 def bot_status():
-    """Check if the bot is running with enhanced TTS detection"""
+    """Check if the bot is running with enhanced TTS detection and connection status"""
     try:
         is_running = False
         tts_enabled = False
+        is_connected = False
+        uptime = None
+        connected_channels = []
         
+        # Check if bot process is running
         if os.path.exists('bot.pid'):
             try:
                 pid = get_bot_pid()
@@ -152,10 +158,27 @@ def bot_status():
                         pass
             except:
                 pass
+        
+        # Check heartbeat for connection status and uptime
+        if is_running and os.path.exists('bot_heartbeat.json'):
+            try:
+                with open('bot_heartbeat.json', 'r') as f:
+                    heartbeat_data = json.load(f)
+                    
+                    # Check heartbeat timestamp - consider stale if older than 2 minutes
+                    if time.time() - heartbeat_data.get('timestamp', 0) < 120:
+                        is_connected = True
+                        uptime = heartbeat_data.get('uptime')
+                        connected_channels = heartbeat_data.get('channels', [])
+            except Exception as e:
+                app.logger.warning(f"Failed to read heartbeat file: {e}")
                 
         return jsonify({
             "running": is_running,
-            "tts_enabled": tts_enabled
+            "connected": is_connected,
+            "tts_enabled": tts_enabled,
+            "uptime": format_uptime(uptime) if uptime else None,
+            "channels": connected_channels
         })
     except Exception as e:
         app.logger.error(f"Error checking bot status: {e}")
@@ -163,10 +186,38 @@ def bot_status():
 
 
 @app.route('/toggle_tts', methods=['POST'])
+@app.route('/api/toggle-tts', methods=['POST'])  # Standardized endpoint
 def toggle_tts():
-    global enable_tts
-    enable_tts = not enable_tts
-    return redirect(url_for('bot_control'))
+    try:
+        global enable_tts
+        
+        # Handle both JSON and form data
+        if request.is_json:
+            data = request.get_json()
+            if 'enable_tts' in data:
+                enable_tts = bool(data['enable_tts'])
+            else:
+                enable_tts = not enable_tts
+        else:
+            # Form submission
+            form_value = request.form.get('enable_tts')
+            if form_value is not None:
+                enable_tts = (form_value == 'on' or form_value == 'true')
+            else:
+                enable_tts = not enable_tts
+                
+        # Return JSON for API requests, redirect for form submissions
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.is_json:
+            return jsonify({'success': True, 'tts_enabled': enable_tts})
+        else:
+            return redirect(url_for('bot_control'))
+    except Exception as e:
+        app.logger.error(f"Error toggling TTS: {e}")
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.is_json:
+            return jsonify({'success': False, 'error': str(e)})
+        else:
+            flash(f"Error toggling TTS: {e}", "error")
+            return redirect(url_for('bot_control'))
 
 def run_bot(enable_tts=False):
     global bot_instance
@@ -434,45 +485,28 @@ def rebuild_all_caches():
 
 @app.route('/api/stats')
 def api_stats():
-    cache_dir = 'cache'
-    logs_dir = 'logs'
-    cache_files = os.listdir(cache_dir)
-    log_files = os.listdir(logs_dir)
-
-    total_line_count = 0  
-    stats_data = []
-
-    for file in cache_files:
-        if file.endswith("_model.json"):
-            channel_name = file.replace("_model.json", "")
-            log_file = f"{channel_name}.txt"
-            cache_file_path = os.path.join(cache_dir, file)
-            
-            if log_file in log_files:
-                log_file_path = os.path.join(logs_dir, log_file)
-                cache_size = os.path.getsize(cache_file_path)
-                with open(log_file_path, 'r') as f:
-                    line_count = sum(1 for line in f)
-                total_line_count += line_count  
-                stats_data.append({
-                    'channel': channel_name,
-                    'cache': file,
-                    'log': log_file,
-                    'cache_size': cache_size,
-                    'line_count': line_count
-                })
-
-
-    general_model_row = {
-        'channel': 'General Model',
-        'cache': 'general_markov_model.json',
-        'log': 'N/A',
-        'cache_size': os.path.getsize(os.path.join(cache_dir, 'general_markov_model.json')),
-        'line_count': total_line_count
-    }
-    stats_data.insert(0, general_model_row)  
-
-    return jsonify(stats_data)
+    """Get overall bot statistics"""
+    from utils.web_utils import get_db_stats
+    
+    try:
+        stats = get_db_stats()
+        
+        # Add model information
+        stats['models'] = get_available_models()
+        
+        # Add system info
+        import platform
+        system_info = {
+            'python_version': platform.python_version(),
+            'platform': platform.platform(),
+            'hostname': platform.node()
+        }
+        stats['system'] = system_info
+        
+        return jsonify(stats)
+    except Exception as e:
+        app.logger.error(f"Error getting stats: {e}")
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route('/rebuild-general-cache', methods=['POST'])
@@ -657,7 +691,12 @@ def get_stats_data(cache_dir='cache', logs_dir='logs'):
 
 def format_timestamp(timestamp):
     try:
-        # Convert from '20240127-190809' to '2024-01-27 19:08:09'
+        # Handle ISO format like '2025-02-24T21:03:12.265976'
+        if 'T' in timestamp:
+            dt = datetime.fromisoformat(timestamp)
+            return dt.strftime("%Y-%m-%d %H:%M:%S")
+            
+        # Handle format like '20240127-190809'
         dt = datetime.strptime(timestamp, "%Y%m%d-%H%M%S")
         return dt.strftime("%Y-%m-%d %H:%M:%S")
     except ValueError as e:
@@ -671,6 +710,7 @@ def format_data_for_frontend(data):
         channel, message_id, timestamp, voice_preset, file_path, message = record
         truncated_message_id = (
             str(message_id)[4:] if len(str(message_id)) > 4 else str(message_id)
+        )
 
         if (
             len(timestamp) == 19
@@ -856,10 +896,45 @@ def get_channels():
         
         conn.close()
         
+        # Get connected channels from bot heartbeat or bot status
+        connected_channels = []
+        
+        # Method 1: Try to get from heartbeat file first (most reliable)
+        if os.path.exists('bot_heartbeat.json'):
+            try:
+                with open('bot_heartbeat.json', 'r') as f:
+                    heartbeat_data = json.load(f)
+                    if 'channels' in heartbeat_data:
+                        connected_channels = [c.lstrip('#') for c in heartbeat_data['channels']]
+            except Exception as e:
+                app.logger.warning(f"Failed to read connected channels from heartbeat: {e}")
+        
+        # Method 2: Try to get from bot status table
+        if not connected_channels:
+            try:
+                conn = sqlite3.connect(db_file)
+                cursor = conn.cursor()
+                cursor.execute("SELECT value FROM bot_status WHERE key = 'connected_channels'")
+                result = cursor.fetchone()
+                if result and result[0]:
+                    connected_channels = result[0].split(',')
+                conn.close()
+            except Exception as e:
+                app.logger.warning(f"Failed to read connected channels from bot_status: {e}")
+        
+        # Method 3: Fallback to bot instance if available
+        if not connected_channels and bot_instance:
+            try:
+                connected_channels = [c.lstrip('#') for c in getattr(bot_instance, '_joined_channels', [])]
+            except Exception as e:
+                app.logger.warning(f"Failed to get channels from bot instance: {e}")
+                
+        app.logger.info(f"Found connected channels: {connected_channels}")
+                
         # Format the channel data
         for channel_name, config in channel_configs.items():
-            # Check if channel is connected - using _joined_channels attribute
-            connected = bot_instance and f"#{channel_name}" in getattr(bot_instance, '_joined_channels', [])
+            # Check if channel is connected
+            connected = channel_name in connected_channels
             
             channels.append({
                 'name': channel_name,
@@ -1235,7 +1310,7 @@ def leave_channel(channel_name):
         app.logger.error(f"Error leaving channel: {e}")
         return jsonify({'success': False, 'message': str(e)})
 
-@app.route('/api/bot-status')
+@app.route('/bot-status-detailed')  # Legacy endpoint
 def bot_status_api():
     """Enhanced API endpoint for checking bot status with more detailed information"""
     try:
@@ -1339,6 +1414,29 @@ def bot_status_api():
             'last_check': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         })
 
+def format_uptime(seconds):
+    """Formats uptime in seconds to a human-readable string"""
+    if seconds is None:
+        return None
+        
+    try:
+        seconds = float(seconds)
+        days, remainder = divmod(seconds, 86400)
+        hours, remainder = divmod(remainder, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        
+        if days > 0:
+            return f"{int(days)}d {int(hours)}h {int(minutes)}m"
+        elif hours > 0:
+            return f"{int(hours)}h {int(minutes)}m {int(seconds)}s"
+        elif minutes > 0:
+            return f"{int(minutes)}m {int(seconds)}s"
+        else:
+            return f"{int(seconds)}s"
+    except Exception as e:
+        app.logger.error(f"Error formatting uptime: {e}")
+        return str(seconds)
+
 def get_bot_pid():
     """Get the bot process ID from the PID file"""
     if not os.path.exists('bot.pid'):
@@ -1406,12 +1504,17 @@ def channels_api():
         configured_channels = [dict(row) for row in c.fetchall()]
         
         # Get currently connected channels from bot status
-        c.execute("SELECT value FROM bot_status WHERE key = 'connected_channels'")
-        connected_result = c.fetchone()
-        
-        if connected_result and connected_result[0]:
-            connected_channels = connected_result[0].split(',')
-        else:
+        try:
+            c.execute("SELECT value FROM bot_status WHERE key = 'connected_channels'")
+            connected_result = c.fetchone()
+            
+            if connected_result and connected_result[0]:
+                connected_channels = connected_result[0].split(',')
+            else:
+                connected_channels = []
+        except sqlite3.OperationalError:
+            # If bot_status table doesn't exist yet, use empty list
+            app.logger.warning("bot_status table doesn't exist yet, using empty connected channels list")
             connected_channels = []
         
         # Get message counts
@@ -1831,4 +1934,14 @@ def check_existing_instance():
             'success': False,
             'error': str(e)
         })
+
+@app.route('/api/models')
+def api_models():
+    """Get available models with metadata"""
+    try:
+        models = get_available_models()
+        return jsonify(models)
+    except Exception as e:
+        app.logger.error(f"Error getting models: {e}")
+        return jsonify({"error": str(e)}), 500
 

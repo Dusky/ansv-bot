@@ -783,10 +783,9 @@ class Bot(commands.Bot):
                             # If TTS is enabled for the current channel.
                             if self.enable_tts and tts_enabled:
                                 # Generate TTS audio for the response.
+                                # Note: process_text function logs internally, so we don't need to log here
                                 tts_output = process_text(response, channel_name, self.db_file)
-                                if tts_output:
-                                    print(f"TTS audio file generated: {tts_output}")
-                                else:
+                                if not tts_output:
                                     print("Failed to generate TTS audio file.")
 
                             # Reset the chat line count and last message time for the current channel.

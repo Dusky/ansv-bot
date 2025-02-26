@@ -147,7 +147,8 @@ def process_text_thread(input_text, channel_name, db_file='./messages.db', full_
             conn.close()
             
             notify_new_audio_available(channel_name, new_id)
-            print(f"TTS audio file generated: {full_path}")
+            # Log internally without printing to console
+            logging.info(f"TTS audio file generated: {full_path}")
             
             return full_path, new_id
             
@@ -228,17 +229,13 @@ async def process_text(channel, text, model_type="bark"):
                 # Log which voice we're using
                 logging.info(f"Using built-in Bark voice preset: v2/en_speaker_0")
                 
-                # Generate audio with proper attention mask
-                # Fix for "attention mask and pad token" warnings
+                # Generate audio with minimal parameters to avoid API issues
+                # The Bark API might have changed, so we only use params we know are supported
                 audio_array = generate_audio(
                     text,
                     history_prompt="v2/en_speaker_0",
-                    # Add these parameters to fix the warnings
                     text_temp=0.7,
-                    waveform_temp=0.7,
-                    # Set pad token and attention mask
-                    pad_token_id=10000,  # Same as eos_token_id from error
-                    output_full=False  # Don't add silence
+                    waveform_temp=0.7
                 )
                 
                 # Only write file AFTER successful generation

@@ -68,3 +68,8 @@ Thumbs.db
 .deps_installed
 bot_heartbeat.json
 bot.pid
+CLAUDE.md
+FEATURES.md
+CODE_CLEANUP.md
+logs/firestarman.txt
+WEB_INTERFACE_ISSUES.md
