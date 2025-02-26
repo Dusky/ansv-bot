@@ -106,7 +106,7 @@ const socketio = io();
 
 // Check bot status periodically
 function checkBotStatus() {
-  fetch('/bot-status')
+  fetch('/api/bot-status')
     .then(response => response.json())
     .then(data => {
       const statusSpinner = document.getElementById('statusSpinner');
@@ -239,7 +239,10 @@ document.getElementById('refreshChannelsBtn').addEventListener('click', function
 document.addEventListener('DOMContentLoaded', function() {
   checkBotStatus();
   loadChannels();
-  setInterval(checkBotStatus, 30000); // Check every 30 seconds
+  
+  // Set up refresh intervals
+  setInterval(checkBotStatus, 30000); // Check bot status every 30 seconds
+  setInterval(loadChannels, 60000);   // Refresh channel list every 60 seconds
 });
 
 function loadChannels() {
@@ -248,8 +251,14 @@ function loadChannels() {
     // Show loading state
     tableBody.innerHTML = '<tr><td colspan="6" class="text-center">Loading channels...</td></tr>';
     
+    // Use the API endpoint with error handling
     fetch('/get-channels')
-        .then(response => response.json())
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`Server responded with ${response.status}: ${response.statusText}`);
+            }
+            return response.json();
+        })
         .then(channels => {
         if (channels.length === 0) {
           tableBody.innerHTML = '<tr><td colspan="6" class="text-center">No channels connected</td></tr>';

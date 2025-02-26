@@ -201,7 +201,7 @@ function updateButtonStates(isBotRunning) {
 }
 
 function fetchBotStatusAndUpdateUI() {
-  fetch("/bot_status")
+  fetch("/api/bot-status")
     .then(response => response.json())
     .then(data => updateButtonStates(data.running))
     .catch(error => console.error("Error fetching bot status:", error));
@@ -209,52 +209,38 @@ function fetchBotStatusAndUpdateUI() {
 
 setInterval(fetchBotStatusAndUpdateUI, 30000); // 30 seconds
 
-var startBotButton = document.getElementById("startBotButton");
+// startBotButton event listener is already defined in setupButtonListeners()
 
-if (startBotButton) {
-  startBotButton.addEventListener("click", function () {
-    // Make an asynchronous POST request to start the bot
-    fetch("/start_bot", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-    })
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error("Network response was not ok");
-        }
-        return response.json();
-      })
-      .then((data) => {
-        // Handle successful response
-        console.log("Bot started successfully");
-      })
-      .catch((error) => {
-        // Handle error
-        console.error("There was a problem with the fetch operation:", error);
-      });
-  });
-}
-
-const autoplayElement = document.getElementById("autoplay");
-const muteIcon = document.getElementById("muteIcon");
-const unmuteIcon = document.getElementById("unmuteIcon");
-
-// Set the UI based on stored preferences
-const isMuted = localStorage.getItem("muteStatus") === "true";
-if (autoplayElement) {
+// Define autoplay functionality in a single place
+function initializeAutoplayToggle() {
+  const autoplayElement = document.getElementById("autoplay");
+  const muteIcon = document.getElementById("muteIcon");
+  const unmuteIcon = document.getElementById("unmuteIcon");
+  
+  if (autoplayElement) {
+    // Set the UI based on stored preferences
+    const isMuted = localStorage.getItem("muteStatus") === "true";
     autoplayElement.checked = !isMuted;
+    updateIcons(isMuted);
+    
+    // Add event listener
+    autoplayElement.addEventListener("change", function () {
+      const autoplayEnabled = this.checked;
+      updateIcons(!autoplayEnabled);
+      localStorage.setItem("muteStatus", !autoplayEnabled);
+    });
+  }
 }
-updateIcons(isMuted);
 
-autoplayElement.addEventListener("change", function () {
-  const autoplayEnabled = this.checked;
-  updateIcons(!autoplayEnabled);
-  localStorage.setItem("muteStatus", !autoplayEnabled);
-});
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', initializeAutoplayToggle);
 
 function updateIcons(isMuted) {
+  const muteIcon = document.getElementById("muteIcon");
+  const unmuteIcon = document.getElementById("unmuteIcon");
+  
+  if (!muteIcon || !unmuteIcon) return; // Exit if icons don't exist
+  
   if (isMuted) {
     muteIcon.classList.remove("d-none");
     unmuteIcon.classList.add("d-none");

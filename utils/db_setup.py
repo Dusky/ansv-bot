@@ -47,6 +47,13 @@ def ensure_db_setup(db_file):
                         voice_preset TEXT,
                         message TEXT
                     )''')
+                    
+        # Create 'bot_status' table for storing bot status information
+        c.execute('''CREATE TABLE IF NOT EXISTS bot_status (
+                        key TEXT PRIMARY KEY,
+                        value TEXT,
+                        timestamp TEXT
+                    )''')
 
         # Check and add missing columns in 'channel_configs'
         c.execute("PRAGMA table_info(channel_configs)")
