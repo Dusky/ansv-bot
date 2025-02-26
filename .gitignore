@@ -73,3 +73,8 @@ FEATURES.md
 CODE_CLEANUP.md
 logs/firestarman.txt
 WEB_INTERFACE_ISSUES.md
+logs/firestarman.txt
+cache/aegies_model.json
+cache/firestarman_model.json
+cache/general_markov_model.json
+cache/imyt_model.json

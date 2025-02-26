@@ -44,6 +44,10 @@ function checkBotStatus() {
     const lastUpdated = document.getElementById('statusLastUpdated');
     const uptimeDisplay = document.getElementById('botUptime');
     
+    // Look for buttons in both bot_control and main dashboard
+    const startBotBtn = document.getElementById('startBotBtn') || document.getElementById('quickStartBtn');
+    const stopBotBtn = document.getElementById('stopBotBtn') || document.getElementById('quickStopBtn');
+    
     if (statusSpinner) statusSpinner.style.display = 'inline-block';
     
     fetch('/api/bot-status')
@@ -59,25 +63,34 @@ function checkBotStatus() {
             // Process is running but might not be connected
             if (data.running) {
                 if (data.connected) {
-                    statusText.textContent = 'Running & Connected';
-                    statusText.className = 'mb-0 text-success';
+                    if (statusText) {
+                        statusText.textContent = 'Running & Connected';
+                        statusText.className = 'mb-0 text-success';
+                    }
                 } else {
-                    statusText.textContent = 'Running (Not Connected)';
-                    statusText.className = 'mb-0 text-warning';
+                    if (statusText) {
+                        statusText.textContent = 'Running (Not Connected)';
+                        statusText.className = 'mb-0 text-warning';
+                    }
                 }
                 
-                document.getElementById('startBotBtn').disabled = true;
-                document.getElementById('stopBotBtn').disabled = false;
+                // Update bot control buttons if they exist
+                if (startBotBtn) startBotBtn.disabled = true;
+                if (stopBotBtn) stopBotBtn.disabled = false;
                 
                 // Show uptime if available
                 if (uptimeDisplay && data.uptime) {
                     uptimeDisplay.textContent = data.uptime;
                 }
             } else {
-                statusText.textContent = 'Stopped';
-                statusText.className = 'mb-0 text-danger';
-                document.getElementById('startBotBtn').disabled = false;
-                document.getElementById('stopBotBtn').disabled = true;
+                if (statusText) {
+                    statusText.textContent = 'Stopped';
+                    statusText.className = 'mb-0 text-danger';
+                }
+                
+                // Update bot control buttons if they exist
+                if (startBotBtn) startBotBtn.disabled = false;
+                if (stopBotBtn) stopBotBtn.disabled = true;
                 
                 if (uptimeDisplay) {
                     uptimeDisplay.textContent = 'Not running';
@@ -98,10 +111,16 @@ function checkBotStatus() {
         .catch(error => {
             console.error('Error checking bot status:', error);
             if (statusSpinner) statusSpinner.style.display = 'none';
-            statusText.textContent = 'Unknown';
-            statusText.className = 'mb-0 text-warning';
             
-            showToast('Failed to check bot status: ' + error.message, 'error');
+            if (statusText) {
+                statusText.textContent = 'Unknown';
+                statusText.className = 'mb-0 text-warning';
+            }
+            
+            // Don't show toast for common errors
+            if (error.message !== "Cannot read properties of null (reading 'disabled')") {
+                showToast('Failed to check bot status: ' + error.message, 'error');
+            }
         });
 }
 
@@ -111,7 +130,17 @@ function loadChannels() {
     const spinner = document.getElementById('channelLoadingSpinner');
     const channelCountElement = document.getElementById('channelCount');
     
-    if (!channelsList) return;
+    // Setup refresh channels button if it exists
+    const refreshChannelsBtn = document.getElementById('refreshChannelsBtn');
+    if (refreshChannelsBtn) {
+        refreshChannelsBtn.addEventListener('click', function() {
+            this.disabled = true;
+            loadChannels();
+            setTimeout(() => { this.disabled = false; }, 1000);
+        });
+    }
+    
+    if (!channelsList && !channelCountElement) return;
     
     if (spinner) spinner.style.display = 'block';
     
@@ -125,68 +154,72 @@ function loadChannels() {
         .then(data => {
             if (spinner) spinner.style.display = 'none';
             
-            if (data.length === 0) {
-                channelsList.innerHTML = '<div class="text-center text-muted">No channels configured</div>';
-                if (channelCountElement) channelCountElement.textContent = '0';
-                return;
-            }
-            
-            // Count connected channels
+            // Count connected channels - update even if the list doesn't exist
             const connectedCount = data.filter(channel => channel.currently_connected).length;
             if (channelCountElement) {
                 channelCountElement.textContent = connectedCount.toString();
             }
             
-            channelsList.innerHTML = '';
-            
-            // Sort channels: connected first, then alphabetically
-            data.sort((a, b) => {
-                if (a.currently_connected !== b.currently_connected) {
-                    return b.currently_connected - a.currently_connected;
-                }
-                return a.name.localeCompare(b.name);
-            });
-            
-            data.forEach(channel => {
-                const item = document.createElement('div');
-                item.className = 'list-group-item d-flex justify-content-between align-items-center';
-                
-                const statusIndicator = document.createElement('span');
-                statusIndicator.className = `status-indicator status-${channel.currently_connected ? 'online' : 'offline'}`;
-                
-                const channelName = document.createElement('span');
-                channelName.textContent = channel.name;
-                
-                const statusContainer = document.createElement('div');
-                statusContainer.appendChild(statusIndicator);
-                statusContainer.appendChild(channelName);
-                
-                const badges = document.createElement('div');
-                
-                if (channel.tts_enabled) {
-                    const ttsBadge = document.createElement('span');
-                    ttsBadge.className = 'badge bg-info rounded-pill ms-1';
-                    ttsBadge.innerHTML = '<i class="fas fa-volume-up" title="TTS Enabled"></i>';
-                    badges.appendChild(ttsBadge);
+            // Update channels list if it exists
+            if (channelsList) {
+                if (data.length === 0) {
+                    channelsList.innerHTML = '<div class="text-center text-muted">No channels configured</div>';
+                    return;
                 }
                 
-                if (!channel.configured_to_join) {
-                    const notJoinBadge = document.createElement('span');
-                    notJoinBadge.className = 'badge bg-warning rounded-pill ms-1';
-                    notJoinBadge.innerHTML = '<i class="fas fa-exclamation-triangle" title="Not configured to join"></i>';
-                    badges.appendChild(notJoinBadge);
-                }
+                channelsList.innerHTML = '';
                 
-                item.appendChild(statusContainer);
-                item.appendChild(badges);
-                channelsList.appendChild(item);
-            });
+                // Sort channels: connected first, then alphabetically
+                data.sort((a, b) => {
+                    if (a.currently_connected !== b.currently_connected) {
+                        return b.currently_connected - a.currently_connected;
+                    }
+                    return a.name.localeCompare(b.name);
+                });
+                
+                data.forEach(channel => {
+                    const item = document.createElement('div');
+                    item.className = 'list-group-item d-flex justify-content-between align-items-center';
+                    
+                    const statusIndicator = document.createElement('span');
+                    statusIndicator.className = `status-indicator status-${channel.currently_connected ? 'online' : 'offline'}`;
+                    
+                    const channelName = document.createElement('span');
+                    channelName.textContent = channel.name;
+                    
+                    const statusContainer = document.createElement('div');
+                    statusContainer.appendChild(statusIndicator);
+                    statusContainer.appendChild(channelName);
+                    
+                    const badges = document.createElement('div');
+                    
+                    if (channel.tts_enabled) {
+                        const ttsBadge = document.createElement('span');
+                        ttsBadge.className = 'badge bg-info rounded-pill ms-1';
+                        ttsBadge.innerHTML = '<i class="fas fa-volume-up" title="TTS Enabled"></i>';
+                        badges.appendChild(ttsBadge);
+                    }
+                    
+                    if (!channel.configured_to_join) {
+                        const notJoinBadge = document.createElement('span');
+                        notJoinBadge.className = 'badge bg-warning rounded-pill ms-1';
+                        notJoinBadge.innerHTML = '<i class="fas fa-exclamation-triangle" title="Not configured to join"></i>';
+                        badges.appendChild(notJoinBadge);
+                    }
+                    
+                    item.appendChild(statusContainer);
+                    item.appendChild(badges);
+                    channelsList.appendChild(item);
+                });
+            }
         })
         .catch(error => {
             console.error('Error loading channels:', error);
             if (spinner) spinner.style.display = 'none';
-            channelsList.innerHTML = '<div class="text-center text-danger">Error loading channels</div>';
-            showToast('Failed to load channels: ' + error.message, 'error');
+            
+            if (channelsList) {
+                channelsList.innerHTML = '<div class="text-center text-danger">Error loading channels</div>';
+            }
         });
 }
 
@@ -302,17 +335,16 @@ function loadRecentTTS() {
 // Updated loadSystemInfo with better error handling
 function loadSystemInfo() {
     // Check if elements exist first
-    const appVersion = document.getElementById('appVersion');
     const botUptime = document.getElementById('botUptime');
     const messageCount = document.getElementById('messageCount');
-    const channelCount2 = document.getElementById('channelCount2');
     
-    if (!appVersion || !botUptime || !messageCount || !channelCount2) {
+    if (!botUptime && !messageCount) {
         console.log('System info elements not found, skipping update');
         return;
     }
     
-    fetch('/api/system-info')
+    // Get the total model stats (including lines processed)
+    fetch('/get-stats')
         .then(response => {
             if (!response.ok) {
                 throw new Error(`Server responded with ${response.status}`);
@@ -320,14 +352,33 @@ function loadSystemInfo() {
             return response.json();
         })
         .then(data => {
-            appVersion.textContent = data.version || 'Unknown';
-            botUptime.textContent = data.uptime || 'Not running';
-            messageCount.textContent = data.message_count || '0';
-            channelCount2.textContent = data.channel_count || '0';
+            // Update message count using the brain stats
+            if (messageCount) {
+                let totalLines = 0;
+                data.forEach(channel => {
+                    if (channel.line_count) {
+                        totalLines += parseInt(channel.line_count);
+                    }
+                });
+                messageCount.textContent = totalLines.toLocaleString();
+            }
+            
+            // Get additional bot info for uptime
+            fetch('/api/bot-status')
+                .then(response => response.json())
+                .then(botData => {
+                    if (botUptime && botData.uptime) {
+                        botUptime.textContent = botData.uptime;
+                    } else if (botUptime) {
+                        botUptime.textContent = 'Not running';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading bot status:', error);
+                });
         })
         .catch(error => {
-            console.error('Error loading system info:', error);
-            // Don't update the UI on error
+            console.error('Error loading model stats:', error);
         });
 }
 
@@ -371,11 +422,15 @@ function reconnectBot() {
     });
 }
 
-// Fix the startBot function
+// Bot control function - Start bot
 function startBot() {
-    // Disable buttons during operation
-    document.getElementById('startBotBtn').disabled = true;
-    document.getElementById('stopBotBtn').disabled = true;
+    // Get button elements with null check - support both bot control page and dashboard
+    const startBotBtn = document.getElementById('startBotBtn') || document.getElementById('quickStartBtn');
+    const stopBotBtn = document.getElementById('stopBotBtn') || document.getElementById('quickStopBtn');
+    
+    // Disable buttons if they exist
+    if (startBotBtn) startBotBtn.disabled = true;
+    if (stopBotBtn) stopBotBtn.disabled = true;
     
     showToast('Starting bot...', 'info');
     
@@ -400,16 +455,20 @@ function startBot() {
         console.error('Error starting bot:', error);
         showToast('Error starting bot', 'error');
         
-        document.getElementById('startBotBtn').disabled = false;
-        document.getElementById('stopBotBtn').disabled = false;
+        // Re-check status which will properly handle button states
+        checkBotStatus();
     });
 }
 
-// Fix the stopBot function
+// Bot control function - Stop bot
 function stopBot() {
-    // Disable buttons during operation
-    document.getElementById('startBotBtn').disabled = true;
-    document.getElementById('stopBotBtn').disabled = true;
+    // Get button elements with null check - support both bot control page and dashboard
+    const startBotBtn = document.getElementById('startBotBtn') || document.getElementById('quickStartBtn');
+    const stopBotBtn = document.getElementById('stopBotBtn') || document.getElementById('quickStopBtn');
+    
+    // Disable buttons if they exist
+    if (startBotBtn) startBotBtn.disabled = true;
+    if (stopBotBtn) stopBotBtn.disabled = true;
     
     showToast('Stopping bot...', 'info');
     
@@ -434,7 +493,7 @@ function stopBot() {
         console.error('Error stopping bot:', error);
         showToast('Error stopping bot', 'error');
         
-        document.getElementById('startBotBtn').disabled = false;
-        document.getElementById('stopBotBtn').disabled = false;
+        // Re-check status which will properly handle button states
+        checkBotStatus();
     });
 } 

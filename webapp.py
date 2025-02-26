@@ -531,7 +531,7 @@ def set_theme(theme):
     try:
         app.logger.info(f"Setting theme to: {theme}")
         
-        # Map the theme parameter to a valid Bootswatch theme
+        # Map the theme parameter to a valid Bootswatch theme or custom theme
         valid_themes = {
             'dark': 'darkly', 
             'light': 'flatly',
@@ -541,7 +541,8 @@ def set_theme(theme):
             'slate': 'slate',
             'solar': 'solar',
             'superhero': 'superhero',
-            'vapor': 'vapor'
+            'vapor': 'vapor',
+            'ansv': 'ansv'  # Our custom ANSV theme
         }
         
         theme_to_set = valid_themes.get(theme, 'darkly')  # Default to darkly if invalid
@@ -1031,20 +1032,33 @@ def add_channel():
         conn.close()
 
 
-@app.route('/latest-messages', methods=['GET'])
+@app.route('/api/recent-tts', methods=['GET'])
+@app.route('/latest-messages', methods=['GET'])  # Keep for backward compatibility
 def get_latest_messages():
     try:
+        limit = request.args.get('limit', 10, type=int)
+        channel = request.args.get('channel', None)
+        
         conn = sqlite3.connect(db_file)
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         
-        # Get latest TTS messages from database
-        c.execute("""
-            SELECT channel, timestamp, voice_preset, file_path, message 
+        # Prepare query with optional channel filter
+        query = """
+            SELECT message_id as id, channel, timestamp, voice_preset, file_path, message 
             FROM tts_logs 
-            ORDER BY timestamp DESC 
-            LIMIT 10
-        """)
+        """
+        
+        params = []
+        if channel:
+            query += " WHERE channel = ? "
+            params.append(channel)
+            
+        query += " ORDER BY timestamp DESC LIMIT ? "
+        params.append(limit)
+        
+        # Execute the query
+        c.execute(query, params)
         
         rows = c.fetchall()
         conn.close()
@@ -1053,6 +1067,7 @@ def get_latest_messages():
         formatted_entries = []
         for row in rows:
             formatted_entries.append({
+                'id': row['id'],
                 'channel': row['channel'],
                 'timestamp': row['timestamp'],
                 'voice_preset': row['voice_preset'],
@@ -1062,6 +1077,7 @@ def get_latest_messages():
             
         return jsonify(formatted_entries)
     except Exception as e:
+        app.logger.error(f"Error getting recent TTS: {e}")
         return jsonify({'error': str(e)}), 500
 
 
@@ -1075,6 +1091,23 @@ def check_updates(last_id):
         }
     )
 
+
+@app.route('/api/build-times', methods=['GET'])
+def get_build_times():
+    try:
+        # Try to read build times from cache file
+        cache_file = os.path.join('cache', 'cache_build_times.json')
+        
+        if os.path.exists(cache_file):
+            with open(cache_file, 'r') as f:
+                build_times = json.load(f)
+            return jsonify(build_times)
+        else:
+            # If file doesn't exist, return empty array
+            return jsonify([])
+    except Exception as e:
+        app.logger.error(f"Error reading build times: {e}")
+        return jsonify([])
 
 def get_new_tts_entries(db_file, last_id):
     try:
@@ -1149,8 +1182,8 @@ if __name__ == "__main__":
 
 __all__ = ['app', 'socketio']
 
-@app.route('/trigger-tts', methods=['POST'])
-def trigger_tts():
+@app.route('/send-message-to-channel', methods=['POST'])
+def send_message_to_channel():
     try:
         data = request.json
         channel = data.get('channel')
@@ -1547,6 +1580,89 @@ def channels_api():
         import traceback
         traceback.print_exc()
         return jsonify([])
+
+@app.route('/trigger-tts', methods=['POST'])
+def trigger_tts():
+    """Trigger a TTS message from the web interface"""
+    global enable_tts
+    if not enable_tts:
+        return jsonify({'success': False, 'error': 'TTS is not enabled'})
+    
+    try:
+        data = request.json
+        channel = data.get('channel', 'web')  # Default to 'web' if channel not specified
+        message = data.get('message')
+        
+        if not message:
+            return jsonify({'success': False, 'error': 'Missing message'})
+        
+        # Default voice preset if not specified or channel doesn't exist
+        voice_preset = "v2/en_speaker_6"
+        
+        # Try to get channel voice preset if it's a real channel
+        if channel != 'web' and channel != 'bot':
+            conn = sqlite3.connect(db_file)
+            c = conn.cursor()
+            c.execute("SELECT voice_preset FROM channel_configs WHERE channel_name = ?", (channel,))
+            result = c.fetchone()
+            if result and result[0]:
+                voice_preset = result[0]
+            conn.close()
+        
+        # Generate a timestamp
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        
+        # Create outputs directory if it doesn't exist
+        output_dir = os.path.join('static', 'outputs', channel)
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Create the file path
+        file_path = os.path.join(output_dir, f"{channel}-{timestamp}.wav")
+        
+        # Process the TTS
+        result = process_text(
+            text=message,
+            output_path=file_path,
+            voice_preset=voice_preset
+        )
+        
+        if result and os.path.exists(file_path):
+            # Log the TTS entry
+            conn = sqlite3.connect(db_file)
+            c = conn.cursor()
+            
+            # Make sure tts_logs table exists
+            c.execute("""
+                CREATE TABLE IF NOT EXISTS tts_logs (
+                    message_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    channel TEXT NOT NULL,
+                    timestamp TEXT NOT NULL,
+                    voice_preset TEXT,
+                    file_path TEXT,
+                    message TEXT
+                )
+            """)
+            
+            c.execute(
+                "INSERT INTO tts_logs (channel, timestamp, voice_preset, file_path, message) VALUES (?, ?, ?, ?, ?)",
+                (channel, timestamp, voice_preset, file_path, message)
+            )
+            conn.commit()
+            conn.close()
+            
+            return jsonify({
+                'success': True,
+                'file_path': file_path,
+                'message': 'TTS message generated successfully'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Failed to generate TTS audio'
+            })
+    except Exception as e:
+        app.logger.error(f"Error generating TTS: {e}")
+        return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/api/reconnect-bot', methods=['POST'])
 def reconnect_bot_api():
