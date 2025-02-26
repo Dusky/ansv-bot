@@ -27,14 +27,22 @@
   <script src="https://cdn.socket.io/4.0.0/socket.io.min.js" crossorigin="anonymous"></script>
   
   <!-- App Scripts -->
+  <!-- Core functionality first -->
   <script src="{{ url_for('static', filename='scripts/notification.js') }}"></script>
+  <script src="{{ url_for('static', filename='scripts/bot_status.js') }}"></script>
+  
+  <!-- Then other scripts -->
   <script src="{{ url_for('static', filename='scripts/data_handler.js') }}"></script>
   <script src="{{ url_for('static', filename='scripts/event_listener.js') }}"></script>
   <script src="{{ url_for('static', filename='scripts/setActiveTab.js') }}"></script>
   <script src="{{ url_for('static', filename='scripts/handle_voice.js') }}"></script>
+  
+  <!-- Critical load order: markov.js must be loaded before stats.js -->
   <script src="{{ url_for('static', filename='scripts/markov.js') }}"></script>
-  <script src="{{ url_for('static', filename='scripts/saveChannelSettings.js') }}"></script>
   <script src="{{ url_for('static', filename='scripts/stats.js') }}"></script>
+  
+  <!-- Remaining scripts -->
+  <script src="{{ url_for('static', filename='scripts/saveChannelSettings.js') }}"></script>
   <script src="{{ url_for('static', filename='scripts/compatibility_fix.js') }}"></script>
   <script src="{{ url_for('static', filename='scripts/main_page.js') }}"></script>
   <script src="{{ url_for('static', filename='scripts/settings.js') }}"></script>
@@ -116,34 +124,6 @@
     <div id="toastContainer"></div>
   </div>
 
-  <!-- Bot Status Updater -->
-  <script>
-    function updateBotStatus() {
-      fetch('/api/bot-status')
-        .then(response => response.json())
-        .then(data => {
-          const botStatusIcon = document.getElementById('botStatusIcon');
-          if (data.running) {
-            if (data.connected) {
-              // Green circle if bot is running and connected
-              botStatusIcon.className = 'bi bi-circle-fill ms-2 text-success';
-            } else {
-              // Yellow circle if bot is running but not connected
-              botStatusIcon.className = 'bi bi-circle-fill ms-2 text-warning';
-            }
-          } else {
-            // Red circle if bot is not running
-            botStatusIcon.className = 'bi bi-circle-fill ms-2 text-danger';
-          }
-        })
-        .catch(error => console.error('Error fetching bot status:', error));
-    }
-    
-    // Poll bot status every 30 seconds
-    setInterval(updateBotStatus, 30000);
-    
-    // Update the bot status when the page loads
-    document.addEventListener('DOMContentLoaded', updateBotStatus);
-  </script>
+  <!-- Bot Status is handled by bot_status.js -->
 </body>
 </html>

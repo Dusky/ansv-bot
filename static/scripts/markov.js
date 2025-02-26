@@ -101,14 +101,20 @@ function rebuildCacheForChannel(channelName) {
 function sendMarkovMessage(channelName) {
   // Show loading state
   const button = document.querySelector(`button[data-channel="${channelName}"]`);
-  if (!button) {
-    console.error(`Button for channel ${channelName} not found`);
-    return;
+  let originalText = "Generate";
+  let originalHTML = null;
+  
+  if (button) {
+    // Save original state
+    originalText = button.textContent;
+    originalHTML = button.innerHTML;
+    
+    // Set loading state
+    button.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Sending...';
+    button.disabled = true;
+  } else {
+    console.warn(`Button for channel ${channelName} not found`);
   }
-
-  const originalText = button.textContent;
-  button.textContent = "Sending...";
-  button.disabled = true;
   
   console.log(`Sending message to channel: ${channelName}`);
   
@@ -138,11 +144,21 @@ function sendMarkovMessage(channelName) {
     showToast('Error sending message', 'error');
   })
   .finally(() => {
-    // Restore button state
-    button.textContent = originalText;
-    button.disabled = false;
+    // Restore button state if it exists
+    if (button) {
+      if (originalHTML) {
+        button.innerHTML = originalHTML;
+      } else {
+        button.textContent = originalText;
+      }
+      button.disabled = false;
+    }
   });
 }
+
+// Create a global module object for cross-file function access
+window.markovModule = window.markovModule || {};
+window.markovModule.sendMarkovMessage = sendMarkovMessage;
 
 /**
  * Rebuild the Markov model for a specific channel

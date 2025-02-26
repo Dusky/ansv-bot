@@ -10,6 +10,8 @@ function loadStatistics() {
   // Show loading indicator
   if (loadingIndicator) loadingIndicator.style.display = 'block';
   
+  // Let the global status checker handle this - it should already be running
+  
   fetch('/get-stats')
     .then(response => {
       if (!response.ok) {
@@ -28,6 +30,20 @@ function loadStatistics() {
         // Clear existing rows
         statsContainer.innerHTML = '';
         
+        // Calculate max line count for relative scaling (exclude General Model)
+        let maxLineCount = 0;
+        let totalLineCount = 0;
+        
+        data.forEach(channel => {
+          if (channel.name !== 'General Model' && channel.name !== 'general_markov') {
+            const lineCount = parseInt(channel.line_count || 0);
+            totalLineCount += lineCount;
+            maxLineCount = Math.max(maxLineCount, lineCount);
+          }
+        });
+        
+        console.log(`Max line count: ${maxLineCount}, Total line count: ${totalLineCount}`);
+        
         // Add rows for each channel
         if (data.length === 0) {
           const emptyRow = document.createElement('tr');
@@ -35,28 +51,88 @@ function loadStatistics() {
           statsContainer.appendChild(emptyRow);
         } else {
           data.forEach(channel => {
+            const lineCount = parseInt(channel.line_count || 0);
+            
+            // Calculate the baseline progress (0-100 messages, minimum 5% for visibility)
+            const baselineProgress = Math.min(100, Math.max(5, lineCount / 100));
+            
+            // Calculate the relative progress based on total messages
+            // We'll use this for models with >100 messages
+            const relativeProgress = totalLineCount > 0 ? (lineCount / totalLineCount) * 100 : 0;
+            
             const row = document.createElement('tr');
-            row.innerHTML = `
-              <td>${channel.name}</td>
-              <td>${channel.cache_file || 'N/A'}</td>
-              <td>${channel.log_file || 'N/A'}</td>
-              <td>${channel.cache_size || '0 KB'}</td>
-              <td>${channel.line_count || '0'}</td>
-              <td><div class="progress" style="height: 6px;">
-                    <div class="progress-bar bg-success" style="width: ${Math.min(100, Math.max(5, (channel.line_count || 0) / 100))}%"></div>
-                  </div>
-              </td>
+            
+            // Create the layered progress bar HTML
+            let progressBarHtml = '';
+            
+            if (channel.name === 'General Model' || channel.name === 'general_markov') {
+              // For General Model, we show a different style progress bar
+              progressBarHtml = `
+                <div class="progress" style="height: 8px;">
+                  <div class="progress-bar bg-info" style="width: 100%"></div>
+                </div>
+                <small class="text-muted">Combined model</small>
+              `;
+            } else {
+              // For regular channels, show the two-layer progress bar
+              progressBarHtml = `
+                <div class="progress mb-1" style="height: 6px;" data-bs-toggle="tooltip" title="${lineCount} messages (threshold: 100)">
+                  <div class="progress-bar bg-success" style="width: ${baselineProgress}%"></div>
+                </div>
+                <div class="progress" style="height: 4px;" data-bs-toggle="tooltip" title="${(relativeProgress).toFixed(1)}% of all messages">
+                  <div class="progress-bar bg-info" style="width: ${relativeProgress}%"></div>
+                </div>
+                <small class="text-muted" style="font-size: 0.75rem;">${lineCount > 100 ? 
+                  `${(relativeProgress).toFixed(1)}% of total` : 
+                  `${Math.floor(baselineProgress)}% of min`}</small>
+                <div class="mt-1">
+                  <span class="badge ${lineCount < 50 ? 'bg-warning' : lineCount > 1000 ? 'bg-success' : 'bg-info'}" style="font-size: 0.7rem;">
+                    ${lineCount < 50 ? 'Needs training' : lineCount > 1000 ? 'Well-trained' : 'Adequate'}
+                  </span>
+                </div>
+              `;
+            }
+            
+            // Check if General Model for special styling
+            const isGeneralModel = (channel.name === 'General Model' || channel.name === 'general_markov');
+            
+            // Define content rows with styling
+            const channelCell = `<td class="${isGeneralModel ? 'fw-bold' : ''}">${channel.name}</td>`;
+            const cacheFileCell = `<td>${channel.cache_file || 'N/A'}</td>`;
+            const logFileCell = `<td>${channel.log_file || 'N/A'}</td>`;
+            const cacheSizeCell = `<td>${channel.cache_size || '0 KB'}</td>`;
+            const lineCountCell = `<td>${lineCount || '0'}</td>`;
+            const progressCell = `<td>${progressBarHtml}</td>`;
+            
+            // Create action buttons with conditional initial state
+            const actionButtons = `
               <td>
-                <button class="btn btn-primary btn-sm me-1" data-channel="${channel.name}" onclick="sendMarkovMessage('${channel.name}')">
-                  <i class="fas fa-comment-dots me-1"></i>Generate
-                </button>
-                <button class="btn btn-secondary btn-sm" data-channel="${channel.name}" data-action="rebuild" onclick="rebuildCacheForChannel('${channel.name}')">
-                  <i class="fas fa-sync-alt me-1"></i>Rebuild
-                </button>
+                <div class="d-flex gap-1">
+                  <button class="btn btn-primary btn-sm" data-channel="${channel.name}" data-bot-action="generate" title="Generate message" onclick="sendMarkovMessage('${channel.name}')">
+                    <i class="fas fa-comment-dots me-1"></i>Generate
+                  </button>
+                  <button class="btn btn-secondary btn-sm" data-channel="${channel.name}" data-action="rebuild" title="Rebuild model cache" onclick="rebuildCacheForChannel('${channel.name}')">
+                    <i class="fas fa-sync-alt me-1"></i>Rebuild
+                  </button>
+                </div>
               </td>
             `;
+            
+            // Combine all cells
+            row.innerHTML = channelCell + cacheFileCell + logFileCell + cacheSizeCell + 
+                          lineCountCell + progressCell + actionButtons;
             statsContainer.appendChild(row);
           });
+          
+          // Initialize tooltips after adding rows
+          try {
+            const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+            if (tooltipTriggerList.length > 0 && typeof bootstrap !== 'undefined' && bootstrap.Tooltip) {
+              tooltipTriggerList.forEach(el => new bootstrap.Tooltip(el));
+            }
+          } catch (e) {
+            console.warn('Could not initialize tooltips:', e);
+          }
         }
       }
       
@@ -85,6 +161,18 @@ function updateStatsSummary(data) {
   const totalCacheSizeElement = document.getElementById('totalCacheSize');
   const channelCountElement = document.getElementById('channelCount');
   const lastRebuildElement = document.getElementById('lastRebuild');
+  const healthStatusElement = document.getElementById('healthStatus');
+  const lastUpdateTimeElement = document.getElementById('lastUpdateTime');
+  const timeSinceRebuildElement = document.getElementById('timeSinceRebuild');
+  const modelStatusInfoElement = document.getElementById('modelStatusInfo');
+  const modelStatusMessageElement = document.getElementById('modelStatusMessage');
+  const totalCountElement = document.getElementById('totalCount');
+  const filteredCountElement = document.getElementById('filteredCount');
+  
+  // Progress bar elements
+  const cacheSizeProgressElement = document.getElementById('cacheSizeProgress');
+  const messagesProgressElement = document.getElementById('messagesProgress');
+  const channelsProgressElement = document.getElementById('channelsProgress');
   
   // If hero elements don't exist, skip summary
   if (!totalLinesElement && !totalCacheSizeElement && !channelCountElement) {
@@ -94,24 +182,43 @@ function updateStatsSummary(data) {
   let totalLines = 0;
   let totalCacheSize = 0;
   
-  // Debug logging
-  console.log("Stats data for counting:", data.map(ch => ch.name));
-  
   // Count all real channels - excluding only the general model
   const channelModels = data.filter(channel => 
     channel.name !== 'general_markov' && 
     channel.name !== 'General Model'
   );
   
-  // Log the filtered channels
-  console.log("Filtered channel models:", channelModels.map(ch => ch.name));
-  
   // Set the count
   const channelCount = channelModels.length;
   
+  // Update filtered/total counters
+  if (totalCountElement) {
+    totalCountElement.textContent = channelCount;
+  }
+  if (filteredCountElement) {
+    filteredCountElement.textContent = channelCount; // Will be updated by filter function
+  }
+  
+  // Calculate model health metrics
+  let smallModelsCount = 0;
+  let healthyModelsCount = 0;
+  let largeModelsCount = 0;
+  
   data.forEach(channel => {
     if (channel.line_count) {
-      totalLines += parseInt(channel.line_count);
+      const lineCount = parseInt(channel.line_count);
+      totalLines += lineCount;
+      
+      // Skip general model for health metrics
+      if (channel.name !== 'general_markov' && channel.name !== 'General Model') {
+        if (lineCount < 50) {
+          smallModelsCount++;
+        } else if (lineCount > 1000) {
+          largeModelsCount++;
+        } else {
+          healthyModelsCount++;
+        }
+      }
     }
     
     // Extract numeric value from cache size string (e.g., "1.23 MB" -> 1.23)
@@ -140,6 +247,19 @@ function updateStatsSummary(data) {
     totalLinesElement.textContent = totalLines.toLocaleString();
   }
   
+  // Set progress bars (with reasonable max values)
+  if (messagesProgressElement) {
+    // 50,000 messages is considered "full" for visualization purposes
+    const messagesPercent = Math.min(100, (totalLines / 50000) * 100);
+    messagesProgressElement.style.width = `${messagesPercent}%`;
+  }
+  
+  if (channelsProgressElement) {
+    // 10 channels is considered "full" for visualization
+    const channelsPercent = Math.min(100, (channelCount / 10) * 100);
+    channelsProgressElement.style.width = `${channelsPercent}%`;
+  }
+  
   // Convert total cache size back to appropriate unit
   if (totalCacheSizeElement) {
     let formattedSize = '';
@@ -152,16 +272,68 @@ function updateStatsSummary(data) {
     }
     
     totalCacheSizeElement.textContent = formattedSize;
+    
+    if (cacheSizeProgressElement) {
+      // 10MB is considered "full" for visualization
+      const cacheSizePercent = Math.min(100, (totalCacheSize / (10 * 1024)) * 100);
+      cacheSizeProgressElement.style.width = `${cacheSizePercent}%`;
+    }
   }
   
   if (channelCountElement) {
-    console.log("Setting channel count to:", channelCount);
-    console.log("Channel count element:", channelCountElement);
     channelCountElement.textContent = channelCount;
   }
   
   if (lastRebuildElement) {
-    lastRebuildElement.textContent = new Date().toLocaleDateString();
+    const today = new Date().toLocaleDateString();
+    lastRebuildElement.textContent = today;
+    
+    // Update time since rebuild
+    if (timeSinceRebuildElement) {
+      timeSinceRebuildElement.textContent = "Today";
+    }
+  }
+  
+  // Update health status
+  if (healthStatusElement) {
+    let healthClass = "bg-success";
+    let healthText = "Healthy";
+    
+    if (smallModelsCount > healthyModelsCount) {
+      healthClass = "bg-warning";
+      healthText = "Needs Training";
+    } else if (channelCount === 0) {
+      healthClass = "bg-danger";
+      healthText = "No Models";
+    } else if (Date.now() - new Date() > 30 * 24 * 60 * 60 * 1000) {
+      // If last rebuild was over 30 days ago
+      healthClass = "bg-warning";
+      healthText = "Needs Rebuild";
+    }
+    
+    healthStatusElement.className = `badge ${healthClass} me-2`;
+    healthStatusElement.textContent = healthText;
+  }
+  
+  // Update last update time
+  if (lastUpdateTimeElement) {
+    lastUpdateTimeElement.textContent = new Date().toLocaleTimeString();
+  }
+  
+  // Show model status info if needed
+  if (modelStatusInfoElement && modelStatusMessageElement) {
+    if (smallModelsCount > 0 && channelCount > 0) {
+      modelStatusInfoElement.classList.remove('d-none');
+      modelStatusMessageElement.innerHTML = `
+        <strong>${smallModelsCount}</strong> ${smallModelsCount === 1 ? 'model needs' : 'models need'} more training data
+        ${largeModelsCount > 0 ? ` • <strong>${largeModelsCount}</strong> well-trained ${largeModelsCount === 1 ? 'model' : 'models'}` : ''}
+      `;
+    } else if (channelCount === 0) {
+      modelStatusInfoElement.classList.remove('d-none');
+      modelStatusMessageElement.innerHTML = 'No channel models found. Add channels to start training models.';
+    } else {
+      modelStatusInfoElement.classList.add('d-none');
+    }
   }
 }
 
@@ -194,24 +366,70 @@ function rebuildCacheForChannel(channel) {
   );
 }
 
-// Function to send a Markov message for a channel
+// DO NOT USE THIS - We'll use the one from markov.js instead
+// Function signature remains for compatibility but delegates to the better implementation
 function sendMarkovMessage(channel) {
-  fetch(`/send_markov_message/${channel}`, {
-    method: 'POST'
-  })
-  .then(response => response.json())
-  .then(data => {
-    if (data.success) {
-      showToast(`Message sent to ${channel}: "${data.message}"`, 'success');
+  console.log("Delegating to better implementation in markov.js");
+  
+  // Check if the markov.js implementation is available
+  if (typeof window.markovModule !== 'undefined' && window.markovModule.sendMarkovMessage) {
+    window.markovModule.sendMarkovMessage(channel);
+  } else {
+    // Fallback to the improved implementation
+    
+    // Get the button for this channel
+    const button = document.querySelector(`button[data-channel="${channel}"]`);
+    if (button) {
+      // Save original state and show loading
+      const originalText = button.innerHTML;
+      button.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Sending...';
+      button.disabled = true;
+      
+      // Call the API
+      fetch(`/send_markov_message/${channel}`, {
+        method: 'POST'
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          showToast(`Message sent to ${channel}: "${data.message}"`, 'success');
+        } else {
+          showToast(`Failed to send message: ${data.message || 'Unknown error'}`, 'error');
+        }
+      })
+      .catch(error => {
+        console.error('Error sending message:', error);
+        showToast('Error sending message', 'error');
+      })
+      .finally(() => {
+        // Always restore button state
+        button.innerHTML = originalText;
+        button.disabled = false;
+      });
     } else {
-      showToast(`Failed to send message: ${data.message || 'Unknown error'}`, 'error');
+      console.warn(`Button for channel ${channel} not found, using simple implementation`);
+      // If button not found, just make the API call
+      fetch(`/send_markov_message/${channel}`, {
+        method: 'POST'
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          showToast(`Message sent to ${channel}: "${data.message}"`, 'success');
+        } else {
+          showToast(`Failed to send message: ${data.message || 'Unknown error'}`, 'error');
+        }
+      })
+      .catch(error => {
+        console.error('Error sending message:', error);
+        showToast('Error sending message', 'error');
+      });
     }
-  })
-  .catch(error => {
-    console.error('Error sending message:', error);
-    showToast('Error sending message', 'error');
-  });
+  }
 }
+
+// Remove local implementation - we'll use the global functions from event_listener.js
+// NOTE: This relies on event_listener.js being loaded before stats.js in every page
 
 // Load stats when the page loads
 document.addEventListener('DOMContentLoaded', function() {
@@ -223,6 +441,15 @@ document.addEventListener('DOMContentLoaded', function() {
   if (refreshStatsBtn) {
     refreshStatsBtn.addEventListener('click', loadStatistics);
   }
+  
+  // Update stats when bot status changes
+  window.addEventListener('botstatus', function(e) {
+    console.log("Received bot status update event:", e.detail);
+    // Refresh stats when bot status changes - specifically when it starts running
+    if (e.detail.running) {
+      loadStatistics();
+    }
+  });
   
   // Setup rebuild all button
   const rebuildAllBtn = document.getElementById('rebuildAllCachesBtn');
