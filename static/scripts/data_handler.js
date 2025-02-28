@@ -285,17 +285,51 @@ function hideLoading() {
 function setupStatsAutoRefresh() {
   const statsContainer = document.getElementById('statsContainer');
   if (statsContainer) {
-    // Initial load
-    loadStats();
-    
-    // Refresh every 2 minutes
-    setInterval(loadStats, 120000);
+    try {
+      // Initial load - try multiple function names in order of preference
+      if (typeof window.loadStatistics === 'function') {
+        console.log("Using loadStatistics from stats.js");
+        window.loadStatistics();
+      } else if (typeof window.eventListenerLoadStats === 'function') {
+        console.log("Using eventListenerLoadStats from event_listener.js");
+        window.eventListenerLoadStats();
+      } else if (typeof window.loadStats === 'function') {
+        console.log("Using loadStats function");
+        window.loadStats();
+      } else {
+        console.warn("No stats loading function found in window scope!");
+        
+        // Last resort - try to define a local version that calls updateChannelCount
+        if (typeof window.updateChannelCount === 'function') {
+          console.log("Only updateChannelCount is available, using that");
+          window.updateChannelCount();
+        }
+      }
+      
+      // Refresh every 2 minutes with the best available function
+      setInterval(function() {
+        console.log("Auto-refreshing stats...");
+        if (typeof window.loadStatistics === 'function') {
+          window.loadStatistics();
+        } else if (typeof window.eventListenerLoadStats === 'function') {
+          window.eventListenerLoadStats();
+        } else if (typeof window.loadStats === 'function') {
+          window.loadStats();
+        } else if (typeof window.updateChannelCount === 'function') {
+          window.updateChannelCount();
+        }
+      }, 120000);
+    } catch (error) {
+      console.error("Error in setupStatsAutoRefresh:", error);
+    }
   }
 }
 
 // Call this from your DOMContentLoaded event
 document.addEventListener('DOMContentLoaded', function() {
-  setupStatsAutoRefresh();
+  console.log("data_handler.js: Setting up stats auto-refresh");
+  // Use a longer delay to ensure all other scripts are loaded
+  setTimeout(setupStatsAutoRefresh, 1500);
 });
 
 
