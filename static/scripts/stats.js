@@ -431,57 +431,78 @@ function sendMarkovMessage(channel) {
 // Remove local implementation - we'll use the global functions from event_listener.js
 // NOTE: This relies on event_listener.js being loaded before stats.js in every page
 
+// Make loadStatistics available globally
+window.loadStatistics = loadStatistics;
+
 // Load stats when the page loads
 document.addEventListener('DOMContentLoaded', function() {
-  // Initialize stats loading
-  loadStatistics();
+  console.log("Stats.js loaded and initializing...");
   
-  // Setup refresh button event listener
-  const refreshStatsBtn = document.getElementById('refreshStatsBtn');
-  if (refreshStatsBtn) {
-    refreshStatsBtn.addEventListener('click', loadStatistics);
-  }
-  
-  // Update stats when bot status changes
-  window.addEventListener('botstatus', function(e) {
-    console.log("Received bot status update event:", e.detail);
-    // Refresh stats when bot status changes - specifically when it starts running
-    if (e.detail.running) {
-      loadStatistics();
+  // Execute after a small delay to ensure all scripts are loaded
+  setTimeout(function() {
+    // Initialize stats loading
+    if (typeof window.loadStatistics === 'function') {
+      console.log("Loading statistics from stats.js...");
+      window.loadStatistics();
+    } else {
+      console.error("loadStatistics is not available as a function");
     }
-  });
-  
-  // Setup rebuild all button
-  const rebuildAllBtn = document.getElementById('rebuildAllCachesBtn');
-  if (rebuildAllBtn) {
-    rebuildAllBtn.addEventListener('click', function() {
-      showConfirmation(
-        'Rebuild All Brains',
-        'Are you sure you want to rebuild all brains? This may take a while.',
-        function() {
-          showToast('Rebuilding all brains...', 'info');
-          
-          fetch('/rebuild-all-caches', {
-            method: 'POST'
-          })
-          .then(response => response.json())
-          .then(data => {
-            if (data.success) {
-              showToast('Successfully started rebuilding all brains', 'success');
-              // Refresh after a delay to allow rebuild to complete
-              setTimeout(loadStatistics, 5000);
-            } else {
-              showToast(`Failed to rebuild brains: ${data.message}`, 'error');
-            }
-          })
-          .catch(error => {
-            console.error('Error rebuilding all caches:', error);
-            showToast('Error rebuilding brains', 'error');
-          });
+    
+    // Setup refresh button event listener
+    const refreshStatsBtn = document.getElementById('refreshStatsBtn');
+    if (refreshStatsBtn) {
+      refreshStatsBtn.addEventListener('click', function() {
+        if (typeof window.loadStatistics === 'function') {
+          window.loadStatistics();
         }
-      );
+      });
+    }
+    
+    // Update stats when bot status changes
+    window.addEventListener('botstatus', function(e) {
+      console.log("Received bot status update event:", e.detail);
+      // Refresh stats when bot status changes - specifically when it starts running
+      if (e.detail.running && typeof window.loadStatistics === 'function') {
+        window.loadStatistics();
+      }
     });
-  }
+    
+    // Setup rebuild all button
+    const rebuildAllBtn = document.getElementById('rebuildAllCachesBtn');
+    if (rebuildAllBtn) {
+      rebuildAllBtn.addEventListener('click', function() {
+        showConfirmation(
+          'Rebuild All Brains',
+          'Are you sure you want to rebuild all brains? This may take a while.',
+          function() {
+            showToast('Rebuilding all brains...', 'info');
+            
+            fetch('/rebuild-all-caches', {
+              method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+              if (data.success) {
+                showToast('Successfully started rebuilding all brains', 'success');
+                // Refresh after a delay to allow rebuild to complete
+                setTimeout(function() {
+                  if (typeof window.loadStatistics === 'function') {
+                    window.loadStatistics();
+                  }
+                }, 5000);
+              } else {
+                showToast(`Failed to rebuild brains: ${data.message}`, 'error');
+              }
+            })
+            .catch(error => {
+              console.error('Error rebuilding all caches:', error);
+              showToast('Error rebuilding brains', 'error');
+            });
+          }
+        );
+      });
+    }
+  }, 500);  // 500ms delay to ensure DOM is ready and other scripts are loaded
   
   // Setup general model rebuild button
   const rebuildGeneralBtn = document.getElementById('rebuildGeneralCacheBtn');

@@ -1307,6 +1307,12 @@ def get_stats():
                 channel_name = file.replace('.txt', '')
                 channels.append(channel_name)
         
+        # Add the general model which might not have a log file
+        if 'general_markov' not in channels:
+            general_cache_file = f"{cache_directory}/general_markov_model.json"
+            if os.path.exists(general_cache_file):
+                channels.append('general_markov')
+        
         # Get stats for each channel
         for channel in channels:
             log_file = f"{logs_directory}/{channel}.txt"
@@ -1329,8 +1335,11 @@ def get_stats():
             log_size_formatted = format_size(log_size)
             cache_size_formatted = format_size(cache_size)
             
+            # For general_markov model, use proper display name
+            display_name = "General Model" if channel == "general_markov" else channel
+            
             stats.append({
-                'name': channel,
+                'name': display_name,
                 'log_file': f"{channel}.txt",
                 'cache_file': f"{channel}_model.json" if os.path.exists(cache_file) else None,
                 'log_size': log_size_formatted,
@@ -1338,6 +1347,8 @@ def get_stats():
                 'line_count': line_count
             })
         
+        # Log stats data to help with debugging
+        app.logger.info(f"get-stats: returning {len(stats)} model stats")
         return jsonify(stats)
     except Exception as e:
         app.logger.error(f"Error getting stats: {e}")

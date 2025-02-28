@@ -402,6 +402,9 @@ if (statsContainer) {
   });
 }
 if (statsContainer) {
+  // Make loadStats globally accessible in two ways for better compatibility
+  window.loadStats = loadStats; 
+  window.eventListenerLoadStats = loadStats;
   loadStats();
 }
 
@@ -506,22 +509,41 @@ function loadStats() {
     });
 }
 
+// Function to send Markov message to a channel
+function sendMarkovMessageToChannel(channelName) {
+  // Just delegate to the method in markov.js
+  if (window.markovModule && window.markovModule.sendMarkovMessage) {
+    window.markovModule.sendMarkovMessage(channelName);
+  } else {
+    console.error("Markov module not found");
+    alert("Error: Markov module not loaded properly");
+  }
+}
+
 // Function to update the channel count display
 function updateChannelCount() {
   const channelCountElement = document.getElementById('channelCount');
   if (!channelCountElement) return;
   
+  // Make this function globally available
+  window.updateChannelCount = updateChannelCount;
+  
+  console.log("Updating channel count...");
   fetch("/get-stats")
     .then(response => response.json())
     .then(data => {
       console.log("Channel count data:", data);
       
+      if (!Array.isArray(data)) {
+        console.error("Channel count data is not an array:", data);
+        throw new Error("Invalid data format - expected an array");
+      }
+      
       // Count channels but exclude the general model
-      const channelCount = Array.isArray(data) ? 
-        data.filter(channel => 
-          channel.name !== 'general_markov' && 
-          channel.name !== 'General Model'
-        ).length : 0;
+      const channelCount = data.filter(channel => 
+        channel.name !== 'general_markov' && 
+        channel.name !== 'General Model'
+      ).length;
       
       console.log("Counted channels:", channelCount);
       channelCountElement.textContent = channelCount;
