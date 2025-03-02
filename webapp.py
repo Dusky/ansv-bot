@@ -54,8 +54,15 @@ markov_handler = MarkovHandler(cache_directory="cache")
 bot_instance = None
 bot_thread = None
 bot_running = False
-enable_tts = False
+enable_tts = False  # Default value, will be set from ansv.py
 markov_handler.load_models()
+
+def set_enable_tts(value):
+    """Set the global enable_tts variable from ansv.py"""
+    global enable_tts
+    enable_tts = bool(value)
+    print(f"[WEBAPP] TTS enabled set to: {enable_tts}")
+    app.logger.info(f"TTS setting initialized to: {enable_tts}")
 
 #logging.getLogger('werkzeug').disabled = True
 logging.getLogger('werkzeug').setLevel(logging.ERROR)
@@ -189,6 +196,64 @@ def main():
 def settings():
     theme = request.cookies.get("theme", "darkly")
     return render_template('settings.html',  last_id=None, theme=theme)
+
+@app.route('/toggle_tts', methods=['POST'])
+@app.route('/api/toggle_tts', methods=['POST'])  # Add an alternate route
+def toggle_tts():
+    """Toggle the TTS setting for the bot"""
+    global enable_tts, bot_instance
+    
+    # Add these prints to check if the endpoint is being called
+    print("==== TOGGLE TTS ENDPOINT CALLED ====")
+    print(f"Request method: {request.method}")
+    print(f"Request headers: {request.headers}")
+    print(f"Request data: {request.data}")
+    app.logger.info("Toggle TTS endpoint called!")
+    
+    try:
+        # Get the requested TTS state from the request
+        data = request.get_json()
+        print(f"Parsed JSON data: {data}")
+        app.logger.info(f"Toggle TTS request data: {data}")
+        
+        if data is None:
+            app.logger.error("No JSON data in toggle_tts request")
+            return jsonify({"success": False, "message": "No data provided"}), 400
+            
+        # Get the requested state
+        requested_tts_state = data.get('enable_tts', False)
+        app.logger.info(f"Toggling TTS to: {requested_tts_state}")
+        
+        # Update the global variable
+        enable_tts = bool(requested_tts_state)
+        
+        # If bot is running, update the bot instance
+        if bot_instance:
+            bot_instance.enable_tts = enable_tts
+            app.logger.info(f"Updated bot instance TTS to: {enable_tts}")
+            
+            # Update the heartbeat file to reflect new TTS status
+            try:
+                heartbeat_path = 'bot_heartbeat.json'
+                if os.path.exists(heartbeat_path):
+                    with open(heartbeat_path, 'r') as f:
+                        heartbeat_data = json.load(f)
+                    
+                    # Update TTS status
+                    heartbeat_data['tts_enabled'] = enable_tts
+                    
+                    with open(heartbeat_path, 'w') as f:
+                        json.dump(heartbeat_data, f)
+                        
+                    app.logger.info(f"Updated heartbeat file with new TTS status: {enable_tts}")
+            except Exception as e:
+                app.logger.error(f"Error updating heartbeat file: {e}")
+        
+        return jsonify({"success": True, "tts_enabled": enable_tts})
+    except Exception as e:
+        app.logger.error(f"Error toggling TTS: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
 
 @app.route('/bot_control')
 def bot_control():
@@ -782,8 +847,10 @@ def save_channel_settings():
 def get_channels():
     """Get information about connected channels"""
     try:
-        if not bot_instance:
-            return jsonify([])
+        # Always return channel information, even if bot is not running
+        # This allows viewing and configuring channels when bot is stopped
+        # if not bot_instance:
+        #    return jsonify([])
             
         channels = []
         
@@ -791,22 +858,58 @@ def get_channels():
         conn = sqlite3.connect(db_file)
         cursor = conn.cursor()
         
-        # Get channel configuration - include currently_connected field if it exists
+        # Get channel configuration with all necessary fields
         try:
-            cursor.execute("SELECT channel_name, tts_enabled, currently_connected FROM channel_configs")
-            channel_configs = {row[0]: {'tts_enabled': bool(row[1]), 'currently_connected': bool(row[2])} for row in cursor.fetchall()}
-        except sqlite3.OperationalError:
-            # Fall back to old schema if the new column doesn't exist
+            cursor.execute("SELECT channel_name, tts_enabled, join_channel FROM channel_configs")
+            
+            # Create configs dict with explicit debugging
+            channel_configs = {}
+            for row in cursor.fetchall():
+                channel_name = row[0]
+                tts_enabled = bool(row[1])
+                join_channel = bool(row[2])
+                
+                # Log raw and converted values
+                app.logger.info(f"Channel {channel_name}: join_channel raw={row[2]}, converted={join_channel}")
+                
+                channel_configs[channel_name] = {
+                    'tts_enabled': tts_enabled,
+                    'join_channel': join_channel
+                }
+            
+            app.logger.info(f"Loaded {len(channel_configs)} channels with join_channel field")
+        except sqlite3.OperationalError as e:
+            app.logger.error(f"Error getting channel configs: {e}")
+            # Final fallback if schema doesn't match expected
             cursor.execute("SELECT channel_name, tts_enabled FROM channel_configs")
-            channel_configs = {row[0]: {'tts_enabled': bool(row[1])} for row in cursor.fetchall()}
+            channel_configs = {row[0]: {'tts_enabled': bool(row[1]), 'join_channel': False} for row in cursor.fetchall()}
         
         # Get message counts
         cursor.execute("SELECT channel, COUNT(*) FROM messages GROUP BY channel")
         message_counts = {row[0]: row[1] for row in cursor.fetchall()}
         
-        # Get last activity
+        # Get last activity with properly formatted timestamps
         cursor.execute("SELECT channel, MAX(timestamp) FROM messages GROUP BY channel")
-        last_activities = {row[0]: row[1] for row in cursor.fetchall()}
+        
+        last_activities = {}
+        for row in cursor.fetchall():
+            channel = row[0]
+            timestamp = row[1]
+            
+            # Format timestamp for better JavaScript parsing
+            try:
+                # Try to convert the timestamp to a standard ISO format if it's not already
+                if timestamp:
+                    # Parse the timestamp based on the database format (e.g., "YYYY-MM-DD HH:MM:SS")
+                    dt = datetime.strptime(timestamp, '%Y-%m-%d %H:%M:%S')
+                    # Convert to ISO format for reliable JS parsing
+                    formatted_timestamp = dt.isoformat()
+                    last_activities[channel] = formatted_timestamp
+                else:
+                    last_activities[channel] = "Never"
+            except Exception as e:
+                app.logger.warning(f"Failed to format timestamp for {channel}: {e}")
+                last_activities[channel] = timestamp  # Use original as fallback
         
         conn.close()
         
@@ -823,8 +926,9 @@ def get_channels():
                         raw_channels = heartbeat_data['channels']
                         app.logger.info(f"Raw channels from heartbeat: {raw_channels}")
                         
-                        # Strip # prefix and convert to lowercase for consistent matching
-                        connected_channels = [c.lstrip('#').lower() for c in raw_channels]
+                        # Bot now writes channel names without # to heartbeat file
+                        # Only convert to lowercase for consistent matching
+                        connected_channels = [c.lower() for c in raw_channels]
                         app.logger.info(f"Processed connected channels: {connected_channels}")
             except Exception as e:
                 app.logger.warning(f"Failed to read connected channels from heartbeat: {e}")
@@ -897,13 +1001,25 @@ def get_channels():
                 connected = True
                 app.logger.info(f"Applied fallback connected status for {channel_name}")
             
-            channels.append({
+            # Create channel data with join_channel status (explicitly as boolean)
+            join_channel_value = bool(config.get('join_channel', False))
+            
+            channel_data = {
                 'name': channel_name,
                 'connected': connected,
                 'tts_enabled': config['tts_enabled'],
+                'join_channel': join_channel_value,
                 'messages_sent': message_counts.get(channel_name, 0),
                 'last_activity': last_activities.get(channel_name, 'Never')
-            })
+            }
+            
+            # Log full channel data for debugging
+            app.logger.info(f"Channel data for {channel_name}: join_channel={join_channel_value}")
+            
+            # Debug log to help diagnose issues
+            app.logger.debug(f"Channel {channel_name} join_channel status: {channel_data['join_channel']}")
+            
+            channels.append(channel_data)
             
         return jsonify(channels)
     except Exception as e:
@@ -1320,6 +1436,7 @@ def leave_channel(channel_name):
         return jsonify({'success': False, 'message': str(e)})
 
 @app.route('/bot-status-detailed')  # Legacy endpoint
+@app.route('/api/bot-status')  # New endpoint to match frontend code
 def bot_status_api():
     """Enhanced API endpoint for checking bot status with more detailed information"""
     try:
@@ -1327,6 +1444,8 @@ def bot_status_api():
         if not os.path.exists('bot.pid'):
             return jsonify({
                 'running': False,
+                'connected': False,
+                'tts_enabled': enable_tts,
                 'pid': None,
                 'uptime': None,
                 'error': None,
@@ -1379,9 +1498,10 @@ def bot_status_api():
             is_running = False
             uptime_str = None
             
-        # Check actual IRC/Twitch connection status via database if process is running
+        # Check actual IRC/Twitch connection status
         connected_status = False
         if is_running:
+            # Method 1: Check database heartbeat (most reliable)
             try:
                 conn = sqlite3.connect(db_file)
                 c = conn.cursor()
@@ -1394,13 +1514,42 @@ def bot_status_api():
                     last_time = datetime.strptime(last_heartbeat[0], '%Y-%m-%d %H:%M:%S')
                     heartbeat_age = (datetime.now() - last_time).total_seconds()
                     connected_status = heartbeat_age < 120  # 2 minutes
-            except:
-                # Fall back to process status if we can't check heartbeat
+                    app.logger.info(f"Found database heartbeat from {last_time}, age: {heartbeat_age}s")
+                else:
+                    app.logger.info("No database heartbeat found")
+            except Exception as e:
+                # Log the error for debugging
+                app.logger.error(f"Error checking database heartbeat: {e}")
+                
+            # Method 2: Check heartbeat file if database check failed
+            if not connected_status and os.path.exists('bot_heartbeat.json'):
+                try:
+                    with open('bot_heartbeat.json', 'r') as f:
+                        heartbeat_data = json.load(f)
+                        heartbeat_timestamp = heartbeat_data.get('timestamp', 0)
+                        
+                        # Check if heartbeat is recent (within last 2 minutes)
+                        heartbeat_age = time.time() - heartbeat_timestamp
+                        connected_status = heartbeat_age < 120  # 2 minutes
+                        app.logger.info(f"Found file heartbeat, age: {heartbeat_age}s")
+                        
+                        # If we have channels in the heartbeat file, consider connected
+                        channels = heartbeat_data.get('channels', [])
+                        if channels and not connected_status:
+                            app.logger.info(f"Bot has {len(channels)} channels but heartbeat expired")
+                            connected_status = True  # If we have channels, assume connected                    
+                except Exception as e:
+                    app.logger.error(f"Error checking heartbeat file: {e}")
+            
+            # Method 3: Fall back to process status if all else fails
+            if not connected_status:
+                app.logger.info("Falling back to process status for connection check")
                 connected_status = is_running
             
         return jsonify({
             'running': is_running,
             'connected': connected_status,
+            'tts_enabled': enable_tts,
             'pid': pid,
             'uptime': uptime_str,
             'error': None,
@@ -1416,6 +1565,7 @@ def bot_status_api():
         return jsonify({
             'running': False,
             'connected': False,
+            'tts_enabled': enable_tts,
             'pid': None,
             'uptime': None,
             'error': str(e),

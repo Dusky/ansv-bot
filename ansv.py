@@ -12,7 +12,14 @@ enable_tts = False
 
 
 def run_webapp():
-    from webapp import app, socketio
+    # Import webapp modules
+    from webapp import app, socketio, set_enable_tts
+    
+    # Pass TTS setting to webapp
+    global enable_tts
+    set_enable_tts(enable_tts)
+    
+    # Run the webapp
     socketio.run(app, host="0.0.0.0", port=5001, debug=False)
 
 def graceful_shutdown(signum, frame):

@@ -120,10 +120,10 @@
                                     <thead class="table-dark">
                 <tr>
                     <th>Channel</th>
-                                            <th>Status</th>
+                                            <th data-column-type="enabled-status" style="color: white !important;">Enabled</th>
                                             <th>TTS</th>
                                             <th>Messages Sent</th>
-                                            <th>Last Activity</th>
+                                            <th data-bs-toggle="tooltip" title="Time since last message was received"><i class="fas fa-clock me-1"></i>Last Activity</th>
                                             <th>Actions</th>
                 </tr>
             </thead>
@@ -408,33 +408,34 @@ document.getElementById('reconnectBtn').addEventListener('click', function() {
 
 // Toggle TTS
 document.getElementById('enable_tts').addEventListener('change', function() {
-    if (document.getElementById('botStatusText').textContent.includes('Running')) {
-        const newStatus = this.checked ? 'enabled' : 'disabled';
-        addLogEntry(`Setting TTS to ${newStatus}...`);
-        
-        fetch('/toggle_tts', { 
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ enable_tts: this.checked })
-        })
-        .then(response => {
-            if (!response.ok) throw new Error('Failed to toggle TTS');
-            return response.json();
-        })
-        .then(data => {
-            showToast(`TTS ${newStatus} successfully`, 'success');
-            addLogEntry(`TTS ${newStatus} successfully`, 'success');
-        })
-        .catch(error => {
-            console.error('Error toggling TTS:', error);
-            showToast('Failed to toggle TTS', 'error');
-            addLogEntry(`Failed to toggle TTS: ${error.message}`, 'error');
-            // Revert checkbox state on error
-            this.checked = !this.checked;
-        });
-    }
+    // Always allow toggling regardless of bot status
+    const newStatus = this.checked ? 'enabled' : 'disabled';
+    addLogEntry(`Setting TTS to ${newStatus}...`);
+    
+    console.log(`Sending TTS toggle request: ${this.checked}`);
+    
+    fetch('/api/toggle_tts', { 
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ enable_tts: this.checked })
+    })
+    .then(response => {
+        if (!response.ok) throw new Error('Failed to toggle TTS');
+        return response.json();
+    })
+    .then(data => {
+        showToast(`TTS ${newStatus} successfully`, 'success');
+        addLogEntry(`TTS ${newStatus} successfully`, 'success');
+    })
+    .catch(error => {
+        console.error('Error toggling TTS:', error);
+        showToast('Failed to toggle TTS', 'error');
+        addLogEntry(`Failed to toggle TTS: ${error.message}`, 'error');
+        // Revert checkbox state on error
+        this.checked = !this.checked;
+    });
 });
 
 // Add channel form
@@ -501,9 +502,37 @@ document.getElementById('clearLogsBtn').addEventListener('click', function() {
 });
 
 // Check status on page load and regularly
+// No longer need force reload since we're using cache busting on API calls
+// if (!window.location.href.includes('forceReload=true') && !sessionStorage.getItem('botControlPageRefreshed')) {
+//    sessionStorage.setItem('botControlPageRefreshed', 'true');
+//    window.location.href = window.location.href + (window.location.href.includes('?') ? '&' : '?') + 'forceReload=true';
+// }
+
 document.addEventListener('DOMContentLoaded', function() {
     // Add initial log entry
     addLogEntry('Bot control page loaded');
+    
+    // Make sure TTS toggle reflects actual server state before user sees it
+    fetch('/api/bot-status')
+        .then(response => response.json())
+        .then(data => {
+            console.log("Initial TTS status check:", data);
+            if (data && 'tts_enabled' in data) {
+                const ttsToggle = document.getElementById('enable_tts');
+                if (ttsToggle) {
+                    ttsToggle.checked = !!data.tts_enabled;
+                    console.log(`Set initial TTS toggle to: ${data.tts_enabled}`);
+                    addLogEntry(`TTS is ${data.tts_enabled ? 'enabled' : 'disabled'}`);
+                }
+            }
+        })
+        .catch(err => console.error("Error getting initial TTS status:", err));
+    
+    // Initialize tooltips on page load
+    const tooltips = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    tooltips.forEach(function(element) {
+        new bootstrap.Tooltip(element);
+    });
     
     // Check for status and debug link
     const debugLink = document.createElement('a');
@@ -529,16 +558,38 @@ document.addEventListener('DOMContentLoaded', function() {
     setInterval(loadChannels, 60000);   // Refresh channel list every 60 seconds
 });
 
+// Track if a channel load is in progress to prevent multiple simultaneous requests
+let channelLoadInProgress = false;
+
 function loadChannels() {
     const tableBody = document.getElementById('channelsTableBody');
+    
+    // Prevent multiple simultaneous loads
+    if (channelLoadInProgress) {
+        console.log("Channel load already in progress, skipping");
+        return;
+    }
+    
+    // Mark load as in progress
+    channelLoadInProgress = true;
+    console.log("Starting channel load...");
     
     // Show loading state
     tableBody.innerHTML = '<tr><td colspan="6" class="text-center">Loading channels...</td></tr>';
     
     addLogEntry('Fetching channel list...');
     
-    // Use the API endpoint with error handling
-    fetch('/get-channels')
+    // Set a safety timeout to reset the flag if the request hangs
+    const safetyTimeout = setTimeout(() => {
+        if (channelLoadInProgress) {
+            channelLoadInProgress = false;
+            console.log("Channel load timed out, reset loading flag");
+            addLogEntry("Channel list request timed out", "warning");
+        }
+    }, 15000); // 15 second timeout
+    
+    // Use the API endpoint with error handling and cache busting
+    fetch('/get-channels?v=' + new Date().getTime())
         .then(response => {
             if (!response.ok) {
                 throw new Error(`Server responded with ${response.status}: ${response.statusText}`);
@@ -551,6 +602,9 @@ function loadChannels() {
                 addLogEntry('No channels found');
                 return;
             }
+            
+            // Debug log to help diagnose issues
+            console.log('Received channel data:', channels);
             
             addLogEntry(`Loaded ${channels.length} channels`);
             
@@ -569,13 +623,28 @@ function loadChannels() {
                 link.textContent = channel.name;
                 nameCell.appendChild(link);
                 
-                // Channel status
+                // Channel enabled status
                 const statusCell = document.createElement('td');
                 const statusPill = document.createElement('span');
-                statusPill.className = `status-pill ${channel.connected ? 'bg-success' : 'bg-danger'}`;
-                statusPill.innerHTML = channel.connected ? 
-                    '<i class="fas fa-check-circle"></i> Connected' : 
-                    '<i class="fas fa-times-circle"></i> Disconnected';
+                
+                // Make sure join_channel is properly interpreted as boolean
+                const isEnabled = Boolean(channel.join_channel);
+                
+                // Debug log for this specific channel
+                console.log(`Channel ${channel.name} - join_channel: ${channel.join_channel}, isEnabled: ${isEnabled}`);
+                
+                // Add both class-based and inline styling for better visibility
+                statusPill.className = `status-pill ${isEnabled ? 'bg-success' : 'bg-danger'}`;
+                statusPill.style.padding = '0.25rem 0.75rem';
+                statusPill.style.borderRadius = '50px';
+                statusPill.style.display = 'inline-flex';
+                statusPill.style.alignItems = 'center';
+                statusPill.style.color = 'white';
+                statusPill.style.fontWeight = 'bold';
+                
+                statusPill.innerHTML = isEnabled ? 
+                    '<i class="fas fa-check-circle"></i> Enabled' : 
+                    '<i class="fas fa-times-circle"></i> Disabled';
                 statusCell.appendChild(statusPill);
                 
                 // TTS status
@@ -591,9 +660,60 @@ function loadChannels() {
                 const messagesCell = document.createElement('td');
                 messagesCell.innerHTML = `<span class="fw-bold">${channel.messages_sent || '0'}</span>`;
                 
-                // Last activity
+                // Last activity - formatted with relative time and tooltip
                 const activityCell = document.createElement('td');
-                activityCell.textContent = channel.last_activity || 'Never';
+                
+                if (channel.last_activity && channel.last_activity !== 'Never') {
+                    try {
+                        // Parse the timestamp
+                        const timestamp = new Date(channel.last_activity);
+                        
+                        // Format relative time
+                        const now = new Date();
+                        const diffMs = now - timestamp;
+                        const diffSeconds = Math.floor(diffMs / 1000);
+                        const diffMinutes = Math.floor(diffSeconds / 60);
+                        const diffHours = Math.floor(diffMinutes / 60);
+                        const diffDays = Math.floor(diffHours / 24);
+                        
+                        // Create friendly relative time string
+                        let relativeTime;
+                        if (diffSeconds < 60) {
+                            relativeTime = `${diffSeconds}s ago`;
+                        } else if (diffMinutes < 60) {
+                            relativeTime = `${diffMinutes}m ago`;
+                        } else if (diffHours < 24) {
+                            relativeTime = `${diffHours}h ago`;
+                        } else if (diffDays < 7) {
+                            relativeTime = `${diffDays}d ago`;
+                        } else {
+                            // For older dates, show formatted date
+                            relativeTime = timestamp.toLocaleDateString();
+                        }
+                        
+                        // Full detailed time for tooltip
+                        const fullTime = timestamp.toLocaleString();
+                        
+                        // Create badge with tooltip
+                        const timeBadge = document.createElement('span');
+                        timeBadge.className = 'badge bg-secondary';
+                        timeBadge.textContent = relativeTime;
+                        timeBadge.title = fullTime;
+                        timeBadge.setAttribute('data-bs-toggle', 'tooltip');
+                        timeBadge.setAttribute('data-bs-placement', 'top');
+                        
+                        activityCell.appendChild(timeBadge);
+                    } catch (e) {
+                        // Fallback if date parsing fails
+                        activityCell.textContent = channel.last_activity;
+                    }
+                } else {
+                    // Show "Never" with style for channels with no activity
+                    const neverBadge = document.createElement('span');
+                    neverBadge.className = 'badge bg-light text-dark';
+                    neverBadge.textContent = 'Never';
+                    activityCell.appendChild(neverBadge);
+                }
                 
                 // Actions
                 const actionsCell = document.createElement('td');
@@ -627,11 +747,36 @@ function loadChannels() {
                 // Add row to table
                 tableBody.appendChild(row);
             });
+            
+            // Initialize tooltips for the newly created elements
+            const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+            tooltipTriggerList.map(function(tooltipTriggerEl) {
+                return new bootstrap.Tooltip(tooltipTriggerEl);
+            });
+            
+            // Clear the safety timeout
+            clearTimeout(safetyTimeout);
+            
+            // Reset the loading flag when done
+            channelLoadInProgress = false;
+            console.log("Channel load completed successfully");
+            
+            // Add a confirmation log entry if there are channels
+            if (channels.length > 0) {
+                addLogEntry(`Channel table updated with ${channels.length} channels`, 'success');
+            }
         })
         .catch(error => {
             console.error('Error loading channels:', error);
             tableBody.innerHTML = '<tr><td colspan="6" class="text-center text-danger">Failed to load channels</td></tr>';
             addLogEntry(`Error loading channels: ${error.message}`, 'error');
+            
+            // Clear the safety timeout
+            clearTimeout(safetyTimeout);
+            
+            // Reset the loading flag even on error
+            channelLoadInProgress = false;
+            console.log("Channel load failed, reset loading flag");
         });
 }
 
