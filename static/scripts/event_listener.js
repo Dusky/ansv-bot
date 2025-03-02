@@ -1,6 +1,7 @@
-document.addEventListener("DOMContentLoaded", function () {
-  console.log("DOMContentLoaded event fired");
-  
+// Initialize socket properly at the top
+const socket = io();
+
+document.addEventListener("DOMContentLoaded", function () {  
   // Check bot status first
   checkBotStatus();
 
@@ -201,8 +202,6 @@ window.globalBotStatus = {
 
 // Global function to update button states based on bot status
 function updateButtonStates(isBotRunning) {
-  console.log("Updating all message buttons - bot running:", isBotRunning);
-  
   // Store the status in the global variable
   window.globalBotStatus.running = isBotRunning;
   window.globalBotStatus.last_checked = new Date();
@@ -240,7 +239,6 @@ function fetchBotStatusAndUpdateUI() {
   fetch("/api/bot-status")
     .then(response => response.json())
     .then(data => {
-      console.log("Bot status response:", data);
       updateButtonStates(data.running);
       
       // Also store connected status and TTS status
@@ -248,7 +246,6 @@ function fetchBotStatusAndUpdateUI() {
       if (data.tts_enabled !== undefined) window.globalBotStatus.tts_enabled = data.tts_enabled;
     })
     .catch(error => {
-      console.error("Error fetching bot status:", error);
       updateButtonStates(false); // Assume bot is not running on error
     });
 }
@@ -301,18 +298,6 @@ function updateIcons(isMuted) {
 // Function to set up WebSocket
 function setupWebSocket() {
   try {
-    window.socket = io.connect(
-      location.protocol + "//" + document.domain + ":" + location.port
-    );
-
-    socket.on("connect", function () {
-      console.log("WebSocket connected!");
-    });
-
-    socket.on("connect_error", function(error) {
-      console.error("WebSocket connection error:", error);
-    });
-
     socket.on("refresh_table", function () {
       addLatestRow();
     });
@@ -321,7 +306,7 @@ function setupWebSocket() {
       updateBotStatusUI(data.status);
     });
   } catch (error) {
-    console.error("Error initializing WebSocket:", error);
+    // Silent fail for WebSocket errors
   }
 }
 
@@ -428,11 +413,8 @@ function loadStats() {
   fetch("/api/stats")
     .then((response) => response.json())
     .then((data) => {
-      console.log("API stats data:", data);
-      
       // Safety check - make sure data is an array
       if (!Array.isArray(data)) {
-        console.error("API stats data is not an array:", data);
         throw new Error("Invalid data format - expected an array");
       }
       
@@ -528,31 +510,21 @@ function updateChannelCount() {
   // Make this function globally available
   window.updateChannelCount = updateChannelCount;
   
-  console.log("Updating channel count...");
   fetch("/get-stats")
     .then(response => response.json())
     .then(data => {
-      console.log("Channel count data:", data);
-      
-      if (!Array.isArray(data)) {
-        console.error("Channel count data is not an array:", data);
-        throw new Error("Invalid data format - expected an array");
-      }
-      
-      // Count channels but exclude the general model
+        // Count channels but exclude the general model
       const channelCount = data.filter(channel => 
         channel.name !== 'general_markov' && 
         channel.name !== 'General Model'
       ).length;
       
-      console.log("Counted channels:", channelCount);
       channelCountElement.textContent = channelCount;
     })
     .catch(error => {
       console.error("Error updating channel count:", error);
       channelCountElement.textContent = "?";
     });
-}
 }
 
 function createCell(content) {
@@ -605,7 +577,13 @@ if (modelSelector) {
   populateModels();
 }
 
-if (botControlTab && mainContent && mainTab) {
+// Add proper element declarations at the top
+const botControlTab = document.getElementById('botControlTab');
+const mainContent = document.getElementById('mainContent');
+const mainTab = document.getElementById('mainTab');
+const settingsContent = document.getElementById('settingsContent');
+
+if (botControlTab && mainContent && mainTab && settingsContent) {
   botControlTab.addEventListener("click", function () {
     mainContent.style.display = "none";
     settingsContent.style.display = "none";

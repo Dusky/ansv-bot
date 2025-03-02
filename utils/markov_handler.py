@@ -79,8 +79,15 @@ class MarkovHandler:
                 self.models[model_name] = model_data
                 model = model_data
             
-            # Generate message
-            return self._generate_from_model(model)
+            # Generate message using markovify's built-in method
+            # The model might be a Markovify model or a JSON representation
+            if isinstance(model, dict):
+                # It's already the JSON, use it to create a Text model
+                model_obj = markovify.Text.from_json(json.dumps(model))
+                return model_obj.make_sentence()
+            else:
+                # It's already a model object
+                return model.make_sentence()
         except Exception as e:
             self.logger.error(f"Error generating message: {e}")
             return None

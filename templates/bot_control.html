@@ -505,12 +505,27 @@ document.addEventListener('DOMContentLoaded', function() {
     // Add initial log entry
     addLogEntry('Bot control page loaded');
     
+    // Check for status and debug link
+    const debugLink = document.createElement('a');
+    debugLink.href = '/debug/bot-status';
+    debugLink.id = 'botStatusDebugLink';
+    debugLink.className = 'ms-3 text-muted';
+    debugLink.style.display = 'none';
+    debugLink.target = '_blank';
+    debugLink.innerHTML = '<i class="fas fa-bug"></i> Debug';
+    
+    // Insert debug link after statusLastUpdated
+    const statusLastUpdated = document.getElementById('statusLastUpdated');
+    if (statusLastUpdated && statusLastUpdated.parentNode) {
+        statusLastUpdated.parentNode.insertBefore(debugLink, statusLastUpdated.nextSibling);
+    }
+    
     // Initialize the page
     checkBotStatus();
     loadChannels();
     
     // Set up refresh intervals
-    setInterval(checkBotStatus, 30000); // Check bot status every 30 seconds
+    setInterval(checkBotStatus, 10000); // Check bot status every 10 seconds
     setInterval(loadChannels, 60000);   // Refresh channel list every 60 seconds
 });
 

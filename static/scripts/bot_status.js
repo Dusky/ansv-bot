@@ -67,9 +67,8 @@ window.BotStatus = {
       .catch(error => {
         console.error("Error checking bot status:", error);
         
-        // Set to not running on error
-        this.running = false;
-        this.connected = false;
+        // Don't change running status on error - keep previous state
+        // This prevents flicker when network errors occur
         
         // Still update UI
         this.updateUI();
@@ -94,6 +93,14 @@ window.BotStatus = {
     const allButtons = document.querySelectorAll('[data-bot-action]');
     
     allButtons.forEach(button => {
+      // If button has data-always-enabled, never disable it regardless of other attributes
+      if (button.hasAttribute('data-always-enabled')) {
+        button.disabled = false;
+        button.removeAttribute('data-bot-disabled');
+        button.title = "";
+        return; // Skip further processing for this button
+      }
+      
       const action = button.getAttribute('data-bot-action');
       
       switch (action) {
@@ -103,7 +110,6 @@ window.BotStatus = {
         case 'stop':
           button.disabled = !this.running;
           break;
-        case 'generate':
         case 'send':
           button.disabled = !this.running;
           
@@ -116,6 +122,13 @@ window.BotStatus = {
             button.removeAttribute('data-bot-disabled');
           }
           break;
+        // Special case for generate buttons - Don't disable them even if bot is not running
+        case 'generate':
+          // Message generation works without bot running, so don't disable the button
+          button.removeAttribute('data-bot-disabled');
+          button.title = "";
+          button.disabled = false;
+          break;
         case 'tts-toggle':
           // Don't disable, but maybe update checked state
           if (button.tagName === 'INPUT' && button.type === 'checkbox') {
@@ -126,13 +139,40 @@ window.BotStatus = {
     });
     
     // Legacy support - for older code that doesn't use data attributes
-    // Generate buttons - both class-based and channel-based
-    document.querySelectorAll(".send-message-btn, .btn-primary[data-channel]").forEach(button => {
+    // Only for send message buttons, not generate buttons
+    document.querySelectorAll(".send-message-btn").forEach(button => {
       if (!button.getAttribute('data-bot-action')) {
-        button.disabled = !this.running;
-        if (!this.running) {
-          button.title = "Bot is not running";
+        // Only disable if it doesn't have a "generate" class
+        if (!button.classList.contains('generate') && !button.hasAttribute('data-bot-action')) {
+          button.disabled = !this.running;
+          if (!this.running) {
+            button.title = "Bot is not running";
+          } else {
+            button.title = "";
+          }
+        }
+      }
+    });
+    
+    // For channel-based buttons, distinguish between generate and send buttons
+    document.querySelectorAll(".btn-primary[data-channel]").forEach(button => {
+      if (!button.getAttribute('data-bot-action')) {
+        // Only disable if it doesn't have a generate-related attribute
+        const isGenerateButton = 
+          button.classList.contains('generate') || 
+          button.textContent.includes('Generate') ||
+          button.innerHTML.includes('Generate');
+          
+        if (!isGenerateButton) {
+          button.disabled = !this.running;
+          if (!this.running) {
+            button.title = "Bot is not running";
+          } else {
+            button.title = "";
+          }
         } else {
+          // Ensure generate buttons are enabled
+          button.disabled = false;
           button.title = "";
         }
       }
@@ -179,16 +219,28 @@ window.BotStatus = {
       statusBadge.textContent = this.running ? 'Bot Online' : 'Bot Offline';
     }
     
-    // Status spinner
+    // Status spinner - always hide after update
     const statusSpinner = document.getElementById('statusSpinner');
     if (statusSpinner) {
       statusSpinner.style.display = 'none';
+    }
+    
+    // TTS toggle - ensure it reflects server state
+    const ttsToggle = document.getElementById('enable_tts');
+    if (ttsToggle && ttsToggle.type === 'checkbox') {
+      ttsToggle.checked = this.tts_enabled;
     }
     
     // Last updated timestamp
     const lastUpdated = document.getElementById('statusLastUpdated');
     if (lastUpdated) {
       lastUpdated.textContent = 'Last updated: ' + this.last_checked.toLocaleTimeString();
+    }
+    
+    // Update diagnostics link if debug data is enabled
+    const debugLink = document.getElementById('botStatusDebugLink');
+    if (debugLink) {
+      debugLink.style.display = this.running ? 'block' : 'none';
     }
   },
   
@@ -205,10 +257,22 @@ window.BotStatus = {
   }
 };
 
-// Initialize bot status
-document.addEventListener('DOMContentLoaded', function() {
-  // Initialize immediately
+// Initialize bot status immediately - don't wait for DOMContentLoaded
+// This is critical since other scripts depend on BotStatus being available
+(function initializeBotStatus() {
+  console.log("Initializing BotStatus immediately");
   window.BotStatus.init();
+  console.log("BotStatus initialization completed");
+})();
+
+// Also keep the DOMContentLoaded handler for safety
+document.addEventListener('DOMContentLoaded', function() {
+  // Make sure it's initialized - this is backup
+  if (!window.BotStatus.last_checked || 
+      (new Date() - window.BotStatus.last_checked) > 10000) {
+    console.log("Re-initializing BotStatus on DOMContentLoaded");
+    window.BotStatus.init();
+  }
 });
 
 // Legacy compatibility layer - provide functions that older code might use
