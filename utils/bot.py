@@ -147,8 +147,8 @@ class Bot(commands.Bot):
             if not channel_name.startswith('#'):
                 channel_name = f'#{channel_name}'
             
-            # TwitchIO join_channels expects channel names with # prefix
-            # But it actually needs the channel name without # for some operations
+            # TwitchIO join_channels expects channel names WITHOUT # prefix
+            # The library will strip # internally if present
             clean_name = channel_name.lstrip('#')
             
             # Join the channel
@@ -881,7 +881,7 @@ class Bot(commands.Bot):
             await asyncio.sleep(30)  # Update every 30 seconds
 
     def update_heartbeat_file(self):
-        """Write current bot status to heartbeat file."""
+        """Write current bot status to heartbeat file and database."""
         try:
             import json
             
@@ -891,21 +891,61 @@ class Bot(commands.Bot):
             # Debug log the channels being written
             print(f"Writing channels to heartbeat: {channels_list}")
             
+            # Current timestamp for consistency
+            current_time = time.time()
+            formatted_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            
             data = {
-                "timestamp": time.time(),
+                "timestamp": current_time,
                 "nick": self.nick,
                 "channels": channels_list,  # Store channels without # prefix
-                "uptime": time.time() - self.start_time,
+                "uptime": current_time - self.start_time,
                 "tts_enabled": self.enable_tts,
                 "pid": os.getpid()
             }
             
+            # Write to heartbeat JSON file
             with open("bot_heartbeat.json", "w") as f:
                 json.dump(data, f)
                 
             # Also update the PID file to ensure it exists
             with open("bot.pid", "w") as f:
                 f.write(str(os.getpid()))
+            
+            # Update the database for web UI connection status
+            try:
+                conn = sqlite3.connect(self.db_file)
+                c = conn.cursor()
+                
+                # Create bot_status table if it doesn't exist
+                c.execute('''
+                    CREATE TABLE IF NOT EXISTS bot_status (
+                        key TEXT PRIMARY KEY,
+                        value TEXT
+                    )
+                ''')
+                
+                # Update or insert the last heartbeat time
+                c.execute('''
+                    INSERT OR REPLACE INTO bot_status (key, value)
+                    VALUES (?, ?)
+                ''', ('last_heartbeat', formatted_time))
+                
+                # Update or insert connected channels
+                c.execute('''
+                    INSERT OR REPLACE INTO bot_status (key, value)
+                    VALUES (?, ?)
+                ''', ('connected_channels', ','.join(channels_list)))
+                
+                # Commit the changes
+                conn.commit()
+                print(f"Updated database with heartbeat: {formatted_time}")
+                
+            except Exception as db_error:
+                print(f"Error updating database heartbeat: {db_error}")
+            finally:
+                if conn:
+                    conn.close()
             
             # Debug log after write
             print(f"Updated heartbeat file with channels: {channels_list}")
