@@ -1169,6 +1169,7 @@ def check_updates(last_id):
 
 
 @app.route('/api/build-times', methods=['GET'])
+@app.route('/api/cache-build-performance', methods=['GET'])  # Add an alternate route
 def get_build_times():
     try:
         # Try to read build times from cache file
@@ -1177,9 +1178,11 @@ def get_build_times():
         if os.path.exists(cache_file):
             with open(cache_file, 'r') as f:
                 build_times = json.load(f)
+            app.logger.info(f"Loaded {len(build_times)} build time records")
             return jsonify(build_times)
         else:
             # If file doesn't exist, return empty array
+            app.logger.warning(f"Cache build times file not found at {cache_file}")
             return jsonify([])
     except Exception as e:
         app.logger.error(f"Error reading build times: {e}")
