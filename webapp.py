@@ -30,6 +30,8 @@ import sys
 import subprocess
 import socket
 from utils.web_utils import get_available_models
+import re
+import psutil
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('WEB_SECRET_KEY', 'default-insecure-key')  # Read from settings.conf
@@ -62,313 +64,118 @@ logging.getLogger('werkzeug').setLevel(logging.ERROR)
 # Add thread locking for bot control
 bot_lock = Lock()
 
+def is_bot_actually_running():
+    """Check if bot is running through multiple verification methods"""
+    # 1. Check global instance
+    if bot_instance and bot_instance.is_connected():
+        return True
+        
+    # 2. Check PID file with process existence
+    try:
+        with open('bot.pid', 'r') as f:
+            parts = f.read().strip().split('|')
+            if len(parts) == 2 and psutil.pid_exists(int(parts[1])):
+                return True
+    except Exception as e:
+        app.logger.error(f"PID check error: {str(e)}")
+        
+    # 3. Process list check
+    try:
+        for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+            if 'ansv.py' in ' '.join(proc.info['cmdline']):
+                return True
+    except:
+        pass
+        
+    # 4. Check Twitch connection status via heartbeats
+    try:
+        conn = sqlite3.connect(db_file)
+        c = conn.cursor()
+        c.execute("SELECT timestamp FROM heartbeats ORDER BY timestamp DESC LIMIT 1")
+        last_heartbeat = c.fetchone()
+        if last_heartbeat:
+            last_time = datetime.strptime(last_heartbeat[0], '%Y-%m-%d %H:%M:%S')
+            if (datetime.now() - last_time).total_seconds() < 120:  # 2 minutes
+                return True  # Connected and active
+    except Exception as e:
+        app.logger.error(f"Heartbeat check failed: {e}")
+    finally:
+        conn.close()
+    
+    return False
+
+def send_message_via_pid(channel, message):
+    """Fallback method to send messages via PID file"""
+    try:
+        if not os.path.exists('bot.pid'):
+            return False
+            
+        with open('bot.pid', 'r') as f:
+            _, pid = f.read().split('|')
+            pid = int(pid)
+            
+        # Use cross-process communication
+        with open(f'bot_queue_{pid}.tmp', 'a') as f:
+            f.write(f"{channel}|{message}\n")
+            
+        return True
+    except Exception as e:
+        app.logger.error(f"PID fallback failed: {str(e)}")
+        return False
+
 @app.route('/send_markov_message/<channel_name>', methods=['POST'])
 def send_markov_message(channel_name):
-    """Send a Markov-generated message to a channel"""
     global bot_instance
     
-    # Better detection of bot instance availability
-    if not bot_instance:
-        # Check if the bot is running in a different process
-        if os.path.exists('bot.pid'):
-            try:
-                with open('bot.pid', 'r') as pid_file:
-                    pid = int(pid_file.read().strip())
-                    # Process exists, so bot is running
-                    os.kill(pid, 0)
-                    
-                    # Since bot is running but bot_instance is None, we need to reconnect
-                    app.logger.warning(f"{YELLOW}Bot is running but instance not available in web context{RESET}")
-                    
-                    # Use direct file-based communication with the bot
-                    try:
-                        # Generate a message via the web interface's markov handler
-                        message = markov_handler.generate_message(channel_name)
-                        if not message:
-                            return jsonify({'success': False, 'message': 'Failed to generate message'})
-                            
-                        # Store the message request in a file for the bot to pick up
-                        request_data = {
-                            'action': 'send_message',
-                            'channel': channel_name,
-                            'message': message,
-                            'timestamp': datetime.now().isoformat()
-                        }
-                        
-                        with open('bot_message_request.json', 'w') as f:
-                            import json
-                            json.dump(request_data, f)
-                            
-                        return jsonify({'success': True, 'message': 'Message request submitted'})
-                    except Exception as e:
-                        app.logger.error(f"Error communicating with bot: {e}")
-                        return jsonify({'success': False, 'message': f'Error: {str(e)}'})
-            except:
-                # Process not running, remove stale PID file
-                try:
-                    os.remove('bot.pid')
-                except:
-                    pass
-                return jsonify({'success': False, 'message': 'Bot is not running'})
-        return jsonify({'success': False, 'message': 'Bot instance is not initialized'})
-    
-    # Original code for when bot_instance is available
     try:
-        message = bot_instance.generate_message(channel_name)
-        if message:
-            # Ensure that send_message_to_channel is an async method
-            coroutine = bot_instance.send_message_to_channel(channel_name, message)
-            # Properly schedule the coroutine in the bot's event loop
-            asyncio.run_coroutine_threadsafe(coroutine, bot_instance.loop)
-            return jsonify({'success': True, 'message': 'Message sent successfully'})
-        else:
-            return jsonify({'success': False, 'message': 'Failed to generate message'})
-    except Exception as e:
-        app.logger.error(f"Error sending message: {e}")
-        return jsonify({'success': False, 'message': str(e)})
-
-@app.route('/bot_status')  # Keep for backwards compatibility
-@app.route('/api/bot-status')  # Standardized endpoint
-def bot_status():
-    """Check if the bot is running with enhanced TTS detection and connection status"""
-    try:
-        is_running = False
-        tts_enabled = False
-        is_connected = False
-        uptime = None
-        connected_channels = []
+        data = request.get_json()
+        client_verified = data.get('verify_running', False)
+        force_channel = data.get('channel')  # Validate channel match
         
-        # Check if bot process is running
-        if os.path.exists('bot.pid'):
-            try:
-                pid = get_bot_pid()
-                if pid:
-                    # Check if process exists
-                    os.kill(pid, 0)
-                    is_running = True
-                    
-                    # Check if TTS is enabled by examining the command line
-                    try:
-                        import psutil
-                        process = psutil.Process(pid)
-                        cmdline = process.cmdline()
-                        tts_enabled = "--tts" in cmdline
-                    except:
-                        # Default to false if we can't determine
-                        pass
-            except:
-                pass
-        
-        # Check heartbeat for connection status and uptime
-        if is_running and os.path.exists('bot_heartbeat.json'):
-            try:
-                with open('bot_heartbeat.json', 'r') as f:
-                    heartbeat_data = json.load(f)
-                    
-                    # Check heartbeat timestamp - consider stale if older than 2 minutes
-                    if time.time() - heartbeat_data.get('timestamp', 0) < 120:
-                        is_connected = True
-                        uptime = heartbeat_data.get('uptime')
-                        connected_channels = heartbeat_data.get('channels', [])
-            except Exception as e:
-                app.logger.warning(f"Failed to read heartbeat file: {e}")
-                
-        return jsonify({
-            "running": is_running,
-            "connected": is_connected,
-            "tts_enabled": tts_enabled,
-            "uptime": format_uptime(uptime) if uptime else None,
-            "channels": connected_channels
-        })
-    except Exception as e:
-        app.logger.error(f"Error checking bot status: {e}")
-        return jsonify({"running": False, "error": str(e)})
-
-
-@app.route('/toggle_tts', methods=['POST'])
-@app.route('/api/toggle-tts', methods=['POST'])  # Standardized endpoint
-def toggle_tts():
-    try:
-        global enable_tts
-        
-        # Handle both JSON and form data
-        if request.is_json:
-            data = request.get_json()
-            if 'enable_tts' in data:
-                enable_tts = bool(data['enable_tts'])
-            else:
-                enable_tts = not enable_tts
-        else:
-            # Form submission
-            form_value = request.form.get('enable_tts')
-            if form_value is not None:
-                enable_tts = (form_value == 'on' or form_value == 'true')
-            else:
-                enable_tts = not enable_tts
-                
-        # Return JSON for API requests, redirect for form submissions
-        if request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.is_json:
-            return jsonify({'success': True, 'tts_enabled': enable_tts})
-        else:
-            return redirect(url_for('bot_control'))
-    except Exception as e:
-        app.logger.error(f"Error toggling TTS: {e}")
-        if request.headers.get('X-Requested-With') == 'XMLHttpRequest' or request.is_json:
-            return jsonify({'success': False, 'error': str(e)})
-        else:
-            flash(f"Error toggling TTS: {e}", "error")
-            return redirect(url_for('bot_control'))
-
-def run_bot(enable_tts=False):
-    global bot_instance
-    with bot_lock:  # Prevent concurrent access
-        if not bot_instance:
-            db_file = "messages.db"
-            ensure_db_setup(db_file)
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            bot_instance = setup_bot(db_file, rebuild_cache=False, enable_tts=enable_tts)
-            loop.run_until_complete(bot_instance.start())
-
-
-@app.route('/start-bot', methods=['POST'])
-def start_bot_dash():
-    """Alternative route for /start_bot"""
-    return start_bot()
-
-@app.route('/stop-bot', methods=['POST'])
-def stop_bot_dash():
-    """Alternative route for /stop_bot"""
-    return stop_bot()
-
-@app.route('/start_bot', methods=['POST'])
-def start_bot():
-    """Start the bot process with enhanced error handling"""
-    try:
-        # Handle both JSON and form data with better logging
-        if request.is_json:
-            data = request.get_json()
-            enable_tts = data.get('enable_tts', False)
-            app.logger.info(f"Starting bot with TTS: {enable_tts} (from JSON)")
-        else:
-            # Form handling is different - checkboxes come as 'on' if checked
-            enable_tts = request.form.get('enable_tts') == 'on'
-            app.logger.info(f"Starting bot with TTS: {enable_tts} (from form)")
+        # Security: Validate channel name format
+        if not re.match(r"^[a-zA-Z0-9_]{1,25}$", channel_name):
+            return jsonify({'success': False, 'error': 'Invalid channel name'}), 400
             
-        # Check if bot is already running
-        if is_bot_running():
+        if force_channel and force_channel != channel_name:
+            return jsonify({'success': False, 'error': 'Channel mismatch'}), 400
+
+        # Final authority: Server-side verification
+        server_verified = is_bot_actually_running()
+        
+        # Only allow sending if both client and server agree
+        actually_running = client_verified and server_verified
+        
+        # Generate message regardless of status
+        try:
+            message = markov_handler.generate_message(channel_name)
+            sent = False
+            
+            if actually_running:
+                # Try all possible sending methods
+                if bot_instance:
+                    # Direct method
+                    coroutine = bot_instance.send_message_to_channel(channel_name, message)
+                    asyncio.run_coroutine_threadsafe(coroutine, bot_instance.loop)
+                    sent = True
+                else:
+                    # Fallback to PID-based send
+                    sent = send_message_via_pid(channel_name, message)
+                    
             return jsonify({
-                'success': False,
-                'message': 'Bot is already running'
+                'success': True,
+                'message': message,
+                'sent': sent,
+                'server_verified': server_verified,
+                'client_verified': client_verified
             })
-        
-        # Start bot using the direct path to ansv.py (main bot file) instead of run_bot.py
-        success, message, log_output = start_bot_directly(enable_tts)
-        
-        return jsonify({
-            'success': success,
-            'message': message,
-            'log': log_output
-        })
+            
+        except Exception as e:
+            app.logger.error(f"Generation error: {str(e)}")
+            return jsonify({'success': False, 'error': str(e)}), 500
+            
     except Exception as e:
-        import traceback
-        trace = traceback.format_exc()
-        app.logger.error(f"Error starting bot: {e}\n{trace}")
-        return jsonify({
-            'success': False,
-            'message': f"Error starting bot: {str(e)}",
-            'trace': trace
-        })
-
-def start_bot_directly(enable_tts=False):
-    """Start the bot directly using ansv.py with proper command line arguments"""
-    try:
-        # Get python executable
-        python_executable = sys.executable
-        
-        # Get the direct path to the main bot file
-        bot_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ansv.py')
-        
-        # Check if the file exists
-        if not os.path.exists(bot_file):
-            return False, f"Bot file not found at {bot_file}", ""
-        
-        # Prepare command line arguments based on settings
-        cmd_args = [python_executable, bot_file]
-        
-        # Add arguments based on settings - ENSURE BOOLEAN CONVERSION
-        if enable_tts is True:  # Explicitly check for True
-            app.logger.info("TTS enabled, adding --tts flag")
-            cmd_args.append('--tts')
-        else:
-            app.logger.info("TTS disabled, not adding --tts flag")
-        
-        # Create a timestamp for log file
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        log_file = f"bot_start_{timestamp}.log"
-        
-        app.logger.info(f"Starting bot with command: {' '.join(cmd_args)}")
-        app.logger.info(f"Output will be captured in: {log_file}")
-        
-        # Check if another instance might be running the web interface
-        web_port = 5001  # Default web port for the bot
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        result = sock.connect_ex(('127.0.0.1', web_port))
-        sock.close()
-        
-        if result == 0:
-            # Port is in use - likely another instance is running the web interface
-            app.logger.warning(f"Port {web_port} is already in use - possible web interface running")
-        
-        # Launch the process with output directed to a log file
-        with open(log_file, 'w') as f:
-            # Write a header to the log file
-            f.write(f"=== Bot Start Log: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ===\n")
-            f.write(f"Command: {' '.join(cmd_args)}\n\n")
-            f.flush()
-            
-            # Start the process
-            process = subprocess.Popen(
-                cmd_args,
-                stdout=f,
-                stderr=f,
-                text=True,
-                start_new_session=True
-            )
-            
-            # Give it time to start
-            time.sleep(3)
-            
-            # Check if the process is still running
-            if process.poll() is None:
-                # Process is still running, but is it working?
-                with open(log_file, 'r') as log_f:
-                    log_content = log_f.read()
-                    # Look for indicators of successful startup
-                    if "Error" in log_content or "Exception" in log_content:
-                        # Log contains error messages
-                        return False, "Bot process started but encountered errors", log_content
-                
-                # Write PID file with proper format - critical step!
-                with open('bot.pid', 'w') as pid_file:
-                    pid_file.write(f"1|{process.pid}")
-                
-                # Read log output
-                with open(log_file, 'r') as log_f:
-                    log_output = log_f.read()
-                
-                return True, f"Bot started with PID {process.pid}", log_output
-            else:
-                # Process exited quickly, likely an error
-                with open(log_file, 'r') as log_f:
-                    log_output = log_f.read()
-                
-                return False, f"Bot process exited with code {process.returncode}", log_output
-    except Exception as e:
-        import traceback
-        trace = traceback.format_exc()
-        app.logger.error(f"Error in start_bot_directly: {e}\n{trace}")
-        return False, str(e), trace
+        app.logger.error(f"Endpoint error: {str(e)}")
+        return jsonify({'success': False, 'error': 'Internal server error'}), 500
 
 @app.route('/')
 def main():
@@ -661,42 +468,99 @@ def generate_message(channel_name):
 def generate_message_post():
     """Generate a message using the selected model and channel"""
     try:
+        # Extract model and channel from request
         data = request.json
         model = data.get('model')
+        channel = data.get('channel')
         
         # Log the request
-        app.logger.info(f"Generating message with model: {model}")
+        app.logger.info(f"Generating message with model: {model}, channel: {channel}")
         
-        # Use the existing markov_handler to generate the message
-        message = markov_handler.generate_message(model)
+        # Load models if not already loaded
+        if not markov_handler.models:
+            app.logger.info("Models not loaded, loading now...")
+            markov_handler.load_models()
+        
+        # Handle model fallbacks for better reliability
+        if model and model not in markov_handler.models:
+            available_models = list(markov_handler.models.keys())
+            app.logger.warning(f"Model '{model}' not found. Available models: {available_models}")
             
-        if message:
-            return jsonify({"message": message})
+            # Try channel name as fallback
+            if channel and f"{channel}" in markov_handler.models:
+                model = channel
+                app.logger.info(f"Using channel name '{channel}' as model instead")
+            # Try explicit model file name if provided
+            elif model and f"{model}_model" in markov_handler.models:
+                model = f"{model}_model"
+                app.logger.info(f"Using modified model name '{model}'")
+            # Fall back to general model
+            elif "general_markov" in markov_handler.models:
+                model = "general_markov"
+                app.logger.info("Falling back to general_markov model")
+            else:
+                # Last resort: use first available model
+                model = available_models[0] if available_models else None
+                app.logger.info(f"Falling back to first available model: {model}")
+        
+        # Generate the message using the determined model
+        if model:
+            message = markov_handler.generate_message(model)
+            
+            if message:
+                app.logger.info(f"Generated message: {message[:50]}...")
+                return jsonify({"message": message, "model_used": model})
+            else:
+                app.logger.warning("Failed to generate message - empty result")
+                return jsonify({"error": "Failed to generate message - no content produced"}), 400
         else:
-            return jsonify({"error": "Failed to generate message"}), 400
+            app.logger.error("No models available for message generation")
+            return jsonify({"error": "No models available for message generation"}), 400
     except Exception as e:
-        app.logger.error(f"Error generating message: {str(e)}")
-        return jsonify({"error": f"Internal server error: {str(e)}"}), 500
+        import traceback
+        trace = traceback.format_exc()
+        app.logger.error(f"Error generating message: {str(e)}\n{trace}")
+        return jsonify({"error": f"Error generating message: {str(e)}"}), 500
 
 
 @app.route('/available-models')
 def available_models():
     """Get a list of available Markov models"""
     try:
-        # Get all models from the cache directory
-        models = []
+        # Ensure models are loaded
+        if not markov_handler.models:
+            app.logger.info("Models not loaded, loading now...")
+            markov_handler.load_models()
+        
+        # Get models from the handler first (already loaded models)
+        loaded_models = list(markov_handler.models.keys())
+        app.logger.info(f"Loaded models from handler: {loaded_models}")
+        
+        # Also check files on disk for thoroughness
+        file_models = []
         if os.path.exists('cache'):
             for file in os.listdir('cache'):
                 if file.endswith('_model.json'):
                     model_name = file.replace('_model.json', '')
-                    if model_name != 'general_markov':  # Skip the general model
-                        models.append(model_name)
+                    file_models.append(model_name)
         
-        app.logger.info(f"Available models: {models}")
+        # Combine and deduplicate
+        all_models = list(set(loaded_models + file_models))
+        
+        # Add general_markov first if it exists
+        models = []
+        if 'general_markov' in all_models:
+            models.append('general_markov')
+            all_models.remove('general_markov')
+        
+        # Add remaining models, sorted for consistency
+        models.extend(sorted(all_models))
+        
+        app.logger.info(f"Returning available models: {models}")
         return jsonify(models)
     except Exception as e:
         app.logger.error(f"Error getting available models: {e}")
-        return jsonify([])
+        return jsonify(['general_markov'])  # Return at least general_markov if errored
 
 
 @app.route("/new-audio-notification", methods=["POST"])
@@ -756,8 +620,7 @@ def format_data_for_frontend(data):
         channel, message_id, timestamp, voice_preset, file_path, message = record
         truncated_message_id = (
             str(message_id)[4:] if len(str(message_id)) > 4 else str(message_id)
-        )
-
+        )  # Added closing parenthesis
         if (
             len(timestamp) == 19
             and timestamp[4] == "-"
@@ -928,9 +791,14 @@ def get_channels():
         conn = sqlite3.connect(db_file)
         cursor = conn.cursor()
         
-        # Get channel configuration
-        cursor.execute("SELECT channel_name, tts_enabled FROM channel_configs")
-        channel_configs = {row[0]: {'tts_enabled': bool(row[1])} for row in cursor.fetchall()}
+        # Get channel configuration - include currently_connected field if it exists
+        try:
+            cursor.execute("SELECT channel_name, tts_enabled, currently_connected FROM channel_configs")
+            channel_configs = {row[0]: {'tts_enabled': bool(row[1]), 'currently_connected': bool(row[2])} for row in cursor.fetchall()}
+        except sqlite3.OperationalError:
+            # Fall back to old schema if the new column doesn't exist
+            cursor.execute("SELECT channel_name, tts_enabled FROM channel_configs")
+            channel_configs = {row[0]: {'tts_enabled': bool(row[1])} for row in cursor.fetchall()}
         
         # Get message counts
         cursor.execute("SELECT channel, COUNT(*) FROM messages GROUP BY channel")
@@ -951,7 +819,13 @@ def get_channels():
                 with open('bot_heartbeat.json', 'r') as f:
                     heartbeat_data = json.load(f)
                     if 'channels' in heartbeat_data:
-                        connected_channels = [c.lstrip('#') for c in heartbeat_data['channels']]
+                        # Debug the channel names being processed
+                        raw_channels = heartbeat_data['channels']
+                        app.logger.info(f"Raw channels from heartbeat: {raw_channels}")
+                        
+                        # Strip # prefix and convert to lowercase for consistent matching
+                        connected_channels = [c.lstrip('#').lower() for c in raw_channels]
+                        app.logger.info(f"Processed connected channels: {connected_channels}")
             except Exception as e:
                 app.logger.warning(f"Failed to read connected channels from heartbeat: {e}")
         
@@ -971,16 +845,57 @@ def get_channels():
         # Method 3: Fallback to bot instance if available
         if not connected_channels and bot_instance:
             try:
-                connected_channels = [c.lstrip('#') for c in getattr(bot_instance, '_joined_channels', [])]
+                connected_channels = [c.lstrip('#').lower() for c in getattr(bot_instance, '_joined_channels', [])]
             except Exception as e:
                 app.logger.warning(f"Failed to get channels from bot instance: {e}")
                 
         app.logger.info(f"Found connected channels: {connected_channels}")
+        
+        # Get is_running status for additional fallback
+        is_running = False
+        if os.path.exists('bot_heartbeat.json'):
+            try:
+                with open('bot_heartbeat.json', 'r') as f:
+                    heartbeat_data = json.load(f)
+                    # If heartbeat is recent (less than 2 minutes old), consider the bot running
+                    if time.time() - heartbeat_data.get('timestamp', 0) < 120:
+                        is_running = True
+            except Exception:
+                pass
                 
         # Format the channel data
+        # Check if we should apply the fallback for all active channels
+        use_fallback = is_running and not connected_channels
+        if use_fallback:
+            app.logger.warning("No connected channels found but bot is running - using fallback")
+        
+        # Get active channels from database for fallback
+        active_channels = []
+        if use_fallback:
+            try:
+                conn = sqlite3.connect(db_file)
+                cursor = conn.cursor()
+                cursor.execute("SELECT channel_name FROM channel_configs WHERE join_channel = 1")
+                active_channels = [row[0].lower() for row in cursor.fetchall()]
+                conn.close()
+                app.logger.info(f"Fallback active channels: {active_channels}")
+            except Exception as e:
+                app.logger.error(f"Error getting fallback channels: {e}")
+        
         for channel_name, config in channel_configs.items():
-            # Check if channel is connected
-            connected = channel_name in connected_channels
+            # Check using multiple methods:
+            # 1. Check against connected_channels from heartbeat
+            connected = channel_name.lower() in connected_channels
+            
+            # 2. Check in-database currently_connected value if available
+            if not connected and 'currently_connected' in config and config['currently_connected']:
+                connected = True
+                app.logger.info(f"Using in-database connected status for {channel_name}")
+            
+            # 3. Apply fallback if needed
+            if not connected and use_fallback and channel_name.lower() in active_channels:
+                connected = True
+                app.logger.info(f"Applied fallback connected status for {channel_name}")
             
             channels.append({
                 'name': channel_name,
@@ -1252,11 +1167,11 @@ def send_message_to_channel():
         
         return jsonify({
             'success': True,
-            'message': 'TTS processed successfully',
-            'tts_file': tts_file,
-            'new_id': new_id  # Return the database ID
+            'file_path': tts_file,
+            'message': 'TTS message generated successfully'
         })
     except Exception as e:
+        app.logger.error(f"Error generating TTS: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/tts-audio/<path:filename>')
@@ -1270,20 +1185,25 @@ def serve_tts_audio(filename):
 
 @app.route('/rebuild-channel-model/<channel_name>', methods=['POST'])
 def rebuild_channel_model(channel_name):
-    """Rebuild the Markov model for a specific channel"""
+    """Legacy endpoint - calls rebuild_cache_for_channel directly to ensure it works"""
+    app.logger.info(f"Legacy endpoint called for channel: {channel_name}")
+    
     try:
-        app.logger.info(f"Rebuilding model for channel: {channel_name}")
+        # Define logs directory
+        logs_directory = 'logs'
         
-        if markov_handler:
-            success = markov_handler.build_model_for_channel(channel_name)
-            if success:
-                return jsonify({'success': True, 'message': f'Model for {channel_name} rebuilt successfully'})
-            else:
-                return jsonify({'success': False, 'message': 'Failed to rebuild channel model'}), 400
+        # Call the correct method directly
+        app.logger.info(f"Calling rebuild_cache_for_channel directly for channel: {channel_name}")
+        success = markov_handler.rebuild_cache_for_channel(channel_name, logs_directory)
+        
+        if success:
+            app.logger.info(f"Successfully rebuilt model for channel: {channel_name}")
+            return jsonify({'success': True, 'message': f'Model for {channel_name} rebuilt successfully'})
         else:
-            return jsonify({'success': False, 'message': 'Markov handler not initialized'}), 500
+            app.logger.error(f"Failed to rebuild model for channel: {channel_name}")
+            return jsonify({'success': False, 'message': 'Failed to rebuild channel model'}), 400
     except Exception as e:
-        app.logger.error(f"Error rebuilding channel model: {e}")
+        app.logger.error(f"Exception in rebuild_channel_model: {e}")
         return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 500
 
 @app.route('/get-stats')
@@ -1441,7 +1361,6 @@ def bot_status_api():
             
             # On Windows
             elif os.name == 'nt':
-                import psutil
                 process = psutil.Process(pid)
                 is_running = process.is_running()
                 uptime = time.time() - process.create_time()
@@ -1575,9 +1494,107 @@ def check_and_cleanup_bot_state():
             app.logger.info("Stale bot.pid file removed")
         else:
             app.logger.info(f"Bot appears to be running with PID {get_bot_pid()}")
+    
+    # Also check heartbeat file
+    if os.path.exists('bot_heartbeat.json'):
+        try:
+            with open('bot_heartbeat.json', 'r') as f:
+                heartbeat_data = json.load(f)
+                timestamp = heartbeat_data.get('timestamp', 0)
+                
+                # If heartbeat is stale (over 5 minutes old)
+                if time.time() - timestamp > 300:
+                    app.logger.warning("Found stale bot_heartbeat.json file, removing")
+                    try:
+                        os.remove('bot_heartbeat.json')
+                    except:
+                        pass
+                    app.logger.info("Stale bot_heartbeat.json file removed")
+        except Exception as e:
+            app.logger.warning(f"Error processing heartbeat file: {e}")
+            # If file exists but is corrupted, remove it
+            try:
+                os.remove('bot_heartbeat.json')
+                app.logger.info("Corrupted bot_heartbeat.json file removed")
+            except:
+                pass
 
 # Call this during app initialization
 check_and_cleanup_bot_state()
+
+# Add more verbose debug endpoint
+@app.route('/debug/bot-status')
+def debug_bot_status():
+    """Detailed debug endpoint for bot status with all detection methods"""
+    debug_info = {
+        "pid_file": {
+            "exists": os.path.exists('bot.pid'),
+            "content": None,
+            "parsed_pid": None,
+            "process_exists": False
+        },
+        "heartbeat_file": {
+            "exists": os.path.exists('bot_heartbeat.json'),
+            "content": None,
+            "timestamp": None,
+            "timestamp_age_seconds": None,
+            "is_recent": False
+        },
+        "conclusion": {
+            "is_running": False,
+            "is_connected": False
+        }
+    }
+    
+    # Check PID file
+    if debug_info["pid_file"]["exists"]:
+        try:
+            with open('bot.pid', 'r') as f:
+                content = f.read().strip()
+                debug_info["pid_file"]["content"] = content
+                
+                try:
+                    if '|' in content:
+                        _, pid = content.split('|', 1)
+                        pid = int(pid)
+                    else:
+                        pid = int(content)
+                        
+                    debug_info["pid_file"]["parsed_pid"] = pid
+                    
+                    # Check if process exists
+                    try:
+                        os.kill(pid, 0)
+                        debug_info["pid_file"]["process_exists"] = True
+                        debug_info["conclusion"]["is_running"] = True
+                    except OSError:
+                        debug_info["pid_file"]["process_exists"] = False
+                except ValueError:
+                    debug_info["pid_file"]["parsed_pid"] = None
+        except Exception as e:
+            debug_info["pid_file"]["error"] = str(e)
+    
+    # Check heartbeat file
+    if debug_info["heartbeat_file"]["exists"]:
+        try:
+            with open('bot_heartbeat.json', 'r') as f:
+                content = json.load(f)
+                debug_info["heartbeat_file"]["content"] = content
+                
+                timestamp = content.get('timestamp', 0)
+                debug_info["heartbeat_file"]["timestamp"] = timestamp
+                
+                age = time.time() - timestamp
+                debug_info["heartbeat_file"]["timestamp_age_seconds"] = age
+                debug_info["heartbeat_file"]["is_recent"] = age < 120
+                
+                if debug_info["heartbeat_file"]["is_recent"]:
+                    debug_info["conclusion"]["is_running"] = True
+                    debug_info["conclusion"]["is_connected"] = True
+        except Exception as e:
+            debug_info["heartbeat_file"]["error"] = str(e)
+    
+    return jsonify(debug_info)
 
 @app.route('/api/channels')
 def channels_api():
@@ -1826,7 +1843,6 @@ def system_info_api():
             pid = get_bot_pid()
             if pid:
                 try:
-                    import psutil
                     process = psutil.Process(pid)
                     uptime = time.time() - process.create_time()
                     m, s = divmod(int(uptime), 60)
@@ -1979,7 +1995,6 @@ def debug_tts_status():
         if is_running and pid:
             try:
                 # Look for command line arguments of the process
-                import psutil
                 process = psutil.Process(pid)
                 cmdline = process.cmdline()
                 tts_enabled = "--tts" in cmdline
@@ -2073,8 +2088,6 @@ def check_existing_instance():
     """Check if bot is already running from launch script and sync UI state"""
     try:
         # Look for existing bot processes
-        import psutil
-        
         for process in psutil.process_iter(['pid', 'name', 'cmdline']):
             try:
                 cmdline = process.info['cmdline']

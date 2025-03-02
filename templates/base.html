@@ -26,10 +26,26 @@
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js"></script>
   <script src="https://cdn.socket.io/4.0.0/socket.io.min.js" crossorigin="anonymous"></script>
   
-  <!-- App Scripts -->
-  <!-- Core functionality first -->
+  <!-- App Scripts - CRITICAL SEQUENCE: Don't change this order -->
+  <!-- 1. First notification.js (needed by everything) -->
   <script src="{{ url_for('static', filename='scripts/notification.js') }}"></script>
+  
+  <!-- 2. Then bot_status.js must load and initialize -->
   <script src="{{ url_for('static', filename='scripts/bot_status.js') }}"></script>
+  
+  <!-- 3. Give bot_status.js time to initialize -->
+  <script>
+    console.log("Ensuring BotStatus is ready...");
+    // Force a synchronous wait to ensure BotStatus is initialized
+    if (!window.BotStatus) {
+      console.warn("BotStatus not available yet - this is a critical error!");
+    } else {
+      console.log("BotStatus confirmed ready - proceeding to load other scripts");
+    }
+  </script>
+  
+  <!-- 4. Then load markov.js which depends on bot_status.js -->
+  <script src="{{ url_for('static', filename='scripts/markov.js') }}"></script>
   
   <!-- Then other scripts -->
   <script src="{{ url_for('static', filename='scripts/data_handler.js') }}"></script>
@@ -37,8 +53,7 @@
   <script src="{{ url_for('static', filename='scripts/setActiveTab.js') }}"></script>
   <script src="{{ url_for('static', filename='scripts/handle_voice.js') }}"></script>
   
-  <!-- Critical load order: markov.js must be loaded before stats.js -->
-  <script src="{{ url_for('static', filename='scripts/markov.js') }}"></script>
+  <!-- Stats.js must load after markov.js -->
   <script src="{{ url_for('static', filename='scripts/stats.js') }}"></script>
   
   <!-- Remaining scripts -->

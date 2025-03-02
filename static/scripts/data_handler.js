@@ -203,20 +203,38 @@ function populateMessageChannels() {
         .catch(error => console.error('Error loading channels for message generation:', error));
 }
 
-// Update the generateMessage function to use the selected channel
+// Primary implementation of generateMessage function
 function generateMessage() {
     const modelSelect = document.getElementById('modelSelector');
     const channelSelect = document.getElementById('channelForMessage');
     const messageContainer = document.getElementById('generatedMessageContainer');
     const messageElement = document.getElementById('generatedMessage');
+    const generateBtn = document.getElementById('generateMsgBtn');
+    
+    // Element validation - prevent errors if elements don't exist
+    if (!modelSelect || !messageContainer || !messageElement) {
+        console.error("Required DOM elements for message generation not found");
+        return;
+    }
+    
+    // IMPORTANT: We explicitly don't check bot status since generation should work
+    // even when the bot is not running
+    
+    // Disable button during request
+    if (generateBtn) {
+        generateBtn.disabled = true;
+        generateBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Generating...';
+    }
     
     // Show loading state
     messageContainer.classList.remove('d-none');
     messageElement.innerHTML = 'Generating message...';
     
-    // Get selected values
-    const model = modelSelect.value;
-    const channel = channelSelect.value;
+    // Get selected values - provide defaults if elements not found
+    const model = modelSelect ? modelSelect.value : 'general_markov';
+    const channel = channelSelect && channelSelect.value ? channelSelect.value : null;
+    
+    console.log(`Generating message with model: ${model}, channel: ${channel || 'none'}`);
     
     fetch('/generate-message', {
         method: 'POST',
@@ -225,7 +243,17 @@ function generateMessage() {
         },
         body: JSON.stringify({ model: model, channel: channel })
     })
-    .then(response => response.json())
+    .then(response => {
+        if (!response.ok) {
+            return response.json().then(data => {
+                throw new Error(data.error || `Server returned ${response.status}`);
+            }).catch(e => {
+                // If we can't parse the JSON, throw a generic error
+                throw new Error(`Server returned ${response.status}`);
+            });
+        }
+        return response.json();
+    })
     .then(data => {
         if (data.message) {
             messageElement.textContent = data.message;
@@ -234,8 +262,15 @@ function generateMessage() {
         }
     })
     .catch(error => {
-        console.error('Error:', error);
-        messageElement.textContent = 'Error generating message.';
+        console.error('Error generating message:', error);
+        messageElement.textContent = `Error: ${error.message || 'Failed to generate message'}`;
+    })
+    .finally(() => {
+        // Re-enable button
+        if (generateBtn) {
+            generateBtn.disabled = false;
+            generateBtn.innerHTML = 'Generate Message';
+        }
     });
 }
 
@@ -330,6 +365,19 @@ document.addEventListener('DOMContentLoaded', function() {
   console.log("data_handler.js: Setting up stats auto-refresh");
   // Use a longer delay to ensure all other scripts are loaded
   setTimeout(setupStatsAutoRefresh, 1500);
+
+  // Make key functions globally available
+  window.generateMessage = generateMessage;
+  console.log("data_handler.js: Made generateMessage available globally");
+  
+  // Setup any available generate buttons
+  setTimeout(function() {
+    const generateBtn = document.getElementById('generateMsgBtn');
+    if (generateBtn) {
+      console.log("Found generate button, ensuring it's connected to handler");
+      generateBtn.addEventListener('click', generateMessage);
+    }
+  }, 500);
 });
 
 

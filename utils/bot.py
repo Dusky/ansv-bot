@@ -643,6 +643,9 @@ class Bot(commands.Bot):
         # Initialize channel configs
         self.ensure_channel_configs()
         
+        # Set start time for uptime tracking
+        self._start_time = time.time()
+        
         # Join all configured channels
         await self.check_and_join_channels()
         
@@ -656,6 +659,7 @@ class Bot(commands.Bot):
         try:
             with open("bot.pid", "w") as f:
                 f.write(str(os.getpid()))
+            print(f"Created PID file with PID: {os.getpid()}")
         except Exception as e:
             print(f"Error creating PID file: {e}")
         
@@ -665,8 +669,22 @@ class Bot(commands.Bot):
         
         # Extra verification for channels of interest
         for channel in self.channels:
+            channel_name = channel.lstrip('#')
             if channel in self._joined_channels:
                 print(f"{GREEN}✓ Successfully joined {channel} channel!{RESET}")
+                
+                # Also update database to mark channel as connected
+                try:
+                    conn = sqlite3.connect(self.db_file)
+                    c = conn.cursor()
+                    c.execute(
+                        "UPDATE channel_configs SET currently_connected = 1 WHERE channel_name = ?",
+                        (channel_name,)
+                    )
+                    conn.commit()
+                    conn.close()
+                except Exception as e:
+                    print(f"Error updating channel connection status in DB: {e}")
             else:
                 print(f"{RED}✗ Failed to join {channel} channel - will retry in next periodic check{RESET}")
 
@@ -867,15 +885,31 @@ class Bot(commands.Bot):
         try:
             import json
             
+            # Get current joined channels - strip # for consistent matching
+            channels_list = [channel.lstrip('#') for channel in self._joined_channels]
+            
+            # Debug log the channels being written
+            print(f"Writing channels to heartbeat: {channels_list}")
+            
             data = {
                 "timestamp": time.time(),
                 "nick": self.nick,
-                "channels": list(self._joined_channels),
-                "uptime": time.time() - self.start_time
+                "channels": channels_list,  # Store channels without # prefix
+                "uptime": time.time() - self.start_time,
+                "tts_enabled": self.enable_tts,
+                "pid": os.getpid()
             }
             
             with open("bot_heartbeat.json", "w") as f:
                 json.dump(data, f)
+                
+            # Also update the PID file to ensure it exists
+            with open("bot.pid", "w") as f:
+                f.write(str(os.getpid()))
+            
+            # Debug log after write
+            print(f"Updated heartbeat file with channels: {channels_list}")
+                
         except Exception as e:
             print(f"Error updating heartbeat file: {e}")
 

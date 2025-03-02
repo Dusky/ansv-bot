@@ -1,4 +1,3 @@
-// Function to load stats data and update summary metrics
 function loadStatistics() {
   const statsContainer = document.getElementById('statsContainer');
   const loadingIndicator = document.getElementById('loadingIndicator');
@@ -108,11 +107,11 @@ function loadStatistics() {
             const actionButtons = `
               <td>
                 <div class="d-flex gap-1">
-                  <button class="btn btn-primary btn-sm" data-channel="${channel.name}" data-bot-action="generate" title="Generate message" onclick="sendMarkovMessage('${channel.name}')">
-                    <i class="fas fa-comment-dots me-1"></i>Generate
-                  </button>
-                  <button class="btn btn-secondary btn-sm" data-channel="${channel.name}" data-action="rebuild" title="Rebuild model cache" onclick="rebuildCacheForChannel('${channel.name}')">
-                    <i class="fas fa-sync-alt me-1"></i>Rebuild
+                  <button class="btn btn-warning btn-sm rebuild-btn" 
+                          data-channel="${channel.name}" 
+                          data-action="rebuild"
+                          title="Rebuild model">
+                    <i class="fas fa-tools me-1"></i>Rebuild
                   </button>
                 </div>
               </td>
@@ -337,95 +336,61 @@ function updateStatsSummary(data) {
   }
 }
 
-// Function to handle rebuild for a specific channel
+// DELEGATING FUNCTION: This delegates to the implementation in markov.js
+// We keep this function signature for backward compatibility with existing onclick handlers
 function rebuildCacheForChannel(channel) {
-  showConfirmation(
-    'Rebuild Brain',
-    `Are you sure you want to rebuild the brain for ${channel}?`,
-    function() {
-      showToast(`Rebuilding brain for ${channel}...`, 'info');
-      
-      fetch(`/rebuild-cache/${channel}`, {
-        method: 'POST'
-      })
-      .then(response => response.json())
-      .then(data => {
-        if (data.success) {
-          showToast(`Successfully rebuilt brain for ${channel}`, 'success');
-          // Refresh stats after rebuild
-          loadStatistics();
-        } else {
-          showToast(`Failed to rebuild brain: ${data.message}`, 'error');
-        }
-      })
-      .catch(error => {
-        console.error('Error rebuilding cache:', error);
-        showToast('Error rebuilding brain', 'error');
-      });
-    }
-  );
+  console.log("Stats.js: Delegating rebuildCacheForChannel to markov.js implementation");
+  
+  // Check if the improved markov.js implementation is available through the module
+  if (typeof window.markovModule !== 'undefined' && window.markovModule.rebuildChannelModel) {
+    // Simply call the global implementation
+    window.markovModule.rebuildChannelModel(channel);
+  } else {
+    // Log an error if the proper implementation isn't available
+    console.error("Warning: markov.js implementation not found, rebuild may fail");
+    
+    // Call the API directly as a last resort
+    fetch(`/rebuild-channel-model/${channel}`, {
+      method: 'POST'
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.success) {
+        showToast(`Successfully rebuilt brain for ${channel}`, 'success');
+        loadStatistics(); // Refresh stats
+      } else {
+        showToast(`Failed to rebuild brain: ${data.message}`, 'error');
+      }
+    })
+    .catch(error => {
+      console.error('Error rebuilding cache:', error);
+      showToast(`Error rebuilding brain: ${error.message}`, 'error');
+    });
+  }
 }
 
-// DO NOT USE THIS - We'll use the one from markov.js instead
-// Function signature remains for compatibility but delegates to the better implementation
+// Function signature remains for compatibility but ensures proper delegation
 function sendMarkovMessage(channel) {
-  console.log("Delegating to better implementation in markov.js");
+  console.log("stats.js: Delegating to implementation in markov.js");
   
-  // Check if the markov.js implementation is available
+  // First check if markov module is available
   if (typeof window.markovModule !== 'undefined' && window.markovModule.sendMarkovMessage) {
     window.markovModule.sendMarkovMessage(channel);
-  } else {
-    // Fallback to the improved implementation
-    
-    // Get the button for this channel
-    const button = document.querySelector(`button[data-channel="${channel}"]`);
-    if (button) {
-      // Save original state and show loading
-      const originalText = button.innerHTML;
-      button.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Sending...';
-      button.disabled = true;
-      
-      // Call the API
-      fetch(`/send_markov_message/${channel}`, {
-        method: 'POST'
-      })
-      .then(response => response.json())
-      .then(data => {
-        if (data.success) {
-          showToast(`Message sent to ${channel}: "${data.message}"`, 'success');
-        } else {
-          showToast(`Failed to send message: ${data.message || 'Unknown error'}`, 'error');
-        }
-      })
-      .catch(error => {
-        console.error('Error sending message:', error);
-        showToast('Error sending message', 'error');
-      })
-      .finally(() => {
-        // Always restore button state
-        button.innerHTML = originalText;
-        button.disabled = false;
-      });
-    } else {
-      console.warn(`Button for channel ${channel} not found, using simple implementation`);
-      // If button not found, just make the API call
-      fetch(`/send_markov_message/${channel}`, {
-        method: 'POST'
-      })
-      .then(response => response.json())
-      .then(data => {
-        if (data.success) {
-          showToast(`Message sent to ${channel}: "${data.message}"`, 'success');
-        } else {
-          showToast(`Failed to send message: ${data.message || 'Unknown error'}`, 'error');
-        }
-      })
-      .catch(error => {
-        console.error('Error sending message:', error);
-        showToast('Error sending message', 'error');
-      });
-    }
+    return;
   }
+  
+  // If markov module is not available yet, we'll retry after a short delay
+  // This helps with race conditions when scripts are still loading
+  console.warn("Markov module not immediately available, retrying after delay...");
+  setTimeout(() => {
+    if (typeof window.markovModule !== 'undefined' && window.markovModule.sendMarkovMessage) {
+      window.markovModule.sendMarkovMessage(channel);
+    } else {
+      // If still not available after delay, show a more helpful error
+      console.error("Markov module not available - check script loading order");
+      showToast("Error: Message generation module not properly loaded. Please refresh the page.", "error");
+    }
+  }, 500);
 }
 
 // Remove local implementation - we'll use the global functions from event_listener.js
