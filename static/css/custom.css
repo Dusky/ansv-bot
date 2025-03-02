@@ -197,6 +197,31 @@
     }
 }
 
+/* Force card footer styling to match darkly theme */
+.card-footer {
+    background-color: #303030 !important;
+    color: white !important;
+    border-top: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+/* Card footers for specific header types - simplified selectors */
+.card-header.bg-primary + .card-body + .card-footer {
+    background-color: #375a7f !important;
+}
+
+.card-header.bg-secondary + .card-body + .card-footer {
+    background-color: #444444 !important;
+}
+
+.card-header.bg-dark + .card-body + .card-footer {
+    background-color: #222222 !important;
+}
+
+/* Override text-muted in footers */
+.card-footer .text-muted {
+    color: rgba(255, 255, 255, 0.7) !important;
+}
+
 /* Button States */
 button:disabled,
 button.disabled,

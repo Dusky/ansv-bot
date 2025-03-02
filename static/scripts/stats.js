@@ -396,8 +396,70 @@ function sendMarkovMessage(channel) {
 // Remove local implementation - we'll use the global functions from event_listener.js
 // NOTE: This relies on event_listener.js being loaded before stats.js in every page
 
-// Make loadStatistics available globally
+// Make loadStatistics and loadBuildTimes available globally
 window.loadStatistics = loadStatistics;
+window.loadBuildTimes = loadBuildTimes;
+
+// Function to load and display cache build performance data
+function loadBuildTimes() {
+  console.log("Loading build times data...");
+  const buildTimesContainer = document.getElementById('buildTimesContainer');
+  if (!buildTimesContainer) {
+    console.warn("buildTimesContainer element not found in the DOM");
+    return;
+  }
+  
+  // First try the preferred API endpoint
+  fetch('/api/cache-build-performance')
+    .then(response => {
+      if (!response.ok) {
+        // If the preferred endpoint fails, try fallback
+        console.log("Preferred endpoint failed, trying fallback...");
+        return fetch('/api/build-times');
+      }
+      return response;
+    })
+    .then(response => {
+      if (!response.ok) {
+        throw new Error('Failed to load build times data');
+      }
+      return response.json();
+    })
+    .then(data => {
+      console.log("Received build times data:", data);
+      if (!data || data.length === 0) {
+        buildTimesContainer.innerHTML = '<tr><td colspan="4" class="text-center py-3">No build data available</td></tr>';
+        return;
+      }
+      
+      buildTimesContainer.innerHTML = '';
+      
+      // Sort by timestamp descending to show newest first
+      data.sort((a, b) => b.timestamp - a.timestamp);
+      
+      // Process build times data - take only the 10 most recent
+      const recentData = data.slice(0, 10);
+      recentData.forEach(item => {
+        const row = document.createElement('tr');
+        const timestamp = item.timestamp ? new Date(item.timestamp * 1000).toLocaleString() : 'Unknown';
+        const status = item.success ? 
+          '<span class="badge bg-success">Success</span>' : 
+          '<span class="badge bg-danger">Failed</span>';
+        
+        row.innerHTML = `
+          <td>${item.channel || 'Unknown'}</td>
+          <td>${timestamp}</td>
+          <td>${item.duration ? (item.duration.toFixed(2) + 's') : 'N/A'}</td>
+          <td>${status}</td>
+        `;
+        buildTimesContainer.appendChild(row);
+      });
+    })
+    .catch(error => {
+      console.error('Error loading build times:', error);
+      buildTimesContainer.innerHTML = '<tr><td colspan="4" class="text-center text-danger">Error loading build data</td></tr>';
+    });
+}
 
 // Load stats when the page loads
 document.addEventListener('DOMContentLoaded', function() {
@@ -409,6 +471,10 @@ document.addEventListener('DOMContentLoaded', function() {
     if (typeof window.loadStatistics === 'function') {
       console.log("Loading statistics from stats.js...");
       window.loadStatistics();
+      
+      // Load build times data after statistics are loaded
+      console.log("Loading build times data...");
+      loadBuildTimes();
     } else {
       console.error("loadStatistics is not available as a function");
     }
@@ -419,6 +485,7 @@ document.addEventListener('DOMContentLoaded', function() {
       refreshStatsBtn.addEventListener('click', function() {
         if (typeof window.loadStatistics === 'function') {
           window.loadStatistics();
+          loadBuildTimes(); // Also refresh build times
         }
       });
     }

@@ -115,10 +115,15 @@
                         <div class="text-center text-muted">Loading channels...</div>
                     </div>
                 </div>
-                <div class="card-footer text-muted">
-                    <a href="{{ url_for('bot_control') }}" class="btn btn-sm btn-primary btn-action">
-                        <i class="fas fa-cog me-1"></i>Manage Channels
-                    </a>
+                <div class="card-footer d-flex justify-content-between align-items-center py-2">
+                    <div>
+                        <a href="{{ url_for('bot_control') }}" class="btn btn-sm btn-primary btn-action">
+                            <i class="fas fa-cog me-1"></i>Manage Channels
+                        </a>
+                    </div>
+                    <div>
+                        <small class="text-muted" id="channelLastUpdated">Updated: Just now</small>
+                    </div>
                 </div>
             </div>
         </div>
@@ -186,11 +191,16 @@
                 </table>
             </div>
         </div>
-        <div class="card-footer">
-            <button id="loadMore" class="btn btn-primary btn-sm btn-action">
-                <i class="fas fa-plus me-1"></i>Load 10 More
-            </button>
-            <small class="text-muted ms-2" id="statusLastUpdated">Last updated: Just now</small>
+        <div class="card-footer d-flex justify-content-between align-items-center py-2">
+            <div>
+                <button id="loadMore" class="btn btn-primary btn-sm btn-action">
+                    <i class="fas fa-plus me-1"></i>Load 10 More
+                </button>
+                <small class="text-muted ms-2" id="statusLastUpdated">Last updated: Just now</small>
+            </div>
+            <div>
+                <small class="text-muted">Most recent messages shown first</small>
+            </div>
         </div>
     </div>
 </div>
