@@ -1090,7 +1090,7 @@ class Bot(commands.Bot):
         """Update the heartbeat file periodically."""
         while True:
             self.update_heartbeat_file()
-            await asyncio.sleep(30)  # Update every 30 seconds
+            await asyncio.sleep(60)  # Update every 60 seconds
 
     def update_heartbeat_file(self):
         """Write current bot status to heartbeat file and database."""
@@ -1099,9 +1099,6 @@ class Bot(commands.Bot):
             
             # Get current joined channels - strip # for consistent matching
             channels_list = [channel.lstrip('#') for channel in self._joined_channels]
-            
-            # Debug log the channels being written
-            print(f"Writing channels to heartbeat: {channels_list}")
             
             # Current timestamp for consistency
             current_time = time.time()
@@ -1151,19 +1148,15 @@ class Bot(commands.Bot):
                 
                 # Commit the changes
                 conn.commit()
-                print(f"Updated database with heartbeat: {formatted_time}")
                 
             except Exception as db_error:
-                print(f"Error updating database heartbeat: {db_error}")
+                self.my_logger.error(f"Error updating database heartbeat: {db_error}")
             finally:
                 if conn:
                     conn.close()
-            
-            # Debug log after write
-            print(f"Updated heartbeat file with channels: {channels_list}")
                 
         except Exception as e:
-            print(f"Error updating heartbeat file: {e}")
+            self.my_logger.error(f"Error updating heartbeat file: {e}")
 
     async def check_message_requests(self):
         """Check for message requests from the web interface"""

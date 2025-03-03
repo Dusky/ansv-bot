@@ -319,15 +319,37 @@ function updateIcons(isMuted) {
 // Function to set up WebSocket
 function setupWebSocket() {
   try {
-    socket.on("refresh_table", function () {
-      addLatestRow();
+    // Listen for refresh_table events
+    socket.on("refresh_table", function (data) {
+      console.log("Received refresh_table event:", data);
+      // Call refreshTable in data_handler.js
+      if (window.refreshTable) {
+        window.refreshTable();
+      }
     });
     
+    // Listen for new_tts_entry events
+    socket.on("new_tts_entry", function (data) {
+      console.log("Received new_tts_entry event:", data);
+      // Call refreshTable in data_handler.js
+      if (window.refreshTable) {
+        window.refreshTable();
+      }
+      
+      // Show notification
+      if (typeof showToast === 'function') {
+        showToast('New TTS message available', 'info');
+      }
+    });
+    
+    // Listen for bot status changes
     socket.on("bot_status_change", function(data) {
       updateBotStatusUI(data.status);
     });
+    
+    console.log("WebSocket listeners successfully set up");
   } catch (error) {
-    // Silent fail for WebSocket errors
+    console.warn("WebSocket setup error:", error);
   }
 }
 
@@ -365,13 +387,7 @@ if (addChannelSaveButton) {
 } else {
 }
 
-var refreshTableButton = document.getElementById("refreshTable");
-if (refreshTableButton) {
-  refreshTableButton.addEventListener("click", function () {
-    refreshTable();
-  });
-} else {
-}
+// Removed duplicate event listener - refreshTable is now handled in the button's onclick in the HTML and in data_handler.js
 
 var settingsTab = document.getElementById("settingsTab");
 
@@ -382,16 +398,14 @@ if (loadMoreButton) {
 }
 
 // Load initial data
-//loadMoreData();
-//loadLatestData();
+// Voice preset logic
 var voicePresetSelect = document.getElementById("voicePresetSelect");
 if (voicePresetSelect) {
   handleVoicePresetChange();
 }
-refreshTable();
-socket.on("refresh_table", function () {
-  addLatestRow();
-});
+
+// Initial table load is handled by main_page.js
+// Socket.io events are now handled by setupWebSocket() function
 
 var statsContainer = document.getElementById("statsContainer");
 if (statsContainer) {
