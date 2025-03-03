@@ -32,20 +32,56 @@ function fetchAndShowVoices() {
 }
 
 function fetchAndShowCustomVoices() {
+  // Safely check if element exists first
+  const customVoiceSelect = document.getElementById("customVoiceSelect");
+  if (!customVoiceSelect) {
+    console.warn("Custom voice select not found in the DOM");
+    return;
+  }
+  
+  // Clear previous options
+  customVoiceSelect.innerHTML = '';
+  
   fetch("/list-voices")
     .then((response) => response.json())
     .then((data) => {
       console.log("Voices data:", data); // Debugging line
-      const customVoiceSelect = document.getElementById("customVoiceSelect");
-      data.voices.forEach((voice) => {
+      
+      if (data.voices && data.voices.length > 0) {
+        data.voices.forEach((voice) => {
+          let option = document.createElement("option");
+          option.value = voice.replace(".npz", ""); // Remove the .npz extension
+          option.textContent = voice.replace(".npz", ""); // Display name without .npz
+          customVoiceSelect.appendChild(option);
+        });
+      } else {
+        // Add a default option if no voices found
         let option = document.createElement("option");
-        option.value = voice.replace(".npz", ""); // Remove the .npz extension
-        option.textContent = voice.replace(".npz", ""); // Display name without .npz
+        option.value = "default";
+        option.text = "Default Voice";
         customVoiceSelect.appendChild(option);
-      });
+      }
     })
-    .catch((error) => console.error("Error fetching custom voices:", error));
+    .catch((error) => {
+      console.error("Error fetching custom voices:", error);
+      // Add a default option in case of error
+      let option = document.createElement("option");
+      option.value = "default";
+      option.text = "Default Voice";
+      customVoiceSelect.appendChild(option);
+    });
 }
+
+// Initialize on DOM ready if on settings page
+document.addEventListener('DOMContentLoaded', function() {
+  // Only run this if we're on the settings page with voice options
+  if (document.getElementById('voicePreset')) {
+    // Check if custom voice is selected
+    if (document.getElementById('voicePreset').value === 'custom') {
+      fetchAndShowCustomVoices();
+    }
+  }
+});
 
 function setVoice() {
   let selectedVoice;

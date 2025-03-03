@@ -31,6 +31,8 @@ function updateTable(data) {
 function addRowToTable(file, prepend = false) {
   let tableBody = document.getElementById("ttsFilesBody");
   let audioSrc = `/static/${file[4]}`;
+  // Fix double static in path if present
+  audioSrc = audioSrc.replace('/static/static/', '/static/');
   let audioId = `audio-${file[1]}`;
   console.log(`Adding new row with audio ID: ${audioId}`);
   let row = `<tr>
@@ -70,7 +72,10 @@ function addLatestRow() {
         addRowToTable(latestData, true);
         setTimeout(() => {
           if (document.getElementById("autoplay").checked) {
-            playAudio(`/static/${latestData[4]}`);
+            let audioSrc = `/static/${latestData[4]}`;
+            // Fix double static in path if present
+            audioSrc = audioSrc.replace('/static/static/', '/static/');
+            playAudio(audioSrc);
           }
         }, 100);
       }
@@ -80,6 +85,8 @@ function addLatestRow() {
 
 // Function to play audio
 function playAudio(src) {
+  // Fix double static in path if present
+  src = src.replace('/static/static/', '/static/');
   let audio = new Audio(src);
   audio.play().catch((error) => console.error("Play error:", error));
 }
@@ -102,7 +109,9 @@ function checkAutoplay(data) {
     // Construct the audio URL directly instead of finding an element
     const channel = data[0][0]; // channel name
     const timestamp = data[0][2]; // timestamp
-    const audioPath = `/static/outputs/${channel}/${channel}-${timestamp}.wav`;
+    let audioPath = `/static/outputs/${channel}/${channel}-${timestamp}.wav`;
+    // Fix double static in path if present
+    audioPath = audioPath.replace('/static/static/', '/static/');
     
     console.log(`Attempting to autoplay: ${audioPath}`);
     

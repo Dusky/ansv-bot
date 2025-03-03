@@ -195,31 +195,127 @@
     .table-responsive {
         font-size: 0.9rem;
     }
+    
+    /* Settings page mobile improvements */
+    #settingsContent .row {
+        flex-direction: column;
+    }
+    
+    #settingsContent .col-md-6 {
+        width: 100%;
+    }
+    
+    .card-footer {
+        flex-direction: column;
+        gap: 0.5rem;
+        align-items: flex-start !important;
+    }
+    
+    #channelConfig .row {
+        flex-direction: column;
+    }
+    
+    #channelConfig .col-md-6 {
+        width: 100%;
+    }
+    
+    #addChannelDiv {
+        margin-bottom: 1rem;
+    }
 }
 
-/* Force card footer styling to match darkly theme */
+/* Remove all previous card footer styling overrides */
 .card-footer {
-    background-color: #303030 !important;
-    color: white !important;
-    border-top: 1px solid rgba(255, 255, 255, 0.1) !important;
+    /* Reset any previously forced styles */
+    background-color: initial !important;
+    color: initial !important;
+    border-top: initial !important;
 }
 
-/* Card footers for specific header types - simplified selectors */
-.card-header.bg-primary + .card-body + .card-footer {
-    background-color: #375a7f !important;
+/* Light theme card footer styling (default) */
+html:not([data-bs-theme="dark"]) .card-footer {
+    background-color: rgba(0, 0, 0, 0.03) !important;
+    color: #6c757d !important;
+    border-top: 1px solid rgba(0, 0, 0, 0.125) !important;
 }
 
-.card-header.bg-secondary + .card-body + .card-footer {
-    background-color: #444444 !important;
+/* Dark theme card footer styling */
+html[data-bs-theme="dark"] .card-footer {
+    background-color: rgba(255, 255, 255, 0.05) !important;
+    color: rgba(255, 255, 255, 0.75) !important;
+    border-top: 1px solid rgba(255, 255, 255, 0.125) !important;
 }
 
-.card-header.bg-dark + .card-body + .card-footer {
-    background-color: #222222 !important;
+/* Special styling for ANSV theme */
+html.theme-ansv .card-footer {
+    background-color: rgba(0, 0, 0, 0.2) !important;
+    color: var(--ansv-text-muted) !important;
+    border-top: 1px solid var(--ansv-border) !important;
 }
 
-/* Override text-muted in footers */
-.card-footer .text-muted {
-    color: rgba(255, 255, 255, 0.7) !important;
+/* Settings page improvements */
+#settingsContent {
+    background-color: rgba(0, 0, 0, 0.05);
+}
+
+#settingsContent h2 {
+    color: var(--bs-primary);
+}
+
+.theme-ansv #settingsContent h2 {
+    color: var(--ansv-secondary);
+}
+
+/* Ensure consistent form styling in different themes */
+.form-control, .form-select {
+    transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+}
+
+[data-bs-theme="dark"] .form-control,
+[data-bs-theme="dark"] .form-select {
+    background-color: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.15);
+    color: rgba(255, 255, 255, 0.8);
+}
+
+[data-bs-theme="dark"] .form-control:focus,
+[data-bs-theme="dark"] .form-select:focus {
+    background-color: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.25);
+    color: white;
+}
+
+#channelSelect {
+    background-color: rgba(255, 255, 255, 0.1);
+    color: inherit;
+}
+
+.theme-ansv #channelSelect {
+    background-color: var(--ansv-bg-light);
+    color: var(--ansv-text);
+}
+
+.theme-ansv #settingsContent {
+    background-color: rgba(0, 0, 0, 0.2);
+}
+
+/* Text styling in card footers - properly theme-aware */
+html:not([data-bs-theme="dark"]) .card-footer .text-muted,
+html:not([data-bs-theme="dark"]) .card-footer small,
+html:not([data-bs-theme="dark"]) .card-footer .small {
+    color: rgba(0, 0, 0, 0.6) !important;
+}
+
+html[data-bs-theme="dark"] .card-footer .text-muted,
+html[data-bs-theme="dark"] .card-footer small,
+html[data-bs-theme="dark"] .card-footer .small {
+    color: rgba(255, 255, 255, 0.6) !important;
+}
+
+html.theme-ansv .card-footer .text-muted,
+html.theme-ansv .card-footer small,
+html.theme-ansv .card-footer .small {
+    color: var(--ansv-text-muted) !important;
 }
 
 /* Button States */
@@ -360,6 +456,8 @@ button[data-bot-disabled="true"]::after {
     color: var(--ansv-text);
 }
 
+/* Removed in favor of the unified card-footer styling above */
+
 .theme-ansv .btn-action {
     background: linear-gradient(45deg, var(--ansv-primary), var(--ansv-secondary));
     border: none;
@@ -371,59 +469,122 @@ button[data-bot-disabled="true"]::after {
     box-shadow: 0 5px 15px rgba(140, 102, 255, 0.3);
 }
 
-/* Theme preview card */
-.theme-preview {
+/* Theme selection */
+.theme-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+.theme-card {
     cursor: pointer;
-    border-radius: 0.5rem;
+    border-radius: 8px;
     overflow: hidden;
-    transition: all 0.3s ease;
-    margin-bottom: 1rem;
+    transition: all 0.2s ease;
+    border: 2px solid transparent;
+    position: relative;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    height: 100px;
 }
 
-.theme-preview:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+.theme-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 4px 10px rgba(0,0,0,0.15);
 }
 
-.theme-preview .theme-header {
-    height: 40px;
+/* Active card styling for light & dark themes */
+html:not([data-bs-theme="dark"]) .theme-card.active {
+    border-color: var(--bs-primary);
+    box-shadow: 0 0 0 1px var(--bs-primary), 0 4px 10px rgba(0,0,0,0.15);
+}
+
+html[data-bs-theme="dark"] .theme-card.active {
+    border-color: var(--bs-primary);
+    box-shadow: 0 0 0 1px var(--bs-primary), 0 4px 10px rgba(0,0,0,0.5);
+}
+
+.theme-card .theme-color {
+    height: 70%;
     display: flex;
     align-items: center;
     justify-content: center;
-    color: white;
-    font-weight: bold;
+    font-size: 1.5rem;
 }
 
-.theme-preview .theme-body {
-    height: 60px;
-    padding: 10px;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-}
-
-.theme-preview .theme-button {
-    width: 100%;
-    height: 24px;
-    border-radius: 4px;
+.theme-card .theme-name {
+    height: 30%;
     display: flex;
     align-items: center;
     justify-content: center;
+    font-size: 0.85rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+
+/* Different hover effects for light/dark themes */
+html:not([data-bs-theme="dark"]) .theme-card .theme-name {
+    background-color: rgba(0,0,0,0.05);
+}
+
+html[data-bs-theme="dark"] .theme-card .theme-name {
+    background-color: rgba(255,255,255,0.05);
+}
+
+.theme-card:hover .theme-name {
+    background-color: var(--bs-primary);
     color: white;
-    font-size: 12px;
-    margin-top: 10px;
 }
 
-/* ANSV theme preview */
-.theme-preview.ansv .theme-header {
-    background: linear-gradient(90deg, #4d37bf 0%, #8c66ff 100%);
+/* Custom Theme Cards */
+.theme-card.ansv .theme-color {
+    background: linear-gradient(135deg, #4d37bf 0%, #8c66ff 100%);
+    color: white;
 }
 
-.theme-preview.ansv .theme-body {
-    background-color: #242424;
-    color: #ecf0f1;
+.theme-card.darkly .theme-color {
+    background-color: #375a7f;
+    color: white;
 }
 
-.theme-preview.ansv .theme-button {
-    background: linear-gradient(45deg, #4d37bf, #8c66ff);
+.theme-card.flatly .theme-color {
+    background-color: #2C3E50;
+    color: white;
+}
+
+/* Featured themes section */
+.featured-themes {
+    margin-bottom: 20px;
+}
+
+.theme-categories {
+    margin-top: 20px;
+    border-top: 1px solid rgba(0,0,0,0.1);
+    padding-top: 15px;
+}
+
+[data-bs-theme="dark"] .theme-categories {
+    border-top-color: rgba(255,255,255,0.1);
+}
+
+.theme-categories h6 {
+    margin-bottom: 15px;
+    font-weight: 600;
+}
+
+/* Dark/Light indicators */
+.theme-card .theme-type {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    font-size: 0.6rem;
+    padding: 2px 6px;
+    border-radius: 10px;
+    background-color: rgba(0,0,0,0.3);
+    color: white;
+    opacity: 0.8;
+}
+
+.theme-card:hover .theme-type {
+    opacity: 1;
 }

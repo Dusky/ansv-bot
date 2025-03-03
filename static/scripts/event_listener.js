@@ -149,25 +149,43 @@ function setupButtonListeners() {
   }
 }
 
-// Function to set up theme toggle
+// Function to set up theme toggle - modified to use global theme system
 function setupThemeToggle() {
   const themeToggle = document.getElementById("themeToggle");
   if (themeToggle) {
     themeToggle.addEventListener("click", function() {
       const currentTheme = document.documentElement.getAttribute("data-bs-theme");
+      console.log("Theme toggle clicked, current theme:", currentTheme);
       
       if (currentTheme === "dark") {
-        // Switch to light theme
-        document.documentElement.setAttribute("data-bs-theme", "light");
-        // Set cookie via server
-        fetch('/set_theme/flatly');
+        // Switch to light theme (use the global system if available)
+        if (window.selectTheme) {
+          window.selectTheme('flatly');
+        } else {
+          // Fallback
+          document.documentElement.setAttribute("data-bs-theme", "light");
+          fetch('/set_theme/flatly')
+            .then(() => {
+              // Add a small delay then reload to ensure cookie is set
+              setTimeout(() => window.location.reload(), 100);
+            });
+        }
       } else {
-        // Switch to dark theme
-        document.documentElement.setAttribute("data-bs-theme", "dark");
-        // Set cookie via server
-        fetch('/set_theme/darkly');
+        // Switch to dark theme (use the global system if available)
+        if (window.selectTheme) {
+          window.selectTheme('darkly');
+        } else {
+          // Fallback
+          document.documentElement.setAttribute("data-bs-theme", "dark");
+          fetch('/set_theme/darkly')
+            .then(() => {
+              // Add a small delay then reload to ensure cookie is set
+              setTimeout(() => window.location.reload(), 100);
+            });
+        }
       }
       
+      // Update toggle button appearance
       updateButtonTheme();
     });
     
@@ -182,13 +200,16 @@ function updateButtonTheme() {
   if (!themeToggle) return;
   
   const currentTheme = document.documentElement.getAttribute("data-bs-theme");
+  console.log("Updating theme toggle appearance for theme:", currentTheme);
   
   if (currentTheme === "dark") {
-    themeToggle.className = "btn btn-light";
-    themeToggle.innerHTML = '<i class="fas fa-sun"></i> Light';
+    themeToggle.className = "btn btn-sm btn-outline-light";
+    themeToggle.innerHTML = '<i class="fas fa-sun"></i>';
+    themeToggle.setAttribute('title', 'Switch to Light Theme');
   } else {
-    themeToggle.className = "btn btn-dark";
-    themeToggle.innerHTML = '<i class="fas fa-moon"></i> Dark';
+    themeToggle.className = "btn btn-sm btn-outline-light";
+    themeToggle.innerHTML = '<i class="fas fa-moon"></i>';
+    themeToggle.setAttribute('title', 'Switch to Dark Theme');
   }
 }
 
