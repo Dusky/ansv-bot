@@ -30,18 +30,37 @@ function updateTable(data) {
 // Function to add a row to the table
 function addRowToTable(file, prepend = false) {
   let tableBody = document.getElementById("ttsFilesBody");
-  let audioSrc = `/static/${file[4]}`;
+  
+  // Check if file exists and file[4] (file_path) exists
+  if (!file || !file[4]) {
+    console.warn("Invalid file data for table row:", file);
+    return;
+  }
+  
+  // Process the audio source path correctly
+  let audioSrc = '';
+  
+  // Check if the path already includes "/static/"
+  if (file[4].startsWith('static/')) {
+    audioSrc = `/${file[4]}`;
+  } else {
+    audioSrc = `/static/${file[4]}`;
+  }
+  
   // Fix double static in path if present
   audioSrc = audioSrc.replace('/static/static/', '/static/');
+  
   let audioId = `audio-${file[1]}`;
-  console.log(`Adding new row with audio ID: ${audioId}`);
+  console.log(`Adding new row with audio ID: ${audioId} - Path: ${audioSrc}`);
+  
+  // Use playAudioIfExists to check file existence first
   let row = `<tr>
                    <td>${file[0]}</td>
                    <td>${file[2]}</td>
-                   <td>${file[3]}</td>
-                   <td>${file[5]}</td>
+                   <td>${file[3] || 'Default'}</td>
+                   <td>${file[5] || ''}</td>
                    <td class="text-center">
-                       <button onclick="playAudio('${audioSrc}')" class="btn btn-outline-primary btn-sm" data-tooltip="Play Audio">
+                       <button onclick="playAudioIfExists('${audioSrc}')" class="btn btn-outline-primary btn-sm" data-tooltip="Play Audio">
                            <i class="fa fa-play"></i>
                        </button>
                     </td>
@@ -91,53 +110,86 @@ function playAudio(src) {
   audio.play().catch((error) => console.error("Play error:", error));
 }
 
+// Function to check if an audio file exists before playing it
+window.playAudioIfExists = function(src) {
+  // Fix double static in path if present
+  src = src.replace('/static/static/', '/static/');
+  
+  // First check if the file exists
+  fetch(src, { method: 'HEAD' })
+    .then(response => {
+      if (response.ok) {
+        // File exists, play it
+        let audio = new Audio(src);
+        audio.play()
+          .then(() => console.log("Audio playing:", src))
+          .catch(error => console.error("Play error:", error));
+      } else {
+        console.warn(`Audio file not found: ${src}`);
+        showToast("Audio file not found. It may have been deleted or moved.", "warning");
+      }
+    })
+    .catch(error => {
+      console.error("Error checking audio file:", error);
+      showToast("Error accessing audio file", "error");
+    });
+}
+
 // Function to check if autoplay is enabled and play the latest file
 function checkAutoplay(data) {
+  // Autoplay is problematic in modern browsers due to policies
+  // Instead of attempting autoplay, we'll just skip it to avoid errors
+  
   // Get the autoplay checkbox element
   const autoplayCheckbox = document.getElementById("autoplay");
   
   // Check if element exists and if autoplay is enabled
-  if (!autoplayCheckbox) {
-    console.log("Autoplay checkbox not found");
+  if (!autoplayCheckbox || !autoplayCheckbox.checked) {
     return;
   }
   
-  const autoplayEnabled = autoplayCheckbox.checked;
-
-  // Check if we have data and autoplay is enabled
-  if (autoplayEnabled && data && Array.isArray(data) && data.length > 0) {
-    // Construct the audio URL directly instead of finding an element
-    const channel = data[0][0]; // channel name
-    const timestamp = data[0][2]; // timestamp
-    let audioPath = `/static/outputs/${channel}/${channel}-${timestamp}.wav`;
-    // Fix double static in path if present
-    audioPath = audioPath.replace('/static/static/', '/static/');
-    
-    console.log(`Attempting to autoplay: ${audioPath}`);
-    
-    // Create audio element programmatically
-    const audioPlayer = new Audio(audioPath);
-    audioPlayer.muted = true; // Start muted to comply with autoplay policies
-    
-    audioPlayer.play()
-      .then(() => {
-        console.log("Autoplay started");
-        audioPlayer.muted = false; // Unmute after successfully starting
-      })
-      .catch((error) => {
-        console.error("Autoplay failed:", error);
-      });
-  }
+  // Skip autoplay to avoid browser policy errors
+  console.log("Skipping autoplay due to browser policies");
+  
+  // Optional: Consider showing a UI message that autoplay is disabled
+  // showToast("Autoplay is disabled due to browser policy. Please click Play buttons manually.", "info");
 }
 
-function refreshTable() {
-    currentPage = 1;  // Assuming currentPage is declared elsewhere in your script
+// Refreshes the TTS table with the latest data
+// Making this globally available for other scripts
+window.refreshTable = function() {
+    console.log("Refreshing TTS table...");
+    currentPage = 1;  // Reset to first page
     const tableBody = document.getElementById("ttsFilesBody");
     if (tableBody) {
-        tableBody.innerHTML = "";
+        tableBody.innerHTML = '<tr><td colspan="5" class="text-center">Loading messages...</td></tr>';
         loadMoreData(); // Load the initial set of data
+        
+        // Update last refreshed indicator
+        const statusLastUpdated = document.getElementById('statusLastUpdated');
+        if (statusLastUpdated) {
+            statusLastUpdated.textContent = 'Last updated: ' + new Date().toLocaleTimeString();
+        }
     } else {
+        console.log("TTS table body not found");
     }
+};
+
+// For compatibility with existing code
+function refreshTable() {
+    window.refreshTable();
+}
+
+// Make sure showToast is available
+if (typeof window.showToast !== 'function') {
+    window.showToast = function(message, type) {
+        console.log(`[${type}] ${message}`);
+        
+        // Create a simple alert for critical errors if no toast UI is available
+        if (type === 'error') {
+            alert(message);
+        }
+    };
 }
 
 
@@ -146,22 +198,71 @@ let totalPages = 0;
 
 function loadMoreData() {
   fetch(`/messages/${currentPage}`)
-    .then((response) => response.json())
+    .then((response) => {
+      if (!response.ok) {
+        throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+      }
+      return response.json();
+    })
     .then((data) => {
       if (data.items && data.items.length > 0) {
+        // Remove any loading indicator
+        const tableBody = document.getElementById("ttsFilesBody");
+        if (tableBody && tableBody.innerHTML.includes('Loading messages...')) {
+          tableBody.innerHTML = '';
+        }
+        
+        // Add each TTS entry
         data.items.forEach((file) => {
+          // Skip if file data is invalid
+          if (!file || !Array.isArray(file) || file.length < 5) {
+            console.warn("Skipping invalid file data:", file);
+            return;
+          }
+          
           addRowToTable(file); // Append new rows to the table
         });
-        lastId = parseInt(data.items[data.items.length - 1][1]); // Update lastId to the ID of the last item
-        currentPage++; // Increment page number after successful data fetch
+        
+        // Update lastId and increment page
+        if (data.items.length > 0 && data.items[data.items.length - 1][1]) {
+          lastId = parseInt(data.items[data.items.length - 1][1]);
+          currentPage++; // Increment page number after successful data fetch
+        }
+        
+        // If fewer items than expected, we might be at the end
+        const loadMoreBtn = document.getElementById("loadMore");
+        if (loadMoreBtn && data.items.length < 10) {
+          loadMoreBtn.disabled = true;
+        }
       } else {
         // No more data or an empty response
-        document.getElementById("loadMore").disabled = true; // Disable the button
+        const loadMoreBtn = document.getElementById("loadMore");
+        if (loadMoreBtn) {
+          loadMoreBtn.disabled = true;
+        }
+        
+        // If empty on first page, show message
+        if (currentPage === 1) {
+          const tableBody = document.getElementById("ttsFilesBody");
+          if (tableBody) {
+            tableBody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">No TTS messages found</td></tr>';
+          }
+        }
       }
     })
     .catch((error) => {
-      console.error("Error:", error);
-      document.getElementById("loadMore").disabled = true; // Disable the button in case of an error
+      console.error("Error loading TTS data:", error);
+      
+      const loadMoreBtn = document.getElementById("loadMore");
+      if (loadMoreBtn) {
+        loadMoreBtn.disabled = true;
+      }
+      
+      // Show error in the table if it's empty
+      const tableBody = document.getElementById("ttsFilesBody");
+      if (tableBody && currentPage === 1) {
+        tableBody.innerHTML = `<tr><td colspan="5" class="text-center text-danger">Error loading TTS data: ${error.message}</td></tr>`;
+      }
     });
 }
 

@@ -1338,22 +1338,29 @@ def send_message_to_channel():
         if not channel or not message:
             return jsonify({'success': False, 'error': 'Missing channel or message'}), 400
         
-        # Send message through normal bot flow
         coroutine = bot_instance.send_message_to_channel(channel, message)
         asyncio.run_coroutine_threadsafe(coroutine, bot_instance.loop)
         
-        # Process TTS
-        tts_file, new_id = process_text(message, channel, db_file)
+        # Use asyncio.run to run the async function in a sync context
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        success, output_file = loop.run_until_complete(process_text(channel, message))
+        loop.close()
         
-        if not tts_file or not new_id:
+        if not success or not output_file:
             raise Exception("TTS processing failed")
         
-        # Notify all clients BEFORE returning
+        conn = sqlite3.connect(db_file)
+        c = conn.cursor()
+        c.execute("SELECT MAX(message_id) FROM tts_logs")
+        new_id = c.fetchone()[0]
+        conn.close()
+        
         socketio.emit('new_tts_entry', {'id': new_id})
         
         return jsonify({
             'success': True,
-            'file_path': tts_file,
+            'file_path': output_file,
             'message': 'TTS message generated successfully'
         })
     except Exception as e:
@@ -1883,48 +1890,27 @@ def trigger_tts():
     
     try:
         data = request.json
-        channel = data.get('channel', 'web')  # Default to 'web' if channel not specified
+        channel = data.get('channel', 'web')
         message = data.get('message')
         
         if not message:
             return jsonify({'success': False, 'error': 'Missing message'})
         
-        # Default voice preset if not specified or channel doesn't exist
-        voice_preset = "v2/en_speaker_6"
-        
-        # Try to get channel voice preset if it's a real channel
-        if channel != 'web' and channel != 'bot':
-            conn = sqlite3.connect(db_file)
-            c = conn.cursor()
-            c.execute("SELECT voice_preset FROM channel_configs WHERE channel_name = ?", (channel,))
-            result = c.fetchone()
-            if result and result[0]:
-                voice_preset = result[0]
-            conn.close()
-        
-        # Generate a timestamp
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         
-        # Create outputs directory if it doesn't exist
         output_dir = os.path.join('static', 'outputs', channel)
         os.makedirs(output_dir, exist_ok=True)
         
-        # Create the file path
-        file_path = os.path.join(output_dir, f"{channel}-{timestamp}.wav")
+        # Use asyncio.run to run the async function in a sync context
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        success, output_file = loop.run_until_complete(process_text(channel, message))
+        loop.close()
         
-        # Process the TTS
-        result = process_text(
-            text=message,
-            output_path=file_path,
-            voice_preset=voice_preset
-        )
-        
-        if result and os.path.exists(file_path):
-            # Log the TTS entry
+        if success and output_file and os.path.exists(output_file):
             conn = sqlite3.connect(db_file)
             c = conn.cursor()
             
-            # Make sure tts_logs table exists
             c.execute("""
                 CREATE TABLE IF NOT EXISTS tts_logs (
                     message_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1936,16 +1922,23 @@ def trigger_tts():
                 )
             """)
             
+            voice_preset = "v2/en_speaker_0"
+            
             c.execute(
                 "INSERT INTO tts_logs (channel, timestamp, voice_preset, file_path, message) VALUES (?, ?, ?, ?, ?)",
-                (channel, timestamp, voice_preset, file_path, message)
+                (channel, timestamp, voice_preset, output_file, message)
             )
             conn.commit()
+            new_id = c.lastrowid
             conn.close()
+            
+            # Send WebSocket notification
+            socketio.emit("refresh_table", {"data": "New TTS available"})
+            socketio.emit("new_tts_entry", {"id": new_id})
             
             return jsonify({
                 'success': True,
-                'file_path': file_path,
+                'file_path': output_file,
                 'message': 'TTS message generated successfully'
             })
         else:
