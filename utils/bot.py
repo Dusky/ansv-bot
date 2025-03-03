@@ -41,8 +41,12 @@ RED = "\x1b[31m"
 GREEN = "\x1b[32m"
 PURPLE = "\x1b[35m"
 
-# Extract the channels
-channels = config["settings"]["channels"].split(",")
+# Try to extract the channels - with error handling
+try:
+    channels = config["settings"]["channels"].split(",")
+except Exception as e:
+    print(f"{RED}Error reading channels from config: {e}{RESET}")
+    channels = []
 
 
 
@@ -99,6 +103,10 @@ class Bot(commands.Bot):
         self.cache_update_threshold = 3600 * 24  # 24 hours by default
         self.cache_build_times = {}  # Initialize as empty dict
         
+        # Load cache build times before attempting to build model
+        self.cache_build_times = self.load_last_cache_build_times()
+        print(f"Loaded cache build times: {self.cache_build_times}")
+        
         self.load_text_and_build_model()
         self.first_model_update = True
         
@@ -143,7 +151,7 @@ class Bot(commands.Bot):
     async def join_channel(self, channel_name):
         """Join a channel with proper formatting and error handling."""
         try:
-            # Ensure channel has # prefix for our tracking
+            # Ensure the channel name is properly formatted with # prefix for our tracking
             if not channel_name.startswith('#'):
                 channel_name = f'#{channel_name}'
             
@@ -151,20 +159,70 @@ class Bot(commands.Bot):
             # The library will strip # internally if present
             clean_name = channel_name.lstrip('#')
             
+            print(f"{YELLOW}Attempting to join channel: {channel_name} (clean: {clean_name}){RESET}")
+            
             # Join the channel
-            await self.join_channels([clean_name])
+            try:
+                # The actual join operation
+                await self.join_channels([clean_name])
+                join_success = True
+                
+                # Verify that the join was successful by checking connection
+                channel_obj = self.get_channel(clean_name)
+                if not channel_obj:
+                    print(f"{YELLOW}Warning: Could not verify channel object for {clean_name} after joining{RESET}")
+                
+            except Exception as join_error:
+                join_success = False
+                print(f"{RED}Error in join_channels operation: {join_error}{RESET}")
+                raise
             
-            # Add to our tracking sets
-            self._joined_channels.add(channel_name)
-            
-            # Make sure it's in self.channels for other parts of the code
-            if channel_name not in self.channels:
-                self.channels.append(channel_name)
-            
-            print(f"{GREEN}Successfully joined channel: {channel_name}{RESET}")
-            return True
+            if join_success:
+                # Update tracking in multiple places to ensure consistency
+                
+                # 1. Add to our tracking set with # prefix
+                self._joined_channels.add(channel_name)
+                
+                # 2. Make sure it's in self.channels list (also with # prefix)
+                if channel_name not in self.channels:
+                    self.channels.append(channel_name)
+                
+                # 3. Update database to mark channel as connected
+                try:
+                    conn = sqlite3.connect(self.db_file)
+                    c = conn.cursor()
+                    
+                    # First check if channel exists in channel_configs
+                    c.execute("SELECT 1 FROM channel_configs WHERE channel_name = ?", (clean_name,))
+                    if not c.fetchone():
+                        # Create entry if it doesn't exist
+                        print(f"{YELLOW}Creating new channel config for {clean_name}{RESET}")
+                        c.execute('''
+                            INSERT INTO channel_configs 
+                            (channel_name, tts_enabled, voice_enabled, join_channel, owner, 
+                            trusted_users, ignored_users, use_general_model, lines_between_messages, time_between_messages, currently_connected)
+                            VALUES (?, 0, 1, 1, ?, '', '', 1, 50, 15, 1)
+                        ''', (clean_name, clean_name))
+                    else:
+                        # Update existing entry
+                        c.execute(
+                            "UPDATE channel_configs SET join_channel = 1, currently_connected = 1 WHERE channel_name = ?",
+                            (clean_name,)
+                        )
+                        
+                    conn.commit()
+                    conn.close()
+                except Exception as db_error:
+                    print(f"{RED}Database update error for channel {clean_name}: {db_error}{RESET}")
+                
+                print(f"{GREEN}✅ Successfully joined channel: {channel_name}{RESET}")
+                return True
+            else:
+                print(f"{RED}❌ Failed to join channel: {channel_name}{RESET}")
+                return False
+                
         except Exception as e:
-            print(f"{RED}Failed to join channel {channel_name}: {e}{RESET}")
+            print(f"{RED}❌ Failed to join channel {channel_name}: {e}{RESET}")
             return False
 
     def load_channel_settings(self):
@@ -189,21 +247,57 @@ class Bot(commands.Bot):
     async def check_and_join_channels(self):
         """Join all channels marked for joining in the database."""
         try:
+            # Get channels from database
             conn = sqlite3.connect(self.db_file)
             c = conn.cursor()
             c.execute("SELECT channel_name FROM channel_configs WHERE join_channel = 1")
             channels_to_join = [row[0] for row in c.fetchall()]
             conn.close()
             
-            print(f"Found {len(channels_to_join)} channels to join from database")
+            print(f"{YELLOW}Found {len(channels_to_join)} channels to join from database{RESET}")
             
+            # If no channels found in database, check config file
+            if not channels_to_join and "settings" in config and "channels" in config["settings"]:
+                config_channels = config["settings"]["channels"].split(",")
+                channels_to_join = [ch.strip() for ch in config_channels if ch.strip()]
+                print(f"{YELLOW}No channels in database, using {len(channels_to_join)} from config file{RESET}")
+            
+            join_success = 0
+            join_failure = 0
+            
+            # Join each channel with improved error handling
             for channel in channels_to_join:
-                # Make sure channel has # prefix
-                channel_name = f"#{channel.lstrip('#')}"
-                if channel_name not in self._joined_channels:
-                    await self.join_channel(channel_name)
+                try:
+                    # Make sure channel has # prefix
+                    channel_name = f"#{channel.lstrip('#')}"
+                    
+                    # Skip if already joined
+                    if channel_name in self._joined_channels:
+                        print(f"{GREEN}Already joined channel: {channel_name}{RESET}")
+                        join_success += 1
+                        continue
+                    
+                    # Attempt to join
+                    print(f"{YELLOW}Attempting to join channel: {channel_name}{RESET}")
+                    success = await self.join_channel(channel_name)
+                    
+                    if success:
+                        join_success += 1
+                    else:
+                        join_failure += 1
+                        
+                except Exception as e:
+                    join_failure += 1
+                    print(f"{RED}Error joining channel {channel}: {str(e)}{RESET}")
+            
+            # Summary
+            print(f"{GREEN}Channel joining complete: {join_success} succeeded, {join_failure} failed{RESET}")
+            
         except Exception as e:
-            print(f"Error joining channels: {e}")
+            print(f"{RED}Error in check_and_join_channels: {str(e)}{RESET}")
+            
+        # Final verification
+        print(f"{YELLOW}Currently joined channels: {sorted(self._joined_channels)}{RESET}")
     
     async def setup_periodic_channel_check(self, interval=300):  # 5 minutes
         """Set up a periodic task to check for new channels."""
@@ -535,7 +629,21 @@ class Bot(commands.Bot):
             if os.path.exists(cache_time_file):
                 with open(cache_time_file, 'r') as f:
                     import json
-                    return json.load(f)
+                    data = json.load(f)
+                    
+                    # Convert from list to dictionary if needed
+                    if isinstance(data, list):
+                        print("Converting cache build times from list to dictionary format...")
+                        result = {}
+                        for entry in data:
+                            if isinstance(entry, dict) and "channel" in entry and "timestamp" in entry:
+                                # Use the channel name as the key, timestamp as the value
+                                channel_key = entry["channel"]
+                                if channel_key == "general_markov":
+                                    channel_key = "general_markov_model.json"
+                                result[channel_key] = entry["timestamp"]
+                        return result
+                    return data
             return {}
         except Exception as e:
             print(f"Error loading cache build times: {e}")
@@ -549,9 +657,38 @@ class Bot(commands.Bot):
                 os.makedirs("cache")
             
             cache_time_file = os.path.join("cache", "cache_build_times.json")
+            
+            # Convert from dictionary to list for backwards compatibility
+            # or just save as dictionary if we've already migrated
             with open(cache_time_file, 'w') as f:
                 import json
-                json.dump(self.cache_build_times, f)
+                # Check if we need to maintain the list format for backwards compatibility
+                try:
+                    with open(cache_time_file, 'r') as read_f:
+                        old_data = json.load(read_f)
+                        if isinstance(old_data, list):
+                            # Convert our dictionary back to the list format
+                            list_data = []
+                            for key, timestamp in self.cache_build_times.items():
+                                channel_name = key
+                                if key == "general_markov_model.json":
+                                    channel_name = "general_markov"
+                                list_data.append({
+                                    "channel": channel_name,
+                                    "timestamp": timestamp,
+                                    "success": True,
+                                    "duration": 3.45  # Default duration
+                                })
+                            json.dump(list_data, f, indent=2)
+                            print("Saved cache build times in list format for compatibility")
+                            return
+                except:
+                    # If we can't read the old file, just use the dictionary format
+                    pass
+                
+                # Save as dictionary
+                json.dump(self.cache_build_times, f, indent=2)
+                print("Saved cache build times in dictionary format")
         except Exception as e:
             print(f"Error saving cache build times: {e}")
 
@@ -638,34 +775,109 @@ class Bot(commands.Bot):
 
     async def event_ready(self):
         """Handle the bot ready event."""
-        print(f"Bot is ready! | {self.nick}")
+        print(f"{GREEN}==================================================={RESET}")
+        print(f"{GREEN}Bot is ready! | {self.nick}{RESET}")
+        print(f"{GREEN}==================================================={RESET}")
         
-        # Initialize channel configs
-        self.ensure_channel_configs()
+        # Step 1: Initialize channel configs in the database
+        try:
+            print(f"{YELLOW}Step 1: Initializing channel configurations...{RESET}")
+            self.ensure_channel_configs()
+            print(f"{GREEN}✅ Channel configs initialized{RESET}")
+        except Exception as e:
+            print(f"{RED}❌ Error initializing channel configs: {e}{RESET}")
         
-        # Set start time for uptime tracking
+        # Step 2: Set start time for uptime tracking
         self._start_time = time.time()
         
-        # Join all configured channels
-        await self.check_and_join_channels()
+        # Step 3: Process channels from config file
+        try:
+            print(f"{YELLOW}Step 3: Processing channels from config file...{RESET}")
+            if "settings" in config and "channels" in config["settings"]:
+                config_channels = config["settings"]["channels"].split(",")
+                config_channels = [ch.strip() for ch in config_channels if ch.strip()]
+                
+                print(f"{YELLOW}Found {len(config_channels)} channels in config file{RESET}")
+                
+                # Make sure each config channel has a database entry
+                for channel in config_channels:
+                    clean_name = channel.lstrip('#')
+                    # Update channel config to ensure it's set to be joined
+                    try:
+                        conn = sqlite3.connect(self.db_file)
+                        c = conn.cursor()
+                        c.execute("SELECT 1 FROM channel_configs WHERE channel_name = ?", (clean_name,))
+                        
+                        if not c.fetchone():
+                            # Create new entry 
+                            print(f"{YELLOW}Creating config for config file channel: {clean_name}{RESET}")
+                            c.execute('''
+                                INSERT INTO channel_configs 
+                                (channel_name, tts_enabled, voice_enabled, join_channel, owner, 
+                                trusted_users, ignored_users, use_general_model, lines_between_messages, time_between_messages)
+                                VALUES (?, 0, 1, 1, ?, '', '', 1, 50, 15)
+                            ''', (clean_name, clean_name))
+                        else:
+                            # Update existing entry to make sure join_channel is enabled
+                            c.execute("UPDATE channel_configs SET join_channel = 1 WHERE channel_name = ?", (clean_name,))
+                            
+                        conn.commit()
+                        conn.close()
+                    except Exception as db_error:
+                        print(f"{RED}Error updating channel config for {clean_name}: {db_error}{RESET}")
+            else:
+                print(f"{YELLOW}No channels found in config file{RESET}")
+                
+            print(f"{GREEN}✅ Config file channels processed{RESET}")
+        except Exception as e:
+            print(f"{RED}❌ Error processing config file channels: {e}{RESET}")
         
-        # Start periodic channel checking
-        await self.setup_periodic_channel_check()
+        # Step 4: Join all configured channels from database
+        try:
+            print(f"{YELLOW}Step 4: Joining all configured channels...{RESET}")
+            await self.check_and_join_channels()
+            print(f"{GREEN}✅ Channel joining completed{RESET}")
+        except Exception as e:
+            print(f"{RED}❌ Error joining channels: {e}{RESET}")
         
-        # Print status table
-        await self.print_channel_status()
+        # Step 5: Start periodic channel checking
+        try:
+            print(f"{YELLOW}Step 5: Setting up periodic channel check...{RESET}")
+            await self.setup_periodic_channel_check()
+            print(f"{GREEN}✅ Periodic checking started{RESET}")
+        except Exception as e:
+            print(f"{RED}❌ Error setting up periodic channel check: {e}{RESET}")
         
-        # Create PID file
+        # Step 6: Print status table
+        try:
+            print(f"{YELLOW}Step 6: Printing status table...{RESET}")
+            await self.print_channel_status()
+            print(f"{GREEN}✅ Status printed{RESET}")
+        except Exception as e:
+            print(f"{RED}❌ Error printing channel status: {e}{RESET}")
+        
+        # Step 7: Create PID file
         try:
             with open("bot.pid", "w") as f:
                 f.write(str(os.getpid()))
-            print(f"Created PID file with PID: {os.getpid()}")
+            print(f"{GREEN}✅ Created PID file with PID: {os.getpid()}{RESET}")
         except Exception as e:
-            print(f"Error creating PID file: {e}")
+            print(f"{RED}❌ Error creating PID file: {e}{RESET}")
         
-        # Create initial heartbeat file and start heartbeat update task
-        self.update_heartbeat_file()
-        self.loop.create_task(self.heartbeat_task())
+        # Step 8: Setup heartbeat
+        try:
+            print(f"{YELLOW}Step 8: Setting up heartbeat...{RESET}")
+            self.update_heartbeat_file()
+            self.loop.create_task(self.heartbeat_task())
+            print(f"{GREEN}✅ Heartbeat task started{RESET}")
+        except Exception as e:
+            print(f"{RED}❌ Error setting up heartbeat: {e}{RESET}")
+            
+        # Final verification
+        print(f"{YELLOW}Currently joined channels: {sorted(self._joined_channels)}{RESET}")
+        print(f"{GREEN}==================================================={RESET}")
+        print(f"{GREEN}Bot initialization complete!{RESET}")
+        print(f"{GREEN}==================================================={RESET}")
         
         # Extra verification for channels of interest
         for channel in self.channels:

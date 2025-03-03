@@ -195,7 +195,7 @@ def main():
 @app.route('/settings')
 def settings():
     theme = request.cookies.get("theme", "darkly")
-    return render_template('settings.html',  last_id=None, theme=theme)
+    return render_template('settings.html', last_id=None, theme=theme, current_theme=theme)
 
 @app.route('/toggle_tts', methods=['POST'])
 @app.route('/api/toggle_tts', methods=['POST'])  # Add an alternate route
@@ -448,32 +448,73 @@ def set_theme(theme):
     try:
         app.logger.info(f"Setting theme to: {theme}")
         
-        # Map the theme parameter to a valid Bootswatch theme or custom theme
+        # Expanded list of all valid Bootswatch themes
         valid_themes = {
+            # Basic themes
             'dark': 'darkly', 
             'light': 'flatly',
+            
+            # Standard Bootswatch themes
+            'cerulean': 'cerulean',
+            'cosmo': 'cosmo',
+            'cyborg': 'cyborg',
             'darkly': 'darkly',
             'flatly': 'flatly',
-            'cyborg': 'cyborg',
+            'journal': 'journal',
+            'litera': 'litera',
+            'lumen': 'lumen',
+            'lux': 'lux',
+            'materia': 'materia',
+            'minty': 'minty',
+            'morph': 'morph',
+            'pulse': 'pulse',
+            'quartz': 'quartz',
+            'sandstone': 'sandstone',
+            'simplex': 'simplex',
+            'sketchy': 'sketchy',
             'slate': 'slate',
             'solar': 'solar',
+            'spacelab': 'spacelab',
             'superhero': 'superhero',
+            'united': 'united',
             'vapor': 'vapor',
-            'ansv': 'ansv'  # Our custom ANSV theme
+            'yeti': 'yeti',
+            'zephyr': 'zephyr',
+            
+            # Custom theme
+            'ansv': 'ansv'
         }
         
+        # Check if the requested theme is valid
         theme_to_set = valid_themes.get(theme, 'darkly')  # Default to darkly if invalid
         
-        # Create a response
+        # Log what we're actually setting
+        app.logger.info(f"Requested theme '{theme}' mapped to '{theme_to_set}'")
+        
+        # Create a response based on request type
         if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
             # For AJAX requests, return JSON
             resp = jsonify({'success': True, 'theme': theme_to_set})
         else:
-            # For direct requests, redirect to the main page
-            resp = make_response(redirect(url_for("main")))
+            # For direct requests, redirect to the referrer or main page
+            referrer = request.referrer
+            if referrer and '/settings' in referrer:
+                # Return to settings page if that's where request came from
+                resp = make_response(redirect(url_for("settings")))
+            else:
+                # Otherwise go to main page
+                resp = make_response(redirect(url_for("main")))
             
-        # Set the cookie in either case
-        resp.set_cookie("theme", theme_to_set, max_age=30 * 24 * 60 * 60)
+        # Set the cookie with path and expiration
+        resp.set_cookie(
+            "theme", 
+            theme_to_set, 
+            path='/',
+            max_age=30 * 24 * 60 * 60,
+            secure=request.is_secure,
+            httponly=False  # Allow JavaScript to read it
+        )
+        
         return resp
     except Exception as e:
         app.logger.error(f"Error in set_theme: {e}")
@@ -1119,7 +1160,26 @@ def get_latest_messages():
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         
-        # Prepare query with optional channel filter
+        # First, get stats for the sidebar counters
+        stats_query = """
+            SELECT 
+                COUNT(*) as total,
+                COUNT(CASE WHEN timestamp LIKE ? THEN 1 END) as today,
+                COUNT(CASE WHEN timestamp >= date('now', '-7 days') THEN 1 END) as week
+            FROM tts_logs
+        """
+        
+        today_pattern = datetime.now().strftime('%Y%m%d') + '%'  # Format: YYYYMMDD%
+        c.execute(stats_query, (today_pattern,))
+        stats_row = c.fetchone()
+        
+        stats = {
+            'total': stats_row['total'] if stats_row else 0,
+            'today': stats_row['today'] if stats_row else 0,
+            'week': stats_row['week'] if stats_row else 0
+        }
+        
+        # Prepare query with optional channel filter for the main entries
         query = """
             SELECT message_id as id, channel, timestamp, voice_preset, file_path, message 
             FROM tts_logs 
@@ -1142,16 +1202,23 @@ def get_latest_messages():
         # Format the data for the frontend
         formatted_entries = []
         for row in rows:
+            # Handle timestamp formats - normalize for display
+            timestamp = row['timestamp']
+            
             formatted_entries.append({
                 'id': row['id'],
                 'channel': row['channel'],
-                'timestamp': row['timestamp'],
-                'voice_preset': row['voice_preset'],
+                'timestamp': timestamp,
+                'voice_preset': row['voice_preset'] or 'default',
                 'file_path': row['file_path'],
                 'message': row['message']
             })
             
-        return jsonify(formatted_entries)
+        # Return both stats and entries
+        return jsonify({
+            'stats': stats,
+            'entries': formatted_entries
+        })
     except Exception as e:
         app.logger.error(f"Error getting recent TTS: {e}")
         return jsonify({'error': str(e)}), 500

@@ -11,22 +11,12 @@ document.addEventListener('DOMContentLoaded', function() {
             checkForAddChannelOption(this);
         });
         
-        // Handle save button for channel config
-        const saveChannelBtn = document.getElementById('saveChannelConfig');
-        if (saveChannelBtn) {
-            saveChannelBtn.addEventListener('click', saveChannelSettings);
-        }
-        
-        // Handle add channel button
-        const addChannelBtn = document.getElementById('addChannelSave');
-        if (addChannelBtn) {
-            addChannelBtn.addEventListener('click', addNewChannel);
-        }
+        // No event listeners for buttons - using onclick handlers directly
     }
 });
 
-// Function to change theme
-function changeTheme() {
+// Function to change theme - making global so it's accessible from other scripts
+window.changeTheme = function() {
     const themeName = document.getElementById('themeSelect').value;
     
     // Show loading indicator
@@ -35,70 +25,114 @@ function changeTheme() {
         loadingIndicator.style.display = 'block';
     }
     
-    // Handle custom ANSV theme
-    if (themeName === 'ansv') {
-        // Apply custom theme classes
-        document.body.classList.add('theme-ansv');
-        document.documentElement.setAttribute('data-bs-theme', 'dark');
+    console.log("Changing theme to:", themeName);
+    
+    // First, set a local cookie to ensure it works even if the fetch fails
+    document.cookie = `theme=${themeName}; path=/; max-age=${30*24*60*60}`;
+    
+    // Apply some immediate visual changes
+    applyThemeChanges(themeName);
+    
+    // Save theme preference on server
+    fetch(`/set_theme/${themeName}`, {
+        method: 'GET',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Network response was not ok');
+        }
+        return response.json();
+    })
+    .then(data => {
+        console.log(`Theme saved as ${themeName}`);
+        showToast('Theme updated successfully', 'success');
         
-        // Set CSS variables
-        document.documentElement.setAttribute('data-theme', 'ansv');
+        // After success, reload the page to fully apply the theme
+        setTimeout(() => {
+            window.location.reload();
+        }, 500); // Short delay to allow the toast to be seen
+    })
+    .catch(error => {
+        console.error('Error setting theme:', error);
+        showToast('Error changing theme. Reloading to apply local changes.', 'warning');
         
-        // Hide loading immediately after applying local styles
-        fetch(`/set_theme/${themeName}`, {
-            method: 'GET',
-            headers: {
-                'X-Requested-With': 'XMLHttpRequest'
-            }
-        })
-        .then(response => response.json())
-        .then(data => {
-            console.log('Theme set to ANSV Custom');
-        })
-        .catch(error => {
-            console.error('Error setting theme:', error);
-            showToast('Error changing theme. Please try again.', 'error');
-        })
-        .finally(() => {
-            if (loadingIndicator) {
-                loadingIndicator.style.display = 'none';
-            }
+        // Even if server request fails, try to reload with the cookie we set
+        setTimeout(() => {
+            window.location.reload();
+        }, 1000);
+    })
+    .finally(() => {
+        if (loadingIndicator) {
+            loadingIndicator.style.display = 'none';
+        }
+    });
+}
+
+// Function to select and apply a theme via the new UI
+window.selectAndApplyTheme = function(themeName) {
+    // Update the hidden select element
+    const themeSelect = document.getElementById('themeSelect');
+    if (themeSelect) {
+        themeSelect.value = themeName;
+        
+        // Update active state on theme cards
+        const allThemeCards = document.querySelectorAll('.theme-card');
+        allThemeCards.forEach(card => {
+            card.classList.remove('active');
         });
+        
+        // Find the clicked card and make it active
+        const selectedCard = document.querySelector(`.theme-card[onclick*="${themeName}"]`);
+        if (selectedCard) {
+            selectedCard.classList.add('active');
+        }
+        
+        // Apply the theme
+        window.changeTheme();
     } else {
-        // For Bootswatch themes, remove custom theme class
-        document.body.classList.remove('theme-ansv');
-        document.documentElement.removeAttribute('data-theme');
-        
-        // Set dark/light mode based on theme
+        console.error("Theme select element not found!");
+    }
+}
+
+// Use the global showToast function if available, or provide our own
+function showToast(message, type = 'info') {
+    // Check if the notification.js showToast function exists
+    if (typeof window.showToast === 'function') {
+        window.showToast(message, type);
+    } else {
+        console.log(`Toast (${type}): ${message}`);
+        // Simple alert fallback if toast function not available
+        if (type === 'error') {
+            alert(`Error: ${message}`);
+        }
+    }
+}
+
+// Function to apply theme changes locally before reload
+function applyThemeChanges(themeName) {
+    // First remove any existing theme class
+    document.body.classList.remove('theme-ansv');
+    document.documentElement.removeAttribute('data-theme');
+    
+    if (themeName === 'ansv') {
+        // Apply custom ANSV theme
+        document.body.classList.add('theme-ansv');
+        document.documentElement.setAttribute('data-theme', 'ansv');
+        document.documentElement.setAttribute('data-bs-theme', 'dark');
+    } else {
+        // For Bootswatch themes
         const darkThemes = ['darkly', 'cyborg', 'slate', 'solar', 'superhero', 'vapor'];
-        document.documentElement.setAttribute('data-bs-theme', darkThemes.includes(themeName) ? 'dark' : 'light');
-        
-        // Update Bootstrap CSS
+        document.documentElement.setAttribute('data-bs-theme', 
+            darkThemes.includes(themeName) ? 'dark' : 'light');
+            
+        // Try to update Bootstrap CSS
         const bootstrapCSS = document.getElementById('bootstrapCSS');
         if (bootstrapCSS) {
             bootstrapCSS.href = `https://bootswatch.com/5/${themeName}/bootstrap.min.css`;
         }
-        
-        // Save theme preference on server
-        fetch(`/set_theme/${themeName}`, {
-            method: 'GET',
-            headers: {
-                'X-Requested-With': 'XMLHttpRequest'
-            }
-        })
-        .then(response => response.json())
-        .then(data => {
-            console.log(`Theme set to ${themeName}`);
-        })
-        .catch(error => {
-            console.error('Error setting theme:', error);
-            showToast('Error changing theme. Please try again.', 'error');
-        })
-        .finally(() => {
-            if (loadingIndicator) {
-                loadingIndicator.style.display = 'none';
-            }
-        });
     }
 }
 
@@ -146,4 +180,54 @@ document.addEventListener('DOMContentLoaded', function() {
         document.body.classList.add('theme-ansv');
         document.documentElement.setAttribute('data-theme', 'ansv');
     }
+    
+    // UI Preferences initialization
+    initUIPreferences();
 });
+
+// Function to select theme from visual previews - making global
+window.selectTheme = function(theme) {
+    console.log("Setting theme select to:", theme);
+    const themeSelect = document.getElementById('themeSelect');
+    if (themeSelect) {
+        themeSelect.value = theme;
+        window.changeTheme(); // Call the global version
+    } else {
+        console.error("Theme select element not found!");
+    }
+}
+
+// Initialize UI preferences 
+function initUIPreferences() {
+    // Only proceed if we're on the settings page
+    if (!document.getElementById('enableAnimations')) return;
+    
+    // Load saved preferences
+    const enableAnimations = localStorage.getItem('enableAnimations') !== 'false';
+    const enableToasts = localStorage.getItem('enableToasts') !== 'false';
+    const compactMode = localStorage.getItem('compactMode') === 'true';
+    
+    // Set checkboxes
+    document.getElementById('enableAnimations').checked = enableAnimations;
+    document.getElementById('enableToasts').checked = enableToasts;
+    document.getElementById('compactMode').checked = compactMode;
+    
+    // Apply preferences to the UI
+    document.body.classList.toggle('disable-animations', !enableAnimations);
+    document.body.classList.toggle('compact-mode', compactMode);
+    
+    // Set up change listeners
+    document.getElementById('enableAnimations').addEventListener('change', function() {
+        localStorage.setItem('enableAnimations', this.checked);
+        document.body.classList.toggle('disable-animations', !this.checked);
+    });
+    
+    document.getElementById('enableToasts').addEventListener('change', function() {
+        localStorage.setItem('enableToasts', this.checked);
+    });
+    
+    document.getElementById('compactMode').addEventListener('change', function() {
+        localStorage.setItem('compactMode', this.checked);
+        document.body.classList.toggle('compact-mode', this.checked);
+    });
+}

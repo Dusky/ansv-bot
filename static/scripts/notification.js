@@ -177,58 +177,17 @@ document.addEventListener('DOMContentLoaded', function() {
     initAudioToggle();
 });
 
-// Theme toggle functionality
+// Theme toggle functionality - DEPRECATED
+// Now handled by event_listener.js and settings.js - keeping this stub for backward compatibility
 function initThemeToggle() {
-    const themeToggleBtn = document.getElementById('themeToggle');
-    if (!themeToggleBtn) return;
-    
-    // Set initial button state based on current theme
-    updateThemeToggle();
-    
-    // Add click handler
-    themeToggleBtn.addEventListener('click', function() {
-        const isDarkTheme = document.documentElement.getAttribute('data-bs-theme') === 'dark';
-        const newTheme = isDarkTheme ? 'light' : 'dark';
-        const newBoostrap = isDarkTheme ? 'flatly' : 'darkly';
-        
-        // Make the request to change theme
-        fetch(`/set_theme/${newBoostrap}`, {
-            method: 'GET',
-            headers: {
-                'X-Requested-With': 'XMLHttpRequest'
-            }
-        })
-        .then(response => response.json())
-        .then(data => {
-            // Update theme on success
-            document.documentElement.setAttribute('data-bs-theme', newTheme);
-            updateThemeToggle();
-            
-            // Update Bootstrap CSS
-            const bootstrapCSS = document.getElementById('bootstrapCSS');
-            if (bootstrapCSS) {
-                bootstrapCSS.href = `https://bootswatch.com/5/${data.theme}/bootstrap.min.css`;
-            }
-        })
-        .catch(error => {
-            console.error('Error changing theme:', error);
-            showToast('Error changing theme. Please try again.', 'error');
-        });
-    });
+    console.log("DEPRECATED: initThemeToggle in notification.js is no longer used");
+    // Do nothing - theme toggle is now handled by event_listener.js
 }
 
-// Update theme toggle button appearance
+// Update theme toggle button appearance - DEPRECATED
 function updateThemeToggle() {
-    const themeToggleBtn = document.getElementById('themeToggle');
-    if (!themeToggleBtn) return;
-    
-    const isDarkTheme = document.documentElement.getAttribute('data-bs-theme') === 'dark';
-    
-    if (isDarkTheme) {
-        themeToggleBtn.innerHTML = '<i class="fas fa-sun"></i> Light';
-    } else {
-        themeToggleBtn.innerHTML = '<i class="fas fa-moon"></i> Dark';
-    }
+    console.log("DEPRECATED: updateThemeToggle in notification.js is no longer used");
+    // Do nothing - theme toggle is now handled by event_listener.js
 }
 
 // Initialize audio toggle

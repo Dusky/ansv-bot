@@ -19,9 +19,20 @@
   <!-- Theme initialization - happens as early as possible -->
   <script>
     (function() {
+      // Get the current theme from template variable
       const savedTheme = "{{ theme }}";
-      const isDarkTheme = ['darkly', 'cyborg', 'slate', 'solar', 'superhero', 'vapor'].includes(savedTheme);
+      console.log(`Base template loading theme: ${savedTheme}`);
+      
+      // Set data-bs-theme attribute for bootstrap dark mode
+      const darkThemes = ['darkly', 'cyborg', 'slate', 'solar', 'superhero', 'vapor', 'ansv'];
+      const isDarkTheme = darkThemes.includes(savedTheme);
       document.documentElement.setAttribute('data-bs-theme', isDarkTheme ? 'dark' : 'light');
+      
+      // Apply ANSV theme class if needed
+      if (savedTheme === 'ansv') {
+        document.documentElement.setAttribute('data-theme', 'ansv');
+        document.documentElement.classList.add('theme-ansv');
+      }
     })();
   </script>
 
@@ -54,16 +65,17 @@
   <script src="{{ url_for('static', filename='scripts/data_handler.js') }}"></script>
   <script src="{{ url_for('static', filename='scripts/event_listener.js') }}"></script>
   <script src="{{ url_for('static', filename='scripts/setActiveTab.js') }}"></script>
-  <script src="{{ url_for('static', filename='scripts/handle_voice.js') }}"></script>
   
   <!-- Stats.js must load after markov.js -->
   <script src="{{ url_for('static', filename='scripts/stats.js') }}"></script>
   
   <!-- Remaining scripts -->
-  <script src="{{ url_for('static', filename='scripts/saveChannelSettings.js') }}"></script>
   <script src="{{ url_for('static', filename='scripts/compatibility_fix.js') }}"></script>
   <script src="{{ url_for('static', filename='scripts/main_page.js') }}"></script>
   <script src="{{ url_for('static', filename='scripts/settings.js') }}"></script>
+  
+  <!-- Provide a block for page-specific scripts -->
+  {% block page_scripts %}{% endblock %}
 </head>
 
 <body>

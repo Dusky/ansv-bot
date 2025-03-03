@@ -81,9 +81,20 @@ function updateChannelSettings(data, callback) {
 }
 function handleSaveResponse(data) {
   if (data.success) {
-    alert("Settings saved successfully.");
+    showToast("Settings saved successfully.", "success");
   } else {
-    alert("Failed to save settings: " + data.message);
+    showToast("Failed to save settings: " + data.message, "error");
+  }
+}
+
+// Toast function if not already defined
+function showToast(message, type = "info") {
+  // Check if the notification.js showToast function exists
+  if (typeof window.showToast === "function") {
+    window.showToast(message, type);
+  } else {
+    // Fallback to alert if toast function not available
+    alert(message);
   }
 }
 function addNewChannel(data, callback) {
