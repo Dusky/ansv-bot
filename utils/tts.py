@@ -53,6 +53,24 @@ def get_voice_preset(channel_name, db_file):
     finally:
         conn.close()
         
+def get_bark_model_for_channel(channel_name, db_file):
+    try:
+        # Check for default model from environment
+        default_model = os.environ.get("DEFAULT_BARK_MODEL")
+        if default_model:
+            return default_model
+        
+        conn = sqlite3.connect(db_file)
+        c = conn.cursor()
+        c.execute("SELECT bark_model FROM channel_configs WHERE channel_name = ?", (channel_name,))
+        result = c.fetchone()
+        return result[0] if result else 'bark-small'
+    except Exception as e:
+        print(f"Error getting bark model for channel {channel_name}: {e}")
+        return 'bark-small'
+    finally:
+        conn.close()
+        
 
 def log_tts_file(message_id, channel_name, timestamp, file_path, voice_preset, input_text, db_file):
     file_path = file_path.replace('static/', '', 1)
@@ -77,7 +95,7 @@ def silence_output():
     sys.stdout = open(os.devnull, 'w')
     sys.stderr = open(os.devnull, 'w')
 
-def process_text_thread(input_text, channel_name, db_file='./messages.db', full_path=None, timestamp=None, message_id=None, voice_preset=None):
+def process_text_thread(input_text, channel_name, db_file='./messages.db', full_path=None, timestamp=None, message_id=None, voice_preset=None, bark_model=None):
     """Process TTS in a separate thread with silenced output"""
     global original_stdout, original_stderr
     silence_output()
@@ -93,10 +111,21 @@ def process_text_thread(input_text, channel_name, db_file='./messages.db', full_
         from nltk.tokenize import sent_tokenize
         
         try:
+            # Get channel-specific bark model if available
+            if not bark_model:
+                bark_model = get_bark_model_for_channel(channel_name, db_file)
+            
+            # Default to bark-small if no model specified
+            if not bark_model:
+                bark_model = "bark-small"
+                
+            print(f"Using Bark model: {bark_model}")
+            model_path = f"suno/{bark_model}"
+            
             # Initialize TTS model
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-            processor = AutoProcessor.from_pretrained("suno/bark-small")
-            model = BarkModel.from_pretrained("suno/bark-small").to(device)
+            processor = AutoProcessor.from_pretrained(model_path)
+            model = BarkModel.from_pretrained(model_path).to(device)
 
             if torch.cuda.is_available():
                 model.to_bettertransformer()

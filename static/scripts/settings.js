@@ -51,7 +51,14 @@ window.changeTheme = function() {
     })
     .then(data => {
         console.log(`Theme saved as ${themeName}`);
-        showToast('Theme updated successfully', 'success');
+        
+        // Only show the toast if this was triggered by a user action, not by a background check
+        const isUserAction = document.activeElement && 
+                            (document.activeElement.id === 'themeSelect' || 
+                             document.activeElement.classList.contains('theme-card'));
+        if (isUserAction) {
+            showToast('Theme updated successfully', 'success');
+        }
         
         // After success, reload the page to fully apply the theme
         setTimeout(() => {

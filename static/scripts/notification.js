@@ -86,8 +86,8 @@ function showConfirmation(title, message, confirmCallback, cancelCallback = null
     }
     
     // Set content
-    const titleEl = document.getElementById('confirmationTitle');
-    const messageEl = document.getElementById('confirmationMessage');
+    const titleEl = modal.querySelector('.modal-title');
+    const messageEl = modal.querySelector('.modal-body');
     
     if (titleEl) titleEl.textContent = title;
     if (messageEl) messageEl.textContent = message;
@@ -96,8 +96,8 @@ function showConfirmation(title, message, confirmCallback, cancelCallback = null
     const modalInstance = new bootstrap.Modal(modal);
     
     // Handle confirm button
-    const confirmButton = document.getElementById('confirmButton');
-    const cancelButton = document.getElementById('cancelButton');
+    const confirmButton = modal.querySelector('#confirmButton');
+    const cancelButton = modal.querySelector('button[data-bs-dismiss="modal"]');
     
     if (confirmButton) {
         // Remove any existing event listeners

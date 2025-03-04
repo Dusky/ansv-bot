@@ -86,6 +86,14 @@ function generateMessage() {
 }
 
 function rebuildCacheForChannel(channelName) {
+  console.log(`markov.js: rebuildCacheForChannel called for ${channelName}`);
+  
+  // Use the globally defined rebuildCacheDirectly function if available
+  if (typeof window.rebuildCacheDirectly === 'function') {
+    window.rebuildCacheDirectly(channelName);
+    return;
+  }
+  
   // Show loading state
   const button = document.querySelector(`button[data-channel="${channelName}"][data-action="rebuild"]`);
   if (button) {
@@ -101,6 +109,10 @@ function rebuildCacheForChannel(channelName) {
       .then(data => {
         if (data.success) {
           showToast(`Model for ${channelName} rebuilt successfully`, 'success');
+          // Refresh stats after success
+          if (typeof window.loadStatistics === 'function') {
+            window.loadStatistics();
+          }
         } else {
           showToast(`Failed: ${data.message}`, 'error');
         }
@@ -115,6 +127,27 @@ function rebuildCacheForChannel(channelName) {
           button.textContent = originalText;
           button.disabled = false;
         }
+      });
+  } else {
+    // If button not found, just call the API directly
+    fetch(`/rebuild-cache/${channelName}`, {
+      method: 'POST'
+    })
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          showToast(`Model for ${channelName} rebuilt successfully`, 'success');
+          // Refresh stats after success
+          if (typeof window.loadStatistics === 'function') {
+            window.loadStatistics();
+          }
+        } else {
+          showToast(`Failed: ${data.message}`, 'error');
+        }
+      })
+      .catch(error => {
+        console.error('Error rebuilding model:', error);
+        showToast(`Error rebuilding model: ${error.message}`, 'error');
       });
   }
 }
@@ -206,14 +239,33 @@ function sendMarkovMessage(channelName) {
 (function initializeMarkovModule() {
   console.log("Initializing markovModule global object");
   
-  // Wait until DOM is ready before initializing
+  // Make functions immediately available rather than waiting for DOMContentLoaded
+  window.markovModule = window.markovModule || {};
+  window.markovModule.sendMarkovMessage = sendMarkovMessage;
+  window.markovModule.rebuildChannelModel = rebuildCacheForChannel;
+  
+  // Make functions directly available on the window object to eliminate any ambiguity
+  window.rebuildCacheForChannelGlobal = rebuildCacheForChannel;
+  window.rebuildCacheForChannel = rebuildCacheForChannel;  // Direct assignment
+  
+  // Also make the functions available under their most likely names
+  window.sendMarkovMessage = sendMarkovMessage;
+  window.rebuildChannelCache = rebuildCacheForChannel;
+  
+  console.log("markovModule initialized successfully");
+  
+  // Also initialize on DOMContentLoaded for safety
   document.addEventListener('DOMContentLoaded', function() {
-    // Create module and expose functions
-    window.markovModule = window.markovModule || {};
-    window.markovModule.sendMarkovMessage = sendMarkovMessage;
-    window.markovModule.rebuildChannelModel = rebuildCacheForChannel;
-    
-    console.log("markovModule initialized successfully");
+    // Check if functions are available, if not reinitialize
+    if (!window.markovModule || !window.markovModule.rebuildChannelModel) {
+      console.warn("markovModule not initialized on DOMContentLoaded, reinitializing");
+      
+      window.markovModule = window.markovModule || {};
+      window.markovModule.sendMarkovMessage = sendMarkovMessage;
+      window.markovModule.rebuildChannelModel = rebuildCacheForChannel;
+      window.rebuildCacheForChannelGlobal = rebuildCacheForChannel;
+      window.rebuildCacheForChannel = rebuildCacheForChannel;
+    }
   });
 })();
 
@@ -282,6 +334,10 @@ function diagnoseRebuild() {
                 if (typeof window.rebuildCacheForChannelGlobal === 'function') {
                     console.log("Using global rebuildCacheForChannelGlobal function");
                     window.rebuildCacheForChannelGlobal(channel);
+                } else if (typeof window.markovModule !== 'undefined' && 
+                           typeof window.markovModule.rebuildChannelModel === 'function') {
+                    console.log("Using markovModule.rebuildChannelModel function");
+                    window.markovModule.rebuildChannelModel(channel);
                 } else if (typeof window.rebuildCacheForChannel === 'function') {
                     console.log("Using local rebuildCacheForChannel function");
                     window.rebuildCacheForChannel(channel);

@@ -105,12 +105,46 @@ class MarkovHandler:
         """
         logs_directory = 'logs'  # Directory where log files are stored
         success = True
-        for filename in os.listdir(logs_directory):
-            if filename.endswith('.txt'):
-                channel_name = filename.replace('.txt', '')
-                if not self.rebuild_cache_for_channel(channel_name, logs_directory):
+        rebuilt_count = 0
+        try:
+            # Create cache directory if it doesn't exist
+            if not os.path.exists(self.cache_directory):
+                os.makedirs(self.cache_directory)
+                self.logger.info(f"Created cache directory: {self.cache_directory}")
+            
+            # Check if logs directory exists
+            if not os.path.exists(logs_directory):
+                self.logger.error(f"Logs directory does not exist: {logs_directory}")
+                return False
+            
+            for filename in os.listdir(logs_directory):
+                if filename.endswith('.txt'):
+                    channel_name = filename.replace('.txt', '')
+                    try:
+                        if self.rebuild_cache_for_channel(channel_name, logs_directory):
+                            rebuilt_count += 1
+                        else:
+                            success = False
+                    except Exception as e:
+                        self.logger.error(f"Error rebuilding cache for channel {channel_name}: {e}")
+                        success = False
+            
+            # Also rebuild the general cache
+            try:
+                general_result = self.rebuild_general_cache(logs_directory)
+                if general_result:
+                    rebuilt_count += 1
+                else:
                     success = False
-        return success
+            except Exception as e:
+                self.logger.error(f"Error rebuilding general cache: {e}")
+                success = False
+            
+            self.logger.info(f"Rebuilt {rebuilt_count} caches with overall success: {success}")
+            return success
+        except Exception as e:
+            self.logger.error(f"Error in rebuild_all_caches: {e}")
+            return False
 
     def rebuild_cache_for_channel(self, channel_name, logs_directory):
         """
@@ -118,6 +152,25 @@ class MarkovHandler:
         """
         import time
         
+        # Check if inputs are valid
+        if not channel_name:
+            self.logger.error("Empty channel name provided to rebuild_cache_for_channel")
+            return False
+            
+        if not logs_directory or not os.path.exists(logs_directory):
+            self.logger.error(f"Invalid logs directory: {logs_directory}")
+            return False
+            
+        # Create cache directory if it doesn't exist
+        if not os.path.exists(self.cache_directory):
+            try:
+                os.makedirs(self.cache_directory)
+                self.logger.info(f"Created cache directory: {self.cache_directory}")
+            except Exception as e:
+                self.logger.error(f"Failed to create cache directory: {e}")
+                return False
+        
+        # Check if log file exists
         log_file_path = os.path.join(logs_directory, f'{channel_name}.txt')
         if not os.path.exists(log_file_path):
             self.logger.error(f'Log file not found: {log_file_path}')
@@ -126,12 +179,21 @@ class MarkovHandler:
         try:
             # Record start time
             start_time = time.time()
-            success = False
+            self.logger.info(f"Starting rebuild of cache for channel: {channel_name}")
             
             # Build the model
-            with open(log_file_path, 'r') as file:
+            with open(log_file_path, 'r', encoding='utf-8', errors='ignore') as file:
                 text = file.read()
+                
+            if not text or len(text.strip()) == 0:
+                self.logger.warning(f"Empty log file for channel {channel_name}")
+                self.record_build_time(channel_name, start_time, 0, False)
+                return False
+                
+            # Create the Markov model
             model = markovify.Text(text)
+            
+            # Store in memory and save to cache
             self.models[channel_name] = model
             self.save_model_to_cache(channel_name, model)
             
@@ -143,74 +205,152 @@ class MarkovHandler:
             # Save build time information
             self.record_build_time(channel_name, start_time, duration, success)
             
+            self.logger.info(f"Successfully rebuilt cache for channel {channel_name} in {duration:.2f}s")
             return True
         except Exception as e:
             self.logger.error(f'Error rebuilding cache for {channel_name}: {e}')
             # Record failed build
             try:
                 self.record_build_time(channel_name, time.time(), 0, False)
-            except:
-                pass
+            except Exception as record_error:
+                self.logger.error(f"Failed to record build time: {record_error}")
             return False
 
     def save_model_to_cache(self, channel_name, model):
         """
         Saves a Markov model to a cache file.
+        
+        Args:
+            channel_name (str): Name of the channel/model
+            model (markovify.Text): Markov model to save
+        
+        Returns:
+            bool: True if successful, False otherwise
         """
-        cache_file_path = os.path.join(self.cache_directory, f'{channel_name}_model.json')
-        model_json = model.to_json()
-        with open(cache_file_path, 'w') as cache_file:
-            cache_file.write(model_json)
-        self.logger.info(f'Saved model to cache: {cache_file_path}')
+        try:
+            # Create cache directory if it doesn't exist
+            if not os.path.exists(self.cache_directory):
+                os.makedirs(self.cache_directory)
+                self.logger.info(f"Created cache directory: {self.cache_directory}")
+            
+            # Generate file path
+            cache_file_path = os.path.join(self.cache_directory, f'{channel_name}_model.json')
+            
+            # Convert model to JSON
+            model_json = model.to_json()
+            
+            # Save to file with atomic write pattern
+            temp_path = cache_file_path + '.tmp'
+            with open(temp_path, 'w', encoding='utf-8') as cache_file:
+                cache_file.write(model_json)
+                cache_file.flush()
+                os.fsync(cache_file.fileno())  # Ensure data is written to disk
+                
+            # Rename temp file to actual file (atomic operation)
+            if os.path.exists(cache_file_path):
+                os.remove(cache_file_path)  # Remove old file if it exists
+            os.rename(temp_path, cache_file_path)
+            
+            self.logger.info(f'Successfully saved model to cache: {cache_file_path}')
+            return True
+        except Exception as e:
+            self.logger.error(f'Error saving model to cache for {channel_name}: {e}')
+            return False
         
     def rebuild_general_cache(self, logs_directory):
         """
         Rebuilds the general cache from all .txt files in the logs directory.
-        """
-        combined_text = ""
-        for filename in os.listdir(logs_directory):
-            if filename.endswith('.txt') and filename != "general_markov.txt":  # Skip the general_markov.txt file
-                file_path = os.path.join(logs_directory, filename)
-                try:
-                    with open(file_path, 'r') as file:
-                        combined_text += file.read() + "\n"
-                except FileNotFoundError:
-                    self.logger.error(f"Log file not found: {file_path}")
-                    return False
-                except Exception as e:
-                    self.logger.error(f"Error reading file {file_path}: {e}")
-                    return False
-
-        if combined_text:
-            try:
-                general_model = markovify.Text(combined_text)
-                self.models["general"] = general_model
-                self.save_general_model_to_cache(general_model)
-                return True
-            except Exception as e:
-                self.logger.error(f"Error creating general model: {e}")
-                return False
-        else:
-            self.logger.warning("No text found to build general model.")
-            return False
-
-    def save_general_model_to_cache(self, model):
-        """
-        Saves the general Markov model to a cache file.
+        
+        Args:
+            logs_directory (str): Path to directory containing log files
+            
+        Returns:
+            bool: True if successful, False otherwise
         """
         import time
-        start_time = time.time()
         
-        cache_file_path = os.path.join(self.cache_directory, 'general_markov_model.json')
-        model_json = model.to_json()
-        with open(cache_file_path, 'w') as cache_file:
-            cache_file.write(model_json)
+        # Check if logs directory exists
+        if not logs_directory or not os.path.exists(logs_directory):
+            self.logger.error(f"Invalid logs directory: {logs_directory}")
+            return False
             
-        end_time = time.time()
-        duration = end_time - start_time
-        self.record_build_time("general_markov", start_time, duration, True)
+        # Start time tracking
+        start_time = time.time()
+        self.logger.info(f"Starting rebuild of general cache")
         
-        self.logger.info(f'Saved general model to cache: {cache_file_path}')
+        try:
+            # Create cache directory if it doesn't exist
+            if not os.path.exists(self.cache_directory):
+                os.makedirs(self.cache_directory)
+                self.logger.info(f"Created cache directory: {self.cache_directory}")
+            
+            # Read and combine all text from log files
+            combined_text = ""
+            file_count = 0
+            total_chars = 0
+            
+            for filename in os.listdir(logs_directory):
+                if filename.endswith('.txt') and filename != "general_markov.txt":  # Skip the general_markov.txt file
+                    file_path = os.path.join(logs_directory, filename)
+                    try:
+                        with open(file_path, 'r', encoding='utf-8', errors='ignore') as file:
+                            file_text = file.read()
+                            combined_text += file_text + "\n"
+                            total_chars += len(file_text)
+                            file_count += 1
+                    except Exception as e:
+                        self.logger.warning(f"Error reading file {file_path}: {e}")
+                        # Continue with other files rather than failing completely
+                        continue
+
+            # Check if we have enough text
+            if not combined_text or len(combined_text.strip()) < 100:
+                self.logger.warning(f"Insufficient text found to build general model. Found {len(combined_text)} characters from {file_count} files.")
+                self.record_build_time("general_markov", start_time, 0, False)
+                return False
+                
+            # Log progress
+            self.logger.info(f"Read {file_count} files with total {total_chars} characters for general model")
+                
+            # Create the model
+            general_model = markovify.Text(combined_text)
+            
+            # Save to memory and file
+            self.models["general_markov"] = general_model
+            
+            # Save to cache
+            cache_file_path = os.path.join(self.cache_directory, 'general_markov_model.json')
+            model_json = general_model.to_json()
+            
+            # Use atomic write pattern
+            temp_path = cache_file_path + '.tmp'
+            with open(temp_path, 'w', encoding='utf-8') as cache_file:
+                cache_file.write(model_json)
+                cache_file.flush()
+                os.fsync(cache_file.fileno())  # Ensure data is written to disk
+                
+            # Rename temp file to actual file (atomic operation)
+            if os.path.exists(cache_file_path):
+                os.remove(cache_file_path)  # Remove old file if it exists
+            os.rename(temp_path, cache_file_path)
+            
+            # Record timing
+            end_time = time.time()
+            duration = end_time - start_time
+            self.record_build_time("general_markov", start_time, duration, True)
+            
+            self.logger.info(f'Successfully built and saved general model in {duration:.2f}s')
+            return True
+        except Exception as e:
+            self.logger.error(f"Error creating general model: {e}")
+            
+            # Record failed build
+            try:
+                self.record_build_time("general_markov", start_time, 0, False)
+            except Exception as record_error:
+                self.logger.error(f"Failed to record build time: {record_error}")
+                
+            return False
         
     def record_build_time(self, channel, timestamp, duration, success):
         """

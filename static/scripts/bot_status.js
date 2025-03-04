@@ -44,6 +44,12 @@ window.BotStatus = {
       .then(data => {
         console.log("Bot status response:", data);
         
+        // Check if status has changed
+        const statusChanged = 
+          this.running !== !!data.running || 
+          this.connected !== !!data.connected || 
+          this.tts_enabled !== !!data.tts_enabled;
+        
         // Update internal state
         this.running = !!data.running;
         this.connected = !!data.connected;
@@ -51,15 +57,18 @@ window.BotStatus = {
         this.last_checked = new Date();
         this.uptime = data.uptime || null;
         
-        // Trigger UI updates
-        this.updateUI();
+        // Trigger UI updates - but don't trigger toast notifications if we're on the settings page
+        // and the status hasn't changed
+        const isSettingsPage = window.location.pathname.includes('settings');
+        this.updateUI(isSettingsPage && !statusChanged);
         
         // Dispatch event for other scripts
         const event = new CustomEvent('botstatus', { 
           detail: { 
             running: this.running,
             connected: this.connected,
-            tts_enabled: this.tts_enabled
+            tts_enabled: this.tts_enabled,
+            statusChanged: statusChanged
           }
         });
         window.dispatchEvent(event);
@@ -70,18 +79,18 @@ window.BotStatus = {
         // Don't change running status on error - keep previous state
         // This prevents flicker when network errors occur
         
-        // Still update UI
-        this.updateUI();
+        // Still update UI but skip notifications
+        this.updateUI(true);
       });
   },
   
   // Update all UI elements
-  updateUI: function() {
+  updateUI: function(skipNotifications = false) {
     // Update buttons
     this.updateButtons();
     
     // Update status indicators
-    this.updateStatusIndicators();
+    this.updateStatusIndicators(skipNotifications);
     
     // Update uptime display if available
     this.updateUptimeDisplay();
@@ -180,7 +189,7 @@ window.BotStatus = {
   },
   
   // Update status indicators
-  updateStatusIndicators: function() {
+  updateStatusIndicators: function(skipNotifications = false) {
     // Main status in navbar
     const navbarIcon = document.getElementById('botStatusIcon');
     if (navbarIcon) {
@@ -241,6 +250,12 @@ window.BotStatus = {
     const debugLink = document.getElementById('botStatusDebugLink');
     if (debugLink) {
       debugLink.style.display = this.running ? 'block' : 'none';
+    }
+    
+    // Skip showing any toasts/notifications on settings page if we were asked to
+    if (skipNotifications) {
+      // Don't show "updating theme" or other toasts during routine checks
+      console.log("Skipping notifications during routine status check");
     }
   },
   
