@@ -1096,6 +1096,10 @@ class Bot(commands.Bot):
         """Write current bot status to heartbeat file and database."""
         try:
             import json
+            from utils.web_utils import get_verbose_logs_setting
+            
+            # Check for verbose logs setting
+            verbose_logs = get_verbose_logs_setting()
             
             # Get current joined channels - strip # for consistent matching
             channels_list = [channel.lstrip('#') for channel in self._joined_channels]
@@ -1148,6 +1152,9 @@ class Bot(commands.Bot):
                 
                 # Commit the changes
                 conn.commit()
+                
+                if verbose_logs:
+                    self.my_logger.log_info(f"Updated database heartbeat at {formatted_time}")
                 
             except Exception as db_error:
                 self.my_logger.error(f"Error updating database heartbeat: {db_error}")

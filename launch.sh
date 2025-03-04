@@ -325,6 +325,10 @@ show_help() {
     echo "  --clean     : Perform fresh install"
     echo "  --help      : Show this help message"
     echo
+    echo "${YELLOW}Configuration:${NC}"
+    echo "  In settings.conf, set 'verbose_logs = true' in the [web] section"
+    echo "  to see detailed debug logs (database heartbeats, stats requests, etc.)"
+    echo
     echo "${YELLOW}Examples:${NC}"
     echo "  ./launch.sh --web --tts      # Bot + Web + TTS"
     echo "  ./launch.sh --tts --voice-preset v2/en_speaker_9  # Use specific voice"
