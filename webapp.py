@@ -1093,7 +1093,7 @@ def get_channel_settings(channelName):
         conn = sqlite3.connect(db_file)
         c = conn.cursor()
         c.execute(
-            "SELECT tts_enabled, voice_enabled, join_channel, owner, trusted_users, ignored_users, use_general_model, lines_between_messages, time_between_messages FROM channel_configs WHERE channel_name = ?",
+            "SELECT tts_enabled, voice_enabled, join_channel, owner, trusted_users, ignored_users, use_general_model, lines_between_messages, time_between_messages, voice_preset FROM channel_configs WHERE channel_name = ?",
             (channelName,),
         )
         settings = c.fetchone()
@@ -1108,6 +1108,7 @@ def get_channel_settings(channelName):
                 "use_general_model",
                 "lines_between_messages",
                 "time_between_messages",
+                "voice_preset",
             ]
             return jsonify(dict(zip(keys, settings)))
         else:
@@ -1123,6 +1124,7 @@ def get_channel_settings(channelName):
 def add_channel():
     data = request.json
     channel_name = data.get("channel_name")
+    voice_preset = data.get("voice_preset", "v2/en_speaker_5")  # Default voice preset
 
     # Debug: Print the received data
     print("Received data for adding channel:", data)
@@ -1147,9 +1149,9 @@ def add_channel():
             # Insert new channel as it does not exist
             c.execute(
                 """
-                INSERT INTO channel_configs (channel_name, tts_enabled, voice_enabled, join_channel, owner, trusted_users, ignored_users, use_general_model, lines_between_messages, time_between_messages)
-                VALUES (?, 0, 0, 1, ?, '', '', 1, 100, 0)""",
-                (channel_name, channel_name),
+                INSERT INTO channel_configs (channel_name, tts_enabled, voice_enabled, join_channel, owner, trusted_users, ignored_users, use_general_model, lines_between_messages, time_between_messages, voice_preset)
+                VALUES (?, 0, 0, 1, ?, '', '', 1, 100, 0, ?)""",
+                (channel_name, channel_name, voice_preset),
             )
             conn.commit()
             print(f"Channel '{channel_name}' added successfully.")
@@ -1264,14 +1266,17 @@ def get_build_times():
         if os.path.exists(cache_file):
             with open(cache_file, 'r') as f:
                 build_times = json.load(f)
-            app.logger.info(f"Loaded {len(build_times)} build time records")
+            if verbose_logs:
+                app.logger.info(f"Loaded {len(build_times)} build time records")
             return jsonify(build_times)
         else:
             # If file doesn't exist, return empty array
-            app.logger.warning(f"Cache build times file not found at {cache_file}")
+            if verbose_logs:
+                app.logger.warning(f"Cache build times file not found at {cache_file}")
             return jsonify([])
     except Exception as e:
-        app.logger.error(f"Error reading build times: {e}")
+        if verbose_logs:
+            app.logger.error(f"Error reading build times: {e}")
         return jsonify([])
 
 def get_new_tts_entries(db_file, last_id):

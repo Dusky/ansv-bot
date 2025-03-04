@@ -32,7 +32,8 @@ function saveChannelSettings() {
     use_general_model: document.getElementById("useGeneralModel").checked ? 1 : 0,
     lines_between_messages: document.getElementById("linesBetweenMessages").value || 0,
     time_between_messages: document.getElementById("timeBetweenMessages").value || 0,
-    voice_preset: voicePreset
+    voice_preset: voicePreset,
+    bark_model: document.getElementById("barkModel").value
   };
 
   if (isAddChannel) {
@@ -187,12 +188,49 @@ function fetchChannels() {
           channelSelect.remove(2);
         }
         
+        // Debug the received data
+        console.log("Received channels data:", channels);
+        
         // Add channel options
         channels.forEach((channel) => {
           let option = document.createElement("option");
-          option.value = channel[0];
-          option.text = channel[0];
-          channelSelect.add(option);
+          
+          // Handle various possible formats
+          if (Array.isArray(channel)) {
+            option.value = channel[0];
+            option.text = channel[0];
+          } else if (typeof channel === 'object' && channel !== null) {
+            // Check for 'name' property
+            if (channel.name) {
+              option.value = channel.name;
+              option.text = channel.name;
+            } else if (channel.channel_name) {
+              // Fallback to channel_name if present
+              option.value = channel.channel_name;
+              option.text = channel.channel_name;
+            } else {
+              // Last fallback: use first property if available
+              const firstKey = Object.keys(channel)[0];
+              if (firstKey) {
+                option.value = channel[firstKey];
+                option.text = channel[firstKey];
+                console.warn("Using fallback property for channel name:", firstKey);
+              } else {
+                console.warn("Unknown channel data format:", channel);
+              }
+            }
+          } else if (typeof channel === 'string') {
+            // Simple string value
+            option.value = channel;
+            option.text = channel;
+          } else {
+            console.warn("Unrecognized channel data type:", typeof channel, channel);
+          }
+          
+          // Only add if we got a valid value and it's not "undefined"
+          if (option.value && option.value !== "undefined" && option.text !== "undefined") {
+            channelSelect.add(option);
+          }
         });
       }
     })
@@ -276,6 +314,36 @@ function checkForAddChannelOption(selectElement) {
           document.getElementById("ignoredUsers").value = data.ignored_users || "";
           document.getElementById("linesBetweenMessages").value = data.lines_between_messages || 0;
           document.getElementById("timeBetweenMessages").value = data.time_between_messages || 0;
+          
+          // Set Bark model if available
+          if (data.bark_model) {
+            const barkModelSelect = document.getElementById("barkModel");
+            barkModelSelect.value = data.bark_model;
+          }
+          
+          // Set voice preset if available
+          if (data.voice_preset) {
+            const voicePresetSelect = document.getElementById("voicePreset");
+            // Check if this is a built-in voice or custom voice
+            if (data.voice_preset.startsWith('v2/')) {
+              // Built-in voice
+              voicePresetSelect.value = data.voice_preset;
+              // Hide custom voice row
+              document.getElementById("customVoiceRow").style.display = "none";
+            } else {
+              // Custom voice
+              voicePresetSelect.value = "custom";
+              // Show and populate custom voice row
+              document.getElementById("customVoiceRow").style.display = "block";
+              const customVoiceSelect = document.getElementById("customVoiceSelect");
+              // Load custom voices if not already loaded
+              if (customVoiceSelect.options.length <= 1) {
+                loadCustomVoices(data.voice_preset);
+              } else {
+                customVoiceSelect.value = data.voice_preset;
+              }
+            }
+          }
         }
       })
       .catch(error => {
@@ -290,6 +358,36 @@ function checkForAddChannelOption(selectElement) {
   }
 }
 
+// Function to load custom voices
+function loadCustomVoices(selectedVoice) {
+  fetch("/list-voices")
+    .then(response => response.json())
+    .then(data => {
+      const voices = data.voices || [];
+      const customVoiceSelect = document.getElementById("customVoiceSelect");
+      
+      // Clear existing options
+      customVoiceSelect.innerHTML = '';
+      
+      // Add options for each voice
+      voices.forEach(voice => {
+        const voiceName = voice.replace('.npz', '');
+        const option = document.createElement('option');
+        option.value = voiceName;
+        option.textContent = voiceName;
+        customVoiceSelect.appendChild(option);
+      });
+      
+      // Set selected voice if provided
+      if (selectedVoice && !selectedVoice.startsWith('v2/')) {
+        customVoiceSelect.value = selectedVoice;
+      }
+    })
+    .catch(error => {
+      console.error("Error loading custom voices:", error);
+    });
+}
+
 function handleError(error) {
   console.error("Error:", error);
   alert("An error occurred while saving settings.");
@@ -300,6 +398,21 @@ document.addEventListener("DOMContentLoaded", function() {
   var channelSelect = document.getElementById("channelSelect");
   if (channelSelect) {
     fetchChannels();
+  }
+  
+  // Set up voice preset change handler if not already defined
+  if (typeof handleVoicePresetChange !== 'function') {
+    window.handleVoicePresetChange = function() {
+      const voicePresetSelect = document.getElementById("voicePreset");
+      const customVoiceRow = document.getElementById("customVoiceRow");
+      
+      if (voicePresetSelect.value === "custom") {
+        customVoiceRow.style.display = "block";
+        loadCustomVoices();
+      } else {
+        customVoiceRow.style.display = "none";
+      }
+    }
   }
 });
 

@@ -218,21 +218,85 @@
         
         // Initialize search functionality
         initSearch();
+        
+        // Define the rebuildCacheDirectly function in the global scope
+        window.rebuildCacheDirectly = function(channel) {
+            console.log(`Directly rebuilding cache for channel: ${channel}`);
+            const button = document.querySelector(`button[data-channel="${channel}"][data-action="rebuild"]`);
+            const originalText = button ? button.textContent : "Rebuild";
+            
+            if (button) {
+                button.textContent = "Building...";
+                button.disabled = true;
+            }
+            
+            // Call the server API directly for reliability
+            fetch(`/rebuild-cache/${channel}`, {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showToast(`Model for ${channel} rebuilt successfully`, 'success');
+                    // Refresh stats after a brief delay to show updates
+                    setTimeout(function() {
+                        if (typeof loadStatistics === 'function') {
+                            loadStatistics();
+                        }
+                    }, 1000);
+                } else {
+                    showToast(`Failed to rebuild model: ${data.message}`, 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Error rebuilding model:', error);
+                showToast(`Error rebuilding model: ${error.message}`, 'error');
+            })
+            .finally(() => {
+                // Restore button state
+                if (button) {
+                    button.textContent = originalText;
+                    button.disabled = false;
+                }
+            });
+        };
+        
+        // Setup direct event delegation for rebuild buttons to ensure they work
+        document.addEventListener('click', function(event) {
+            // Find clicked element
+            const button = event.target.closest('button[data-action="rebuild"]');
+            if (button) {
+                const channel = button.getAttribute('data-channel');
+                if (channel) {
+                    // Prevent default action
+                    event.preventDefault();
+                    window.rebuildCacheDirectly(channel);
+                }
+            }
+        });
+        
+        // Also initialize with diagnoseRebuild if available
+        if (typeof diagnoseRebuild === 'function') {
+            setTimeout(diagnoseRebuild, 500);
+        }
     });
     
     // Function to initialize tooltips that can be called after dynamic content is added
     function initTooltips() {
+        // Only log in development environment
+        const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        
         try {
             const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
             tooltipTriggerList.forEach(el => {
                 try {
                     new bootstrap.Tooltip(el);
                 } catch (e) {
-                    console.warn('Could not initialize tooltip for element:', el, e);
+                    if (isDev) console.warn('Could not initialize tooltip for element:', el, e);
                 }
             });
         } catch (e) {
-            console.warn('Error initializing tooltips:', e);
+            if (isDev) console.warn('Error initializing tooltips:', e);
         }
     }
     
@@ -395,7 +459,9 @@
                 });
             })
             .catch(error => {
-                console.error('Error loading build times:', error);
+                // Only log in development environment
+                const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+                if (isDev) console.error('Error loading build times:', error);
                 buildTimesContainer.innerHTML = '<tr><td colspan="4" class="text-center text-danger">Error loading build data</td></tr>';
             });
     }

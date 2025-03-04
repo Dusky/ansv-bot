@@ -64,6 +64,16 @@
           </div>
           
           <div class="mb-3">
+            <label for="barkModel" class="form-label">Bark Model:</label>
+            <select id="barkModel" class="form-select">
+              <option value="bark-small">Bark Small (Default)</option>
+              <option value="bark">Bark Standard</option>
+              <option value="bark-large">Bark Large</option>
+            </select>
+            <small class="text-muted">Larger models have better quality but require more resources</small>
+          </div>
+
+          <div class="mb-3">
             <label for="voicePreset" class="form-label">Voice Preset:</label>
             <select id="voicePreset" class="form-select" onchange="if(typeof handleVoicePresetChange === 'function') handleVoicePresetChange()">
               <option value="v2/en_speaker_0">English Speaker 0</option>
