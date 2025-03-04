@@ -202,6 +202,7 @@ start_bot() {
     [ "$WEB" = true ] && command+=" --web"
     [ "$TTS" = true ] && command+=" --tts"
     [ "$REBUILD" = true ] && command+=" --rebuild-cache"
+    [ "$VERBOSE" = true ] && export VERBOSE=1
     if [ -n "$VOICE_PRESET" ]; then
         command+=" --voice-preset $VOICE_PRESET"
     fi
@@ -258,12 +259,14 @@ parse_arguments() {
     DEV=false
     WEB_ONLY=false
     CLEAN=false
+    VERBOSE=false
     VOICE_PRESET=""
     
     while [[ $# -gt 0 ]]; do
         case $1 in
             --web) WEB=true ;;
             --tts) TTS=true ;;
+            --verbose) VERBOSE=true ;;
             --voice-preset)
                 VOICE_PRESET="$2"
                 shift 
@@ -317,6 +320,7 @@ show_help() {
     echo "${YELLOW}Options:${NC}"
     echo "  --web       : Enable web interface with bot"
     echo "  --tts       : Enable TTS functionality"
+    echo "  --verbose   : Show detailed initialization steps and logs"
     echo "  --voice-preset PRESET : Use specific voice preset (e.g., v2/en_speaker_6)"
     echo "  --download-models : Only download TTS models and exit"
     echo "  --rebuild   : Rebuild Markov cache at startup"
@@ -331,6 +335,7 @@ show_help() {
     echo
     echo "${YELLOW}Examples:${NC}"
     echo "  ./launch.sh --web --tts      # Bot + Web + TTS"
+    echo "  ./launch.sh --tts --verbose # Bot with TTS and detailed logs"
     echo "  ./launch.sh --tts --voice-preset v2/en_speaker_9  # Use specific voice"
     echo "  ./launch.sh --download-models # Pre-download models"
     echo "  ./launch.sh --dev            # Dev server with hot reload"

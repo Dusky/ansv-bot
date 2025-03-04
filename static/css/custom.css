@@ -312,6 +312,12 @@ html[data-bs-theme="dark"] .card-footer .small {
     color: rgba(255, 255, 255, 0.6) !important;
 }
 
+/* Specific overrides for Cyborg theme */
+html[data-bs-theme="dark"] body:has(#bootstrapCSS[href*="cyborg"]) .card-footer {
+    background-color: #222 !important;
+    border-top-color: #000 !important;
+}
+
 html.theme-ansv .card-footer .text-muted,
 html.theme-ansv .card-footer small,
 html.theme-ansv .card-footer .small {

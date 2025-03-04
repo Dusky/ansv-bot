@@ -779,11 +779,16 @@ class Bot(commands.Bot):
         print(f"{GREEN}Bot is ready! | {self.nick}{RESET}")
         print(f"{GREEN}==================================================={RESET}")
         
+        # Use verbose flag for detailed output
+        verbose = os.environ.get('VERBOSE', '').lower() in ('true', '1', 'yes')
+        
         # Step 1: Initialize channel configs in the database
         try:
-            print(f"{YELLOW}Step 1: Initializing channel configurations...{RESET}")
+            if verbose:
+                print(f"{YELLOW}Step 1: Initializing channel configurations...{RESET}")
             self.ensure_channel_configs()
-            print(f"{GREEN}✅ Channel configs initialized{RESET}")
+            if verbose:
+                print(f"{GREEN}✅ Channel configs initialized{RESET}")
         except Exception as e:
             print(f"{RED}❌ Error initializing channel configs: {e}{RESET}")
         
@@ -792,12 +797,14 @@ class Bot(commands.Bot):
         
         # Step 3: Process channels from config file
         try:
-            print(f"{YELLOW}Step 3: Processing channels from config file...{RESET}")
+            if verbose:
+                print(f"{YELLOW}Step 3: Processing channels from config file...{RESET}")
             if "settings" in config and "channels" in config["settings"]:
                 config_channels = config["settings"]["channels"].split(",")
                 config_channels = [ch.strip() for ch in config_channels if ch.strip()]
                 
-                print(f"{YELLOW}Found {len(config_channels)} channels in config file{RESET}")
+                if verbose:
+                    print(f"{YELLOW}Found {len(config_channels)} channels in config file{RESET}")
                 
                 # Make sure each config channel has a database entry
                 for channel in config_channels:
@@ -810,7 +817,8 @@ class Bot(commands.Bot):
                         
                         if not c.fetchone():
                             # Create new entry 
-                            print(f"{YELLOW}Creating config for config file channel: {clean_name}{RESET}")
+                            if verbose:
+                                print(f"{YELLOW}Creating config for config file channel: {clean_name}{RESET}")
                             c.execute('''
                                 INSERT INTO channel_configs 
                                 (channel_name, tts_enabled, voice_enabled, join_channel, owner, 
@@ -825,34 +833,41 @@ class Bot(commands.Bot):
                         conn.close()
                     except Exception as db_error:
                         print(f"{RED}Error updating channel config for {clean_name}: {db_error}{RESET}")
-            else:
+            elif verbose:
                 print(f"{YELLOW}No channels found in config file{RESET}")
                 
-            print(f"{GREEN}✅ Config file channels processed{RESET}")
+            if verbose:
+                print(f"{GREEN}✅ Config file channels processed{RESET}")
         except Exception as e:
             print(f"{RED}❌ Error processing config file channels: {e}{RESET}")
         
         # Step 4: Join all configured channels from database
         try:
-            print(f"{YELLOW}Step 4: Joining all configured channels...{RESET}")
+            if verbose:
+                print(f"{YELLOW}Step 4: Joining all configured channels...{RESET}")
             await self.check_and_join_channels()
-            print(f"{GREEN}✅ Channel joining completed{RESET}")
+            if verbose:
+                print(f"{GREEN}✅ Channel joining completed{RESET}")
         except Exception as e:
             print(f"{RED}❌ Error joining channels: {e}{RESET}")
         
         # Step 5: Start periodic channel checking
         try:
-            print(f"{YELLOW}Step 5: Setting up periodic channel check...{RESET}")
+            if verbose:
+                print(f"{YELLOW}Step 5: Setting up periodic channel check...{RESET}")
             await self.setup_periodic_channel_check()
-            print(f"{GREEN}✅ Periodic checking started{RESET}")
+            if verbose:
+                print(f"{GREEN}✅ Periodic checking started{RESET}")
         except Exception as e:
             print(f"{RED}❌ Error setting up periodic channel check: {e}{RESET}")
         
         # Step 6: Print status table
         try:
-            print(f"{YELLOW}Step 6: Printing status table...{RESET}")
+            if verbose:
+                print(f"{YELLOW}Step 6: Printing status table...{RESET}")
             await self.print_channel_status()
-            print(f"{GREEN}✅ Status printed{RESET}")
+            if verbose:
+                print(f"{GREEN}✅ Status printed{RESET}")
         except Exception as e:
             print(f"{RED}❌ Error printing channel status: {e}{RESET}")
         
@@ -860,20 +875,23 @@ class Bot(commands.Bot):
         try:
             with open("bot.pid", "w") as f:
                 f.write(str(os.getpid()))
-            print(f"{GREEN}✅ Created PID file with PID: {os.getpid()}{RESET}")
+            if verbose:
+                print(f"{GREEN}✅ Created PID file with PID: {os.getpid()}{RESET}")
         except Exception as e:
             print(f"{RED}❌ Error creating PID file: {e}{RESET}")
         
         # Step 8: Setup heartbeat
         try:
-            print(f"{YELLOW}Step 8: Setting up heartbeat...{RESET}")
+            if verbose:
+                print(f"{YELLOW}Step 8: Setting up heartbeat...{RESET}")
             self.update_heartbeat_file()
             self.loop.create_task(self.heartbeat_task())
-            print(f"{GREEN}✅ Heartbeat task started{RESET}")
+            if verbose:
+                print(f"{GREEN}✅ Heartbeat task started{RESET}")
         except Exception as e:
             print(f"{RED}❌ Error setting up heartbeat: {e}{RESET}")
             
-        # Final verification
+        # Final verification - always show
         print(f"{YELLOW}Currently joined channels: {sorted(self._joined_channels)}{RESET}")
         print(f"{GREEN}==================================================={RESET}")
         print(f"{GREEN}Bot initialization complete!{RESET}")
@@ -896,8 +914,9 @@ class Bot(commands.Bot):
                     conn.commit()
                     conn.close()
                 except Exception as e:
-                    print(f"Error updating channel connection status in DB: {e}")
-            else:
+                    if verbose:
+                        print(f"Error updating channel connection status in DB: {e}")
+            elif verbose:
                 print(f"{RED}✗ Failed to join {channel} channel - will retry in next periodic check{RESET}")
 
     def get_user_color(self, username):
@@ -1124,6 +1143,9 @@ class Bot(commands.Bot):
             # Also update the PID file to ensure it exists
             with open("bot.pid", "w") as f:
                 f.write(str(os.getpid()))
+                
+            if verbose_logs:
+                print(f"{YELLOW}Raw channels from heartbeat: {channels_list}{RESET}")
             
             # Update the database for web UI connection status
             try:
@@ -1155,6 +1177,7 @@ class Bot(commands.Bot):
                 
                 if verbose_logs:
                     self.my_logger.log_info(f"Updated database heartbeat at {formatted_time}")
+                    print(f"{YELLOW}Processed connected channels: {channels_list}{RESET}")
                 
             except Exception as db_error:
                 self.my_logger.error(f"Error updating database heartbeat: {db_error}")
