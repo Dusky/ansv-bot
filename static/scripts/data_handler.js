@@ -65,7 +65,7 @@ function addRowToTable(file, prepend = false) {
                        </button>
                     </td>
                     <td class="text-center">
-                       <a href="${audioSrc}" download class="btn btn-outline-secondary btn-sm" data-tooltip="Download Audio">
+                       <a href="${audioSrc}" download="${audioSrc.split('/').pop()}" class="btn btn-outline-secondary btn-sm" data-tooltip="Download Audio">
                            <i class="fa fa-download"></i>
                        </a>
                     
@@ -102,12 +102,22 @@ function addLatestRow() {
     .catch((error) => console.error("Error fetching latest data:", error));
 }
 
-// Function to play audio
+// Function to play audio - use the safer version that checks for existence
 function playAudio(src) {
-  // Fix double static in path if present
-  src = src.replace('/static/static/', '/static/');
-  let audio = new Audio(src);
-  audio.play().catch((error) => console.error("Play error:", error));
+  // Use our safer function that first checks if the file exists
+  playAudioIfExists(src);
+}
+
+// Function to safely display a toast message without recursion
+function safeShowMessage(message, type) {
+  console.log(`[${type}] ${message}`);
+  
+  // Only use alert for critical errors, not for warnings
+  if (type === 'error') {
+    alert(message);
+  }
+  
+  // Do not attempt to call other toast functions to avoid recursion
 }
 
 // Function to check if an audio file exists before playing it
@@ -123,15 +133,18 @@ window.playAudioIfExists = function(src) {
         let audio = new Audio(src);
         audio.play()
           .then(() => console.log("Audio playing:", src))
-          .catch(error => console.error("Play error:", error));
+          .catch(error => {
+            console.error("Play error:", error);
+            safeShowMessage("Browser blocked audio playback. Try clicking again.", "warning");
+          });
       } else {
         console.warn(`Audio file not found: ${src}`);
-        showToast("Audio file not found. It may have been deleted or moved.", "warning");
+        safeShowMessage("Audio file not found. It may have been deleted or moved.", "warning");
       }
     })
     .catch(error => {
       console.error("Error checking audio file:", error);
-      showToast("Error accessing audio file", "error");
+      safeShowMessage("Error accessing audio file", "error");
     });
 }
 
@@ -180,17 +193,67 @@ function refreshTable() {
     window.refreshTable();
 }
 
-// Make sure showToast is available
+// Make sure showToast is available, but avoid circular references
+// Don't overwrite if it's already defined to prevent conflicts
 if (typeof window.showToast !== 'function') {
-    window.showToast = function(message, type) {
-        console.log(`[${type}] ${message}`);
-        
-        // Create a simple alert for critical errors if no toast UI is available
-        if (type === 'error') {
-            alert(message);
-        }
-    };
+    // Use our safe internal version
+    window.showToast = safeShowMessage;
 }
+
+// Function to flush TTS entries that don't have valid audio files
+window.flushTTSEntries = function() {
+    // Show confirmation dialog
+    if (!confirm("This will remove all TTS entries with missing audio files. Continue?")) {
+        return;
+    }
+    
+    // Show loading state
+    const flushBtn = document.getElementById('flushTTSBtn');
+    if (flushBtn) {
+        flushBtn.disabled = true;
+        flushBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Processing...';
+    }
+    
+    // Call API to flush entries
+    fetch('/api/flush-tts-entries', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data.success) {
+            // Show success message
+            safeShowMessage(`${data.message}`, 'success');
+            
+            // Refresh table after cleanup
+            setTimeout(() => {
+                if (window.refreshTable) {
+                    window.refreshTable();
+                }
+            }, 1000);
+        } else {
+            safeShowMessage(`Error: ${data.error || 'Unknown error'}`, 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error flushing TTS entries:', error);
+        safeShowMessage(`Error: ${error.message}`, 'error');
+    })
+    .finally(() => {
+        // Reset button state
+        if (flushBtn) {
+            flushBtn.disabled = false;
+            flushBtn.innerHTML = '<i class="fas fa-trash-alt me-1"></i>Clean Up';
+        }
+    });
+};
 
 
 let currentPage = 1;

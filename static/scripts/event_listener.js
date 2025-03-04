@@ -2,6 +2,16 @@
 const socket = io();
 
 document.addEventListener("DOMContentLoaded", function () {  
+  // Check if we've already initialized this page to avoid duplicate setup
+  if (window._pageInitialized) {
+    console.log("Page already initialized, skipping duplicate initialization");
+    return;
+  }
+  
+  // Mark the page as initialized
+  window._pageInitialized = true;
+  console.log("Initializing page components");
+  
   // Check bot status first
   checkBotStatus();
 
@@ -35,8 +45,10 @@ document.addEventListener("DOMContentLoaded", function () {
   // Set up autoplay toggle
   setupAutoplayToggle();
   
-  // Set up WebSocket
-  setupWebSocket();
+  // Set up WebSocket - only if not already set up
+  if (!window._socketEventsInitialized) {
+    setupWebSocket();
+  }
   
   // Load initial data for tables if needed
   refreshTable();
@@ -319,6 +331,14 @@ function updateIcons(isMuted) {
 // Function to set up WebSocket
 function setupWebSocket() {
   try {
+    // Prevent duplicate event listeners by removing existing ones first
+    if (socket._eventsCount > 0) {
+      console.log("Removing existing socket listeners");
+      socket.off("refresh_table");
+      socket.off("new_tts_entry");
+      socket.off("bot_status_change");
+    }
+    
     // Listen for refresh_table events
     socket.on("refresh_table", function (data) {
       console.log("Received refresh_table event:", data);
@@ -346,6 +366,9 @@ function setupWebSocket() {
     socket.on("bot_status_change", function(data) {
       updateBotStatusUI(data.status);
     });
+    
+    // Mark socket as initialized
+    window._socketEventsInitialized = true;
     
     console.log("WebSocket listeners successfully set up");
   } catch (error) {
@@ -387,7 +410,18 @@ if (addChannelSaveButton) {
 } else {
 }
 
-// Removed duplicate event listener - refreshTable is now handled in the button's onclick in the HTML and in data_handler.js
+// Set up refresh table button event
+var refreshTableBtn = document.getElementById("refreshTableBtn");
+if (refreshTableBtn) {
+    refreshTableBtn.addEventListener("click", function(e) {
+        e.preventDefault(); // Prevent any default action
+        e.stopPropagation(); // Stop event bubbling
+        
+        if (window.refreshTable) {
+            window.refreshTable();
+        }
+    });
+}
 
 var settingsTab = document.getElementById("settingsTab");
 
@@ -406,6 +440,8 @@ if (voicePresetSelect) {
 
 // Initial table load is handled by main_page.js
 // Socket.io events are now handled by setupWebSocket() function
+
+// Socket event initialization is now handled in setupWebSocket()
 
 var statsContainer = document.getElementById("statsContainer");
 if (statsContainer) {
