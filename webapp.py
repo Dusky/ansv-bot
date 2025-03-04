@@ -44,7 +44,18 @@ class SocketIOFilter(logging.Filter):
         # Allow all messages except the noisy connection ones
         if record.getMessage().startswith('Client connected') or record.getMessage().startswith('Client disconnected'):
             return False
+        # Filter out heartbeat and stats messages unless verbose_logs is enabled
+        if not verbose_logs and (
+            'database heartbeat' in record.getMessage() or 
+            'get-stats:' in record.getMessage()
+        ):
+            return False
         return True
+
+# Get verbose logs setting
+from utils.web_utils import get_verbose_logs_setting
+verbose_logs = get_verbose_logs_setting()
+print(f"[WEBAPP] Verbose logs: {verbose_logs}")
 
 # Apply the filter to the default Flask logger
 default_handler.addFilter(SocketIOFilter())
@@ -1461,7 +1472,8 @@ def get_stats():
             })
         
         # Log stats data to help with debugging
-        app.logger.info(f"get-stats: returning {len(stats)} model stats")
+        if verbose_logs:
+            app.logger.info(f"get-stats: returning {len(stats)} model stats")
         return jsonify(stats)
     except Exception as e:
         app.logger.error(f"Error getting stats: {e}")
@@ -1591,9 +1603,11 @@ def bot_status_api():
                     last_time = datetime.strptime(last_heartbeat[0], '%Y-%m-%d %H:%M:%S')
                     heartbeat_age = (datetime.now() - last_time).total_seconds()
                     connected_status = heartbeat_age < 120  # 2 minutes
-                    app.logger.info(f"Found database heartbeat from {last_time}, age: {heartbeat_age}s")
+                    if verbose_logs:
+                        app.logger.info(f"Found database heartbeat from {last_time}, age: {heartbeat_age}s")
                 else:
-                    app.logger.info("No database heartbeat found")
+                    if verbose_logs:
+                        app.logger.info("No database heartbeat found")
             except Exception as e:
                 # Log the error for debugging
                 app.logger.error(f"Error checking database heartbeat: {e}")

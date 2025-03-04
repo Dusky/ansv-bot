@@ -4,6 +4,7 @@ Web interface utility functions for ANSV Bot
 import os
 import math
 import json
+import configparser
 from typing import List, Dict, Any
 from datetime import datetime
 
@@ -191,3 +192,27 @@ def get_db_stats() -> Dict[str, Any]:
     except Exception as e:
         print(f"Error getting database stats: {e}")
         return stats 
+
+def get_verbose_logs_setting() -> bool:
+    """
+    Check if verbose logs are enabled in settings.conf
+    
+    Returns:
+        bool: True if verbose logs are enabled, False otherwise
+    """
+    try:
+        config = configparser.ConfigParser()
+        config_file = 'settings.conf'
+        
+        if not os.path.exists(config_file):
+            config_file = 'settings.example.conf'
+            
+        if os.path.exists(config_file):
+            config.read(config_file)
+            if 'web' in config and 'verbose_logs' in config['web']:
+                return config['web'].getboolean('verbose_logs')
+    except Exception as e:
+        print(f"Error reading verbose_logs setting: {e}")
+    
+    # Default to False if not specified or error
+    return False
