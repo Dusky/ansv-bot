@@ -195,11 +195,19 @@ def get_db_stats() -> Dict[str, Any]:
 
 def get_verbose_logs_setting() -> bool:
     """
-    Check if verbose logs are enabled in settings.conf
+    Check if verbose logs are enabled in environment variable or settings.conf
     
     Returns:
         bool: True if verbose logs are enabled, False otherwise
     """
+    # First check environment variable (highest priority)
+    verbose_env = os.environ.get('VERBOSE', '').lower()
+    if verbose_env in ('true', '1', 'yes'):
+        return True
+    elif verbose_env in ('false', '0', 'no'):
+        return False
+    
+    # If not set in environment, check settings.conf
     try:
         config = configparser.ConfigParser()
         config_file = 'settings.conf'

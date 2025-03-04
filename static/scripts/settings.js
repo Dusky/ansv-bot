@@ -34,10 +34,13 @@ window.changeTheme = function() {
     applyThemeChanges(themeName);
     
     // Save theme preference on server
-    fetch(`/set_theme/${themeName}`, {
+    fetch(`/set_theme/${themeName}?nocache=${Date.now()}`, {
         method: 'GET',
         headers: {
-            'X-Requested-With': 'XMLHttpRequest'
+            'X-Requested-With': 'XMLHttpRequest',
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0'
         }
     })
     .then(response => {
@@ -52,7 +55,7 @@ window.changeTheme = function() {
         
         // After success, reload the page to fully apply the theme
         setTimeout(() => {
-            window.location.reload();
+            window.location.href = window.location.pathname + '?refresh=' + Date.now();
         }, 500); // Short delay to allow the toast to be seen
     })
     .catch(error => {
@@ -61,7 +64,7 @@ window.changeTheme = function() {
         
         // Even if server request fails, try to reload with the cookie we set
         setTimeout(() => {
-            window.location.reload();
+            window.location.href = window.location.pathname + '?refresh=' + Date.now();
         }, 1000);
     })
     .finally(() => {

@@ -727,7 +727,8 @@ def format_timestamp(timestamp):
         dt = datetime.strptime(timestamp, "%Y%m%d-%H%M%S")
         return dt.strftime("%Y-%m-%d %H:%M:%S")
     except ValueError as e:
-        print(f"Error parsing timestamp: {timestamp} - {e}")
+        if verbose_logs:
+            app.logger.warning(f"Failed to format timestamp for {timestamp}: {e}")
         return timestamp  # Return original timestamp in case of an error
 
 
@@ -921,15 +922,17 @@ def get_channels():
                 tts_enabled = bool(row[1])
                 join_channel = bool(row[2])
                 
-                # Log raw and converted values
-                app.logger.info(f"Channel {channel_name}: join_channel raw={row[2]}, converted={join_channel}")
+                # Log raw and converted values if verbose mode enabled
+                if verbose_logs:
+                    app.logger.info(f"Channel {channel_name}: join_channel raw={row[2]}, converted={join_channel}")
                 
                 channel_configs[channel_name] = {
                     'tts_enabled': tts_enabled,
                     'join_channel': join_channel
                 }
             
-            app.logger.info(f"Loaded {len(channel_configs)} channels with join_channel field")
+            if verbose_logs:
+                app.logger.info(f"Loaded {len(channel_configs)} channels with join_channel field")
         except sqlite3.OperationalError as e:
             app.logger.error(f"Error getting channel configs: {e}")
             # Final fallback if schema doesn't match expected
@@ -976,12 +979,14 @@ def get_channels():
                     if 'channels' in heartbeat_data:
                         # Debug the channel names being processed
                         raw_channels = heartbeat_data['channels']
-                        app.logger.info(f"Raw channels from heartbeat: {raw_channels}")
+                        if verbose_logs:
+                            app.logger.info(f"Raw channels from heartbeat: {raw_channels}")
                         
                         # Bot now writes channel names without # to heartbeat file
                         # Only convert to lowercase for consistent matching
                         connected_channels = [c.lower() for c in raw_channels]
-                        app.logger.info(f"Processed connected channels: {connected_channels}")
+                        if verbose_logs:
+                            app.logger.info(f"Processed connected channels: {connected_channels}")
             except Exception as e:
                 app.logger.warning(f"Failed to read connected channels from heartbeat: {e}")
         
@@ -1005,7 +1010,8 @@ def get_channels():
             except Exception as e:
                 app.logger.warning(f"Failed to get channels from bot instance: {e}")
                 
-        app.logger.info(f"Found connected channels: {connected_channels}")
+        if verbose_logs:
+            app.logger.info(f"Found connected channels: {connected_channels}")
         
         # Get is_running status for additional fallback
         is_running = False
@@ -1066,10 +1072,12 @@ def get_channels():
             }
             
             # Log full channel data for debugging
-            app.logger.info(f"Channel data for {channel_name}: join_channel={join_channel_value}")
+            if verbose_logs:
+                app.logger.info(f"Channel data for {channel_name}: join_channel={join_channel_value}")
             
             # Debug log to help diagnose issues
-            app.logger.debug(f"Channel {channel_name} join_channel status: {channel_data['join_channel']}")
+            if verbose_logs:
+                app.logger.debug(f"Channel {channel_name} join_channel status: {channel_data['join_channel']}")
             
             channels.append(channel_data)
             
@@ -1306,12 +1314,14 @@ def get_last_10_tts_files_with_last_id(db_file):
 # Add SocketIO events for real-time updates
 @socketio.on('connect')
 def handle_connect(auth):  # Add proper parameters
-    app.logger.info('Client connected')
+    if verbose_logs:
+        app.logger.info('Client connected')
     emit('status_update', {'bot_running': bot_running})
 
 @socketio.on('disconnect')
 def handle_disconnect():
-    app.logger.info('Client disconnected')
+    if verbose_logs:
+        app.logger.info('Client disconnected')
 
 @socketio.on('request_update')
 def handle_update_request(data):  # Add proper parameters
