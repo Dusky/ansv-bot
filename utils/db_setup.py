@@ -67,6 +67,9 @@ def ensure_db_setup(db_file):
         if 'voice_preset' not in channel_config_columns:
             c.execute('ALTER TABLE channel_configs ADD COLUMN voice_preset TEXT DEFAULT \'v2/en_speaker_5\'')
             print("Column 'voice_preset' added to 'channel_configs'.")
+        if 'bark_model' not in channel_config_columns:
+            c.execute('ALTER TABLE channel_configs ADD COLUMN bark_model TEXT DEFAULT \'regular\'')
+            print("Column 'bark_model' added to 'channel_configs'.")
 
         # Further code for initializing channels and handling settings...
 

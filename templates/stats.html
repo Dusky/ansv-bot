@@ -123,7 +123,7 @@
                             <th style="width: 12%">Cache Size</th>
                             <th style="width: 10%">Messages</th>
                             <th style="width: 24%">Model Health</th>
-                            <th style="width: 15%">Model Tools</th>
+                            <th style="width: 15%">Actions</th>
                         </tr>
                     </thead>
                     <tbody id="statsContainer">
@@ -261,16 +261,27 @@
             });
         };
         
-        // Setup direct event delegation for rebuild buttons to ensure they work
+        // Setup direct event delegation for rebuild and send buttons to ensure they work
         document.addEventListener('click', function(event) {
-            // Find clicked element
-            const button = event.target.closest('button[data-action="rebuild"]');
-            if (button) {
-                const channel = button.getAttribute('data-channel');
+            // Find clicked element for rebuild button
+            const rebuildButton = event.target.closest('button[data-action="rebuild"]');
+            if (rebuildButton) {
+                const channel = rebuildButton.getAttribute('data-channel');
                 if (channel) {
                     // Prevent default action
                     event.preventDefault();
                     window.rebuildCacheDirectly(channel);
+                }
+            }
+            
+            // Find clicked element for send button
+            const sendButton = event.target.closest('button[data-action="send"]');
+            if (sendButton) {
+                const channel = sendButton.getAttribute('data-channel');
+                if (channel) {
+                    // Prevent default action
+                    event.preventDefault();
+                    sendMessageToChannel(channel);
                 }
             }
         });
@@ -419,6 +430,62 @@
             case 'GB': return value * 1024 * 1024;
             default: return value;
         }
+    }
+    
+    // Function to send a generated message to a channel
+    function sendMessageToChannel(channelName) {
+        if (!channelName) {
+            showToast('No channel selected', 'error');
+            return;
+        }
+        
+        // Get the button for this channel
+        const button = document.querySelector(`button[data-channel="${channelName}"][data-action="send"]`);
+        
+        // Show loading state
+        if (button) {
+            button.disabled = true;
+            
+            // Save original text/HTML
+            const originalHTML = button.innerHTML;
+            button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        }
+        
+        console.log(`Generating and sending message to channel: ${channelName}`);
+        
+        // Call the API endpoint to generate and send a message
+        fetch(`/send_markov_message/${channelName}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                if (data.sent === true) {
+                    // Message was successfully sent to Twitch
+                    showToast(`Message sent to ${channelName}: "${data.message}"`, 'success');
+                } else {
+                    // Message was generated but couldn't be sent to Twitch
+                    showToast(`Generated message: "${data.message}" (Not sent: bot not running)`, 'warning');
+                }
+            } else {
+                // Error generating message
+                showToast(`Failed to generate message: ${data.message || 'Unknown error'}`, 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error sending message:', error);
+            showToast(`Error sending message: ${error.message}`, 'error');
+        })
+        .finally(() => {
+            // Restore button state
+            if (button) {
+                button.disabled = false;
+                button.innerHTML = '<i class="fas fa-comment-dots me-1"></i>Send';
+            }
+        });
     }
     
     function loadBuildTimes() {

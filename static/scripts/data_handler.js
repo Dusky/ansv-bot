@@ -109,15 +109,49 @@ function playAudio(src) {
 }
 
 // Function to safely display a toast message without recursion
-function safeShowMessage(message, type) {
+function safeShowMessage(message, type = 'info') {
   console.log(`[${type}] ${message}`);
   
-  // Only use alert for critical errors, not for warnings
-  if (type === 'error') {
-    alert(message);
+  // Attempt to use Bootstrap toast if available
+  try {
+    let container = document.getElementById('toastContainer');
+    if (container && typeof bootstrap !== 'undefined') {
+      // Create a simple toast with Bootstrap
+      const toastId = 'toast-' + Date.now();
+      const bgClass = (type === 'error') ? 'bg-danger' : 
+                      (type === 'success') ? 'bg-success' :
+                      (type === 'warning') ? 'bg-warning' : 'bg-info';
+                      
+      const toastHTML = `
+        <div id="${toastId}" class="toast align-items-center ${bgClass} text-white border-0" role="alert" aria-live="assertive" aria-atomic="true">
+          <div class="d-flex">
+            <div class="toast-body">${message}</div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+          </div>
+        </div>
+      `;
+      container.insertAdjacentHTML('beforeend', toastHTML);
+      
+      // Initialize and show toast
+      const toastElement = document.getElementById(toastId);
+      const toast = new bootstrap.Toast(toastElement, { autohide: true, delay: 5000 });
+      toast.show();
+      
+      // Clean up DOM after toast is hidden
+      toastElement.addEventListener('hidden.bs.toast', function() {
+        toastElement.remove();
+      });
+      
+      return;
+    }
+  } catch (e) {
+    console.error('Error showing toast via bootstrap:', e);
   }
   
-  // Do not attempt to call other toast functions to avoid recursion
+  // Fallback to alert for critical errors only
+  if (type === 'error') {
+    alert(`Error: ${message}`);
+  }
 }
 
 // Function to check if an audio file exists before playing it
@@ -135,16 +169,17 @@ window.playAudioIfExists = function(src) {
           .then(() => console.log("Audio playing:", src))
           .catch(error => {
             console.error("Play error:", error);
-            safeShowMessage("Browser blocked audio playback. Try clicking again.", "warning");
+            // Use the namespaced version to avoid circular references
+            window.notificationSystem.showToast("Browser blocked audio playback. Try clicking again.", "warning");
           });
       } else {
         console.warn(`Audio file not found: ${src}`);
-        safeShowMessage("Audio file not found. It may have been deleted or moved.", "warning");
+        window.notificationSystem.showToast("Audio file not found. It may have been deleted or moved.", "warning");
       }
     })
     .catch(error => {
       console.error("Error checking audio file:", error);
-      safeShowMessage("Error accessing audio file", "error");
+      window.notificationSystem.showToast("Error accessing audio file", "error");
     });
 }
 
@@ -193,11 +228,15 @@ function refreshTable() {
     window.refreshTable();
 }
 
-// Make sure showToast is available, but avoid circular references
-// Don't overwrite if it's already defined to prevent conflicts
-if (typeof window.showToast !== 'function') {
-    // Use our safe internal version
-    window.showToast = safeShowMessage;
+// Make sure notification system is properly integrated
+// Setup our namespaced functions first if not already defined
+window.notificationSystem = window.notificationSystem || {};
+if (typeof window.notificationSystem.showToast !== 'function') {
+    // Use our safe internal version for the namespace
+    window.notificationSystem.showToast = safeShowMessage;
+    
+    // Set the global reference to point to our namespaced function 
+    window.showToast = window.notificationSystem.showToast;
 }
 
 // Function to flush TTS entries that don't have valid audio files
@@ -230,7 +269,7 @@ window.flushTTSEntries = function() {
     .then(data => {
         if (data.success) {
             // Show success message
-            safeShowMessage(`${data.message}`, 'success');
+            window.notificationSystem.showToast(`${data.message}`, 'success');
             
             // Refresh table after cleanup
             setTimeout(() => {
@@ -239,12 +278,12 @@ window.flushTTSEntries = function() {
                 }
             }, 1000);
         } else {
-            safeShowMessage(`Error: ${data.error || 'Unknown error'}`, 'error');
+            window.notificationSystem.showToast(`Error: ${data.error || 'Unknown error'}`, 'error');
         }
     })
     .catch(error => {
         console.error('Error flushing TTS entries:', error);
-        safeShowMessage(`Error: ${error.message}`, 'error');
+        window.notificationSystem.showToast(`Error: ${error.message}`, 'error');
     })
     .finally(() => {
         // Reset button state

@@ -1,13 +1,28 @@
 /**
- * Enhanced notification system for ANSV Bot
- * Handles toast notifications, confirmation modals, and status indicators
+ * Centralized notification system for ANSV Bot
+ * Provides a single implementation for toast notifications, confirmations, status updates, etc.
+ * Other files should use these functions instead of implementing their own.
  */
 
-// Show a toast notification
-function showToast(message, type = 'info', duration = 5000) {
+// Create a namespace for notification functions to avoid global conflicts
+window.notificationSystem = window.notificationSystem || {};
+
+/**
+ * Primary toast notification function
+ * @param {string} message - The message to display
+ * @param {string} type - The type of notification: 'success', 'error', 'warning', or 'info'
+ * @param {number} duration - How long to show the toast in milliseconds
+ * @returns {string} The ID of the created toast element
+ */
+window.notificationSystem.showToast = function(message, type = 'info', duration = 5000) {
     // Get or create toast container
     let container = document.getElementById('toastContainer');
-    if (!container) return;
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'toastContainer';
+        container.className = 'toast-container position-fixed bottom-0 end-0 p-3';
+        document.body.appendChild(container);
+    }
     
     // Create unique ID for this toast
     const toastId = 'toast-' + Date.now();
@@ -52,18 +67,52 @@ function showToast(message, type = 'info', duration = 5000) {
     
     // Initialize and show toast
     const toastElement = document.getElementById(toastId);
-    const toast = new bootstrap.Toast(toastElement, { 
-        autohide: true, 
-        delay: duration 
-    });
-    toast.show();
     
-    // Remove the toast from DOM after it's hidden
-    toastElement.addEventListener('hidden.bs.toast', function() {
-        toastElement.remove();
-    });
+    try {
+        // Use Bootstrap's Toast if available
+        if (typeof bootstrap !== 'undefined' && bootstrap.Toast) {
+            const toast = new bootstrap.Toast(toastElement, { 
+                autohide: true, 
+                delay: duration 
+            });
+            toast.show();
+        } else {
+            // Fallback for when Bootstrap isn't available
+            console.log(`Toast (${type}): ${message}`);
+            if (type === 'error') {
+                alert(`Error: ${message}`);
+            }
+        }
+        
+        // Remove the toast from DOM after it's hidden or after timeout
+        toastElement.addEventListener('hidden.bs.toast', function() {
+            toastElement.remove();
+        });
+        
+        // Backup timeout in case the hidden event doesn't fire
+        setTimeout(() => {
+            if (document.getElementById(toastId)) {
+                toastElement.remove();
+            }
+        }, duration + 1000);
+    } catch (e) {
+        console.error('Error showing toast:', e);
+        // Fallback if something goes wrong with Bootstrap
+        console.log(`Toast (${type}): ${message}`);
+        if (type === 'error') {
+            alert(`Error: ${message}`);
+        }
+    }
     
     return toastId;
+};
+
+// Export the function to the global window object for backward compatibility
+window.showToast = window.notificationSystem.showToast;
+
+// Local function for internal use
+function showToast(message, type = 'info', duration = 5000) {
+    return window.notificationSystem.showToast(message, type, duration);
 }
 
 // Enhanced confirmation modal

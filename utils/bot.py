@@ -147,6 +147,54 @@ class Bot(commands.Bot):
         else:
             print(f"Failed to find channel {channel_name}")
             return False
+    
+    async def leave_channel(self, channel_name):
+        """Leave a channel with proper cleanup."""
+        try:
+            # Ensure the channel name is properly formatted with # prefix for our tracking
+            if not channel_name.startswith('#'):
+                channel_name = f'#{channel_name}'
+            
+            # TwitchIO part_channels expects channel names WITHOUT # prefix
+            clean_name = channel_name.lstrip('#')
+            
+            print(f"{YELLOW}Attempting to leave channel: {channel_name} (clean: {clean_name}){RESET}")
+            
+            # Mark as disconnected in the database first
+            try:
+                conn = sqlite3.connect(self.db_file)
+                c = conn.cursor()
+                c.execute(
+                    "UPDATE channel_configs SET currently_connected = 0 WHERE channel_name = ?",
+                    (clean_name,)
+                )
+                conn.commit()
+                conn.close()
+                print(f"{YELLOW}Marked {clean_name} as disconnected in database{RESET}")
+            except Exception as db_error:
+                print(f"{RED}Database error when leaving {clean_name}: {db_error}{RESET}")
+            
+            # Actually leave the channel
+            try:
+                # This is the TwitchIO API call to leave a channel
+                await self.part_channels([clean_name])
+                
+                # Remove from joined channel tracking
+                if channel_name in self._joined_channels:
+                    self._joined_channels.remove(channel_name)
+                
+                # Force an immediate heartbeat update to sync the joined channel status
+                self.update_heartbeat_file()
+                
+                print(f"{GREEN}✅ Successfully left channel: {channel_name}{RESET}")
+                return True
+            except Exception as e:
+                print(f"{RED}Failed to leave channel {channel_name}: {e}{RESET}")
+                return False
+                
+        except Exception as e:
+            print(f"{RED}Exception when leaving channel {channel_name}: {e}{RESET}")
+            return False
 
     async def join_channel(self, channel_name):
         """Join a channel with proper formatting and error handling."""
@@ -204,7 +252,7 @@ class Bot(commands.Bot):
                             VALUES (?, 0, 1, 1, ?, '', '', 1, 50, 15, 1)
                         ''', (clean_name, clean_name))
                     else:
-                        # Update existing entry
+                        # Update existing entry - mark as joined
                         c.execute(
                             "UPDATE channel_configs SET join_channel = 1, currently_connected = 1 WHERE channel_name = ?",
                             (clean_name,)
@@ -212,6 +260,10 @@ class Bot(commands.Bot):
                         
                     conn.commit()
                     conn.close()
+                    
+                    # Force an immediate heartbeat update to sync the joined channel status
+                    self.update_heartbeat_file()
+                    
                 except Exception as db_error:
                     print(f"{RED}Database update error for channel {clean_name}: {db_error}{RESET}")
                 
@@ -899,25 +951,44 @@ class Bot(commands.Bot):
         
         # Extra verification for channels of interest
         for channel in self.channels:
-            channel_name = channel.lstrip('#')
-            if channel in self._joined_channels:
-                print(f"{GREEN}✓ Successfully joined {channel} channel!{RESET}")
+            clean_channel = channel.lstrip('#')
+            # Create the properly formatted channel name for _joined_channels check
+            formatted_channel = f"#{clean_channel}"
+            
+            if formatted_channel in self._joined_channels:
+                print(f"{GREEN}✓ Successfully joined {formatted_channel} channel!{RESET}")
                 
-                # Also update database to mark channel as connected
+                # Update database to mark channel as connected
                 try:
                     conn = sqlite3.connect(self.db_file)
                     c = conn.cursor()
                     c.execute(
                         "UPDATE channel_configs SET currently_connected = 1 WHERE channel_name = ?",
-                        (channel_name,)
+                        (clean_channel,)
                     )
                     conn.commit()
                     conn.close()
                 except Exception as e:
                     if verbose:
                         print(f"Error updating channel connection status in DB: {e}")
-            elif verbose:
-                print(f"{RED}✗ Failed to join {channel} channel - will retry in next periodic check{RESET}")
+            else:
+                # Only print failure if verbose or if this was explicitly in initial_channels
+                if verbose or channel in self.initial_channels:
+                    print(f"{RED}✗ Failed to join {formatted_channel} channel - will retry in next periodic check{RESET}")
+                    
+                # Make sure database shows it's not connected
+                try:
+                    conn = sqlite3.connect(self.db_file)
+                    c = conn.cursor()
+                    c.execute(
+                        "UPDATE channel_configs SET currently_connected = 0 WHERE channel_name = ?",
+                        (clean_channel,)
+                    )
+                    conn.commit()
+                    conn.close()
+                except Exception as e:
+                    if verbose:
+                        print(f"Error updating channel connection status in DB: {e}")
 
     def get_user_color(self, username):
         """Get a consistent color number for a user."""
@@ -1121,7 +1192,12 @@ class Bot(commands.Bot):
             verbose_logs = get_verbose_logs_setting()
             
             # Get current joined channels - strip # for consistent matching
+            # We use a list comprehension to get only the channel names from _joined_channels
+            # This ensures we only list truly joined channels
             channels_list = [channel.lstrip('#') for channel in self._joined_channels]
+            
+            # Remove empty strings from the list
+            channels_list = [ch for ch in channels_list if ch]
             
             # Current timestamp for consistency
             current_time = time.time()
@@ -1171,6 +1247,18 @@ class Bot(commands.Bot):
                     INSERT OR REPLACE INTO bot_status (key, value)
                     VALUES (?, ?)
                 ''', ('connected_channels', ','.join(channels_list)))
+                
+                # Also update the currently_connected status for each channel in the database
+                # First, set all channels to not connected
+                c.execute("UPDATE channel_configs SET currently_connected = 0")
+                
+                # Then set the connected status for channels that are actually joined
+                for channel in channels_list:
+                    clean_channel = channel.lstrip('#')  # Ensure no # prefix for DB storage
+                    c.execute(
+                        "UPDATE channel_configs SET currently_connected = 1 WHERE channel_name = ?",
+                        (clean_channel,)
+                    )
                 
                 # Commit the changes
                 conn.commit()

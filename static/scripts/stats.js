@@ -116,6 +116,14 @@ function loadStatistics() {
                           title="Rebuild model">
                     <i class="fas fa-tools me-1"></i>Rebuild
                   </button>
+                  ${isGeneralModel ? '' : `
+                  <button class="btn btn-success btn-sm send-message-btn"
+                          data-channel="${channel.name}"
+                          data-action="send"
+                          title="Generate and send a message to this channel">
+                    <i class="fas fa-comment-dots me-1"></i>Send
+                  </button>
+                  `}
                 </div>
               </td>
             `;
@@ -481,6 +489,30 @@ function loadBuildTimes() {
       if (isDev) console.error('Error loading build times:', error);
       buildTimesContainer.innerHTML = '<tr><td colspan="4" class="text-center text-danger">Error loading build data</td></tr>';
     });
+}
+
+// Helper function to safely show toast notifications
+function safeShowToast(message, type = 'info') {
+  // Function to safely display toast notifications using the notification system
+  try {
+    // Try using the namespaced version first
+    if (window.notificationSystem && typeof window.notificationSystem.showToast === 'function') {
+      window.notificationSystem.showToast(message, type);
+    }
+    // Fall back to global version
+    else if (typeof window.showToast === 'function') {
+      window.showToast(message, type);
+    }
+    // Last resort - log to console
+    else {
+      console.log(`Toast (${type}): ${message}`);
+      if (type === 'error') {
+        alert(message);
+      }
+    }
+  } catch (e) {
+    console.error("Error showing toast:", e);
+  }
 }
 
 // Load stats when the page loads
