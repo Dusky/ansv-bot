@@ -259,189 +259,14 @@ function safeShowToast(message, type = 'info') {
   }
 }
 
-/**
- * Centralized message generation and sending
- * Provides a single interface for generating and sending messages to channels
- */
-window.MessageManager = window.MessageManager || {
-    // Configuration
-    defaultModel: 'general',
-    
-    // Initialize the message manager
-    init: function() {
-        console.log('MessageManager initializing');
-        return this;
-    },
-    
-    // Generate a message for a specific channel and model
-    generateMessage: function(options = {}) {
-        // Default options
-        const defaults = {
-            channel: null,
-            model: this.defaultModel,
-            callback: null,
-            sendToTwitch: false
-        };
-        
-        // Merge options with defaults
-        const config = { ...defaults, ...options };
-        
-        // Validate input
-        if (config.sendToTwitch && !config.channel) {
-            console.error('Channel required when sending to Twitch');
-            return Promise.reject(new Error('Channel required when sending to Twitch'));
-        }
-        
-        // Show loading state on button if provided
-        if (config.button) {
-            this.setButtonLoading(config.button, true);
-        }
-        
-        // Determine which endpoint to use
-        let endpoint = config.sendToTwitch
-            ? `/send_markov_message/${config.channel}`
-            : '/generate-message';
-            
-        // Prepare payload for POST request
-        const payload = config.sendToTwitch
-            ? {} // sendMarkovMessage endpoint doesn't need a body
-            : {
-                model: config.model,
-                channel: config.channel
-            };
-            
-        // Make the API call
-        return fetch(endpoint, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: config.sendToTwitch ? null : JSON.stringify(payload)
-        })
-        .then(response => {
-            if (!response.ok) {
-                // Try to get error message if possible
-                return response.json().then(data => {
-                    throw new Error(data.message || `Failed to generate message: ${response.status}`);
-                }).catch(() => {
-                    throw new Error(`Failed to generate message: ${response.status}`);
-                });
-            }
-            return response.json();
-        })
-        .then(data => {
-            // Process the response
-            if (data.success) {
-                // Handle successful message generation
-                const message = data.message || '';
-                
-                // Show appropriate notification
-                if (config.sendToTwitch && data.sent === true) {
-                    // Message was successfully sent to Twitch
-                    this.showNotification(`Message sent to ${config.channel}: "${message}"`, 'success');
-                } else if (config.sendToTwitch) {
-                    // Message was generated but couldn't be sent
-                    this.showNotification(`Generated message: "${message}" (Not sent: bot not running)`, 'warning');
-                } else {
-                    // Message was only generated, not sent
-                    this.showNotification(`Generated message: "${message}"`, 'success');
-                }
-                
-                // Run callback if provided
-                if (typeof config.callback === 'function') {
-                    config.callback(message, data);
-                }
-                
-                return message;
-            } else {
-                // Handle generation error
-                const errorMsg = data.message || 'Failed to generate message';
-                this.showNotification(errorMsg, 'error');
-                throw new Error(errorMsg);
-            }
-        })
-        .catch(error => {
-            console.error('Error generating/sending message:', error);
-            this.showNotification(`Error: ${error.message}`, 'error');
-            throw error;
-        })
-        .finally(() => {
-            // Reset button state
-            if (config.button) {
-                this.setButtonLoading(config.button, false);
-            }
-        });
-    },
-    
-    // Set button loading state
-    setButtonLoading: function(button, isLoading) {
-        if (!button) return;
-        
-        // Store original content if loading
-        if (isLoading) {
-            button.dataset.originalContent = button.innerHTML;
-            button.disabled = true;
-            button.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>' + 
-                (button.textContent.includes('Send') ? 'Sending...' : 'Generating...');
-        } else {
-            // Restore original content
-            if (button.dataset.originalContent) {
-                button.innerHTML = button.dataset.originalContent;
-                delete button.dataset.originalContent;
-            } else {
-                // Fallback if original content wasn't saved
-                button.innerHTML = button.innerHTML.replace(
-                    '<i class="fas fa-spinner fa-spin me-1"></i>Generating...', 
-                    '<i class="fas fa-comment-dots me-1"></i>Generate'
-                ).replace(
-                    '<i class="fas fa-spinner fa-spin me-1"></i>Sending...', 
-                    '<i class="fas fa-comment-dots me-1"></i>Send'
-                );
-            }
-            button.disabled = false;
-        }
-    },
-    
-    // Show notification using global system
-    showNotification: function(message, type = 'info') {
-        // Try using the namespaced version first
-        if (window.notificationSystem && typeof window.notificationSystem.showToast === 'function') {
-            window.notificationSystem.showToast(message, type);
-        }
-        // Fall back to global version
-        else if (typeof window.showToast === 'function') {
-            window.showToast(message, type);
-        }
-        // Last resort - log to console
-        else {
-            console.log(`Toast (${type}): ${message}`);
-            if (type === 'error') {
-                alert(message);
-            }
-        }
-    }
-};
-
 // Create a global module object for cross-file access - CRITICAL for button functionality
 // Initialize this right away but ensure BotStatus is available first
 (function initializeMarkovModule() {
   console.log("Initializing markovModule global object");
   
-  // Also initialize MessageManager
-  window.MessageManager.init();
-  
   // Make functions immediately available rather than waiting for DOMContentLoaded
   window.markovModule = window.markovModule || {};
-  
-  // Add wrapper functions that use MessageManager
-  window.markovModule.sendMarkovMessage = function(channelName) {
-    return window.MessageManager.generateMessage({
-      channel: channelName,
-      sendToTwitch: true
-    });
-  };
-  
-  // Add other required functions
+  window.markovModule.sendMarkovMessage = sendMarkovMessage;
   window.markovModule.rebuildChannelModel = rebuildCacheForChannel;
   
   // Make functions directly available on the window object to eliminate any ambiguity
@@ -449,12 +274,7 @@ window.MessageManager = window.MessageManager || {
   window.rebuildCacheForChannel = rebuildCacheForChannel;  // Direct assignment
   
   // Also make the functions available under their most likely names
-  window.sendMarkovMessage = function(channelName) {
-    return window.MessageManager.generateMessage({
-      channel: channelName,
-      sendToTwitch: true
-    });
-  };
+  window.sendMarkovMessage = sendMarkovMessage;
   window.rebuildChannelCache = rebuildCacheForChannel;
   
   console.log("markovModule initialized successfully");
@@ -466,12 +286,7 @@ window.MessageManager = window.MessageManager || {
       console.warn("markovModule not initialized on DOMContentLoaded, reinitializing");
       
       window.markovModule = window.markovModule || {};
-      window.markovModule.sendMarkovMessage = function(channelName) {
-        return window.MessageManager.generateMessage({
-          channel: channelName,
-          sendToTwitch: true
-        });
-      };
+      window.markovModule.sendMarkovMessage = sendMarkovMessage;
       window.markovModule.rebuildChannelModel = rebuildCacheForChannel;
       window.rebuildCacheForChannelGlobal = rebuildCacheForChannel;
       window.rebuildCacheForChannel = rebuildCacheForChannel;

@@ -33,7 +33,7 @@ function saveChannelSettings() {
     lines_between_messages: document.getElementById("linesBetweenMessages").value || 0,
     time_between_messages: document.getElementById("timeBetweenMessages").value || 0,
     voice_preset: voicePreset,
-    bark_model: document.getElementById("barkModel").value
+    bark_model: document.getElementById("barkModel") ? document.getElementById("barkModel").value : "regular"
   };
 
   if (isAddChannel) {
@@ -44,11 +44,11 @@ function saveChannelSettings() {
       document.getElementById("channelSelect").selectedIndex = 0;
       checkForAddChannelOption(document.getElementById("channelSelect"));
       
-      showToast('Channel added successfully!', 'success');
+      displayNotification('Channel added successfully!', 'success');
     });
   } else {
     updateChannelSettings(updatedData, function() {
-      showToast('Settings saved successfully!', 'success');
+      displayNotification('Settings saved successfully!', 'success');
     });
   }
 }
@@ -82,20 +82,30 @@ function updateChannelSettings(data, callback) {
 }
 function handleSaveResponse(data) {
   if (data.success) {
-    showToast("Settings saved successfully.", "success");
+    displayNotification("Settings saved successfully.", "success");
   } else {
-    showToast("Failed to save settings: " + data.message, "error");
+    displayNotification("Failed to save settings: " + data.message, "error");
   }
 }
 
-// Toast function if not already defined
-function showToast(message, type = "info") {
-  // Check if the notification.js showToast function exists
-  if (typeof window.showToast === "function") {
+// Safe notification function
+function displayNotification(message, type = "info") {
+  // Try namespace first
+  if (window.notificationSystem && typeof window.notificationSystem.showToast === 'function') {
+    window.notificationSystem.showToast(message, type);
+  } 
+  // Fall back to global showToast
+  else if (typeof window.showToast === "function") {
     window.showToast(message, type);
-  } else {
-    // Fallback to alert if toast function not available
-    alert(message);
+  } 
+  // Use console and alert as a final fallback
+  else {
+    console.log(`Toast (${type}): ${message}`);
+    if (type === 'error') {
+      alert(`Error: ${message}`);
+    } else {
+      alert(message);
+    }
   }
 }
 function addNewChannel(data, callback) {
@@ -130,10 +140,23 @@ function addNewChannel(data, callback) {
 function displayChannelConfig(channels, selectedChannel) {
   var channelConfigForm = document.getElementById("channelConfig");
   var addChannelDiv = document.getElementById("addChannelDiv");
+  var deleteChannelBtn = document.getElementById("deleteChannelBtn");
 
   if (selectedChannel === "add_channel") {
     channelConfigForm.style.display = "none";
     addChannelDiv.style.display = "block";
+    // Hide delete button when adding a new channel
+    if (deleteChannelBtn) {
+      deleteChannelBtn.style.display = "none";
+    }
+  } else if (selectedChannel === "") {
+    // No channel selected
+    channelConfigForm.style.display = "none";
+    addChannelDiv.style.display = "none";
+    // Hide delete button when no channel is selected
+    if (deleteChannelBtn) {
+      deleteChannelBtn.style.display = "none";
+    }
   } else {
     var channelData = channels.find((c) => c[0] === selectedChannel);
     if (channelData) {
@@ -152,9 +175,20 @@ function displayChannelConfig(channels, selectedChannel) {
 
       channelConfigForm.style.display = "block";
       addChannelDiv.style.display = "none";
+      
+      // Show delete button for existing channels
+      if (deleteChannelBtn) {
+        deleteChannelBtn.style.display = "block";
+        // Set data attribute for the channel name to use when deleting
+        deleteChannelBtn.setAttribute("data-channel", selectedChannel);
+      }
     } else {
       channelConfigForm.style.display = "none";
       addChannelDiv.style.display = "none";
+      // Hide delete button when no valid channel data
+      if (deleteChannelBtn) {
+        deleteChannelBtn.style.display = "none";
+      }
     }
   }
 }
@@ -177,66 +211,245 @@ function resetFormForNewChannel() {
 }
 
 
-function fetchChannels() {
-  fetch("/get-channels")
-    .then((response) => response.json())
-    .then((channels) => {
-      let channelSelect = document.getElementById("channelSelect");
-      if (channelSelect) {
-        // Clear existing options except the first two
-        while (channelSelect.options.length > 2) {
-          channelSelect.remove(2);
+/**
+ * Centralized channel management system
+ * Handles channel loading, status updating, and data formatting
+ */
+ 
+// Create a globally accessible ChannelManager
+window.ChannelManager = window.ChannelManager || {
+    // Store channel data
+    channels: [],
+    lastUpdated: null,
+    
+    // Initialize
+    init: function() {
+        console.log("ChannelManager initializing");
+        this.loadChannels();
+        return this;
+    },
+    
+    // Load channels from the server
+    loadChannels: function(callback) {
+        console.log("Loading channels from server...");
+        
+        // Use the preferred API endpoint
+        fetch("/api/channels")
+            .then(response => {
+                if (!response.ok) {
+                    // Try fallback endpoint if main one fails
+                    console.log("Primary endpoint failed, trying fallback...");
+                    return fetch("/get-channels");
+                }
+                return response;
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log("Received channels data:", data);
+                
+                // Normalize the channel data format
+                this.channels = this.normalizeChannelData(data);
+                this.lastUpdated = new Date();
+                
+                // Update any channel dropdowns
+                this.updateChannelDropdowns();
+                
+                // Run callback if provided
+                if (typeof callback === 'function') {
+                    callback(this.channels);
+                }
+                
+                // Dispatch an event that other components can listen for
+                const event = new CustomEvent('channels-updated', { 
+                    detail: { channels: this.channels }
+                });
+                window.dispatchEvent(event);
+            })
+            .catch(error => {
+                console.error("Error loading channels:", error);
+                // Dispatch error event
+                const event = new CustomEvent('channels-error', { 
+                    detail: { error: error.message }
+                });
+                window.dispatchEvent(event);
+            });
+    },
+    
+    // Normalize channel data to a consistent format
+    normalizeChannelData: function(data) {
+        if (!data || !Array.isArray(data)) {
+            console.warn("Invalid channel data format:", data);
+            return [];
         }
         
-        // Debug the received data
-        console.log("Received channels data:", channels);
+        return data.map(channel => {
+            // Create a standardized channel object
+            let channelObj = {
+                name: null,
+                connected: false,
+                tts_enabled: false
+            };
+            
+            // Handle various possible formats
+            if (Array.isArray(channel)) {
+                channelObj.name = channel[0];
+                // If array has more elements, try to parse them
+                if (channel.length > 1) {
+                    channelObj.tts_enabled = !!channel[1];
+                }
+                if (channel.length > 3) {
+                    channelObj.connected = !!channel[3];
+                }
+            } else if (typeof channel === 'object' && channel !== null) {
+                // Check for 'name' property
+                if (channel.name) {
+                    channelObj.name = channel.name;
+                } else if (channel.channel_name) {
+                    // Fallback to channel_name if present
+                    channelObj.name = channel.channel_name;
+                } else {
+                    // Last fallback: use first string property if available
+                    const firstStringProp = Object.entries(channel)
+                        .find(([key, value]) => typeof value === 'string');
+                    
+                    if (firstStringProp) {
+                        channelObj.name = firstStringProp[1];
+                    }
+                }
+                
+                // Copy additional properties if they exist
+                if ('tts_enabled' in channel) channelObj.tts_enabled = !!channel.tts_enabled;
+                if ('currently_connected' in channel) channelObj.connected = !!channel.currently_connected;
+                if ('connected' in channel) channelObj.connected = !!channel.connected;
+            } else if (typeof channel === 'string') {
+                // Simple string value
+                channelObj.name = channel;
+            }
+            
+            return channelObj;
+        }).filter(channel => {
+            // Filter out invalid channels
+            return channel.name && typeof channel.name === 'string' && 
+                  channel.name !== 'undefined' && channel.name.trim() !== '';
+        });
+    },
+    
+    // Update all channel dropdowns
+    updateChannelDropdowns: function() {
+        // Find all channel select dropdowns
+        const channelSelects = document.querySelectorAll('select[data-channel-select]');
+        
+        channelSelects.forEach(select => {
+            this.updateChannelDropdown(select);
+        });
+        
+        // Also update the main channel selector used in settings
+        const mainChannelSelect = document.getElementById('channelSelect');
+        if (mainChannelSelect) {
+            this.updateSettingsChannelDropdown(mainChannelSelect);
+        }
+    },
+    
+    // Update a specific channel dropdown
+    updateChannelDropdown: function(select) {
+        if (!select) return;
+        
+        // Save current selection
+        const currentValue = select.value;
+        
+        // Clear existing options (except any with keep-option attribute)
+        const optionsToKeep = Array.from(select.options)
+            .filter(option => option.hasAttribute('data-keep-option'));
+            
+        select.innerHTML = '';
+        
+        // Re-add any options we need to keep
+        optionsToKeep.forEach(option => {
+            select.appendChild(option);
+        });
         
         // Add channel options
-        channels.forEach((channel) => {
-          let option = document.createElement("option");
-          
-          // Handle various possible formats
-          if (Array.isArray(channel)) {
-            option.value = channel[0];
-            option.text = channel[0];
-          } else if (typeof channel === 'object' && channel !== null) {
-            // Check for 'name' property
-            if (channel.name) {
-              option.value = channel.name;
-              option.text = channel.name;
-            } else if (channel.channel_name) {
-              // Fallback to channel_name if present
-              option.value = channel.channel_name;
-              option.text = channel.channel_name;
-            } else {
-              // Last fallback: use first property if available
-              const firstKey = Object.keys(channel)[0];
-              if (firstKey) {
-                option.value = channel[firstKey];
-                option.text = channel[firstKey];
-                console.warn("Using fallback property for channel name:", firstKey);
-              } else {
-                console.warn("Unknown channel data format:", channel);
-              }
+        this.channels.forEach(channel => {
+            const option = document.createElement('option');
+            option.value = channel.name;
+            option.textContent = channel.name;
+            
+            // Add status indicator if the dropdown supports it
+            if (select.hasAttribute('data-show-status') && channel.connected) {
+                option.textContent += ' ✓';
             }
-          } else if (typeof channel === 'string') {
-            // Simple string value
-            option.value = channel;
-            option.text = channel;
-          } else {
-            console.warn("Unrecognized channel data type:", typeof channel, channel);
-          }
-          
-          // Only add if we got a valid value and it's not "undefined"
-          if (option.value && option.value !== "undefined" && option.text !== "undefined") {
-            channelSelect.add(option);
-          }
+            
+            select.appendChild(option);
         });
-      }
-    })
-    .catch((error) => {
-      console.error("Error fetching channels:", error);
-    });
+        
+        // Restore selection if possible
+        if (currentValue) {
+            // Check if the previously selected option still exists
+            const stillExists = Array.from(select.options)
+                .some(option => option.value === currentValue);
+                
+            if (stillExists) {
+                select.value = currentValue;
+            }
+        }
+    },
+    
+    // Special handling for the settings page channel dropdown
+    updateSettingsChannelDropdown: function(select) {
+        if (!select) return;
+        
+        // Save current selection
+        const currentValue = select.value;
+        
+        // Clear existing options except the first two (select prompt and add channel)
+        while (select.options.length > 2) {
+            select.remove(2);
+        }
+        
+        // Add channel options
+        this.channels.forEach(channel => {
+            const option = document.createElement('option');
+            option.value = channel.name;
+            option.textContent = channel.name;
+            select.appendChild(option);
+        });
+        
+        // Check if the previously selected channel still exists
+        let stillExists = false;
+        for (let i = 0; i < select.options.length; i++) {
+            if (select.options[i].value === currentValue) {
+                stillExists = true;
+                break;
+            }
+        }
+        
+        // If the previously selected channel still exists, select it again
+        // Otherwise reset to the first option (no selection)
+        if (stillExists && currentValue !== "add_channel") {
+            select.value = currentValue;
+        } else {
+            select.selectedIndex = 0;  // Reset to first option
+            // Make sure the form resets as well
+            if (typeof checkForAddChannelOption === 'function') {
+                checkForAddChannelOption(select);
+            }
+        }
+    },
+    
+    // Get channel by name
+    getChannel: function(channelName) {
+        return this.channels.find(channel => channel.name === channelName) || null;
+    },
+    
+    // Check if channel exists
+    channelExists: function(channelName) {
+        return this.channels.some(channel => channel.name === channelName);
+    }
+};
+
+// Legacy support for the old fetchChannels function
+function fetchChannels() {
+    window.ChannelManager.loadChannels();
 }
 
 
@@ -278,12 +491,23 @@ function fetchChannelSettings(channelName) {
 function checkForAddChannelOption(selectElement) {
   var addChannelDiv = document.getElementById("addChannelDiv");
   var channelConfigForm = document.getElementById("channelConfig");
+  var deleteChannelBtn = document.getElementById("deleteChannelBtn");
   
   if (selectElement.value === "add_channel") {
     // Show add channel form, hide config form
     addChannelDiv.style.display = "block";
     if (channelConfigForm) {
       channelConfigForm.style.display = "none";
+    }
+    // Hide delete button when adding a new channel
+    if (deleteChannelBtn) {
+      deleteChannelBtn.style.display = "none";
+    }
+    
+    // Hide send message button when adding a new channel
+    const sendMessageBtn = document.getElementById("sendMessageBtn");
+    if (sendMessageBtn) {
+      sendMessageBtn.style.display = "none";
     }
   } else if (selectElement.value !== "") {
     // Load channel config
@@ -316,9 +540,13 @@ function checkForAddChannelOption(selectElement) {
           document.getElementById("timeBetweenMessages").value = data.time_between_messages || 0;
           
           // Set Bark model if available
-          if (data.bark_model) {
+          if (document.getElementById("barkModel")) {
             const barkModelSelect = document.getElementById("barkModel");
-            barkModelSelect.value = data.bark_model;
+            if (data.bark_model) {
+              barkModelSelect.value = data.bark_model;
+            } else {
+              barkModelSelect.value = "regular"; // Default value
+            }
           }
           
           // Set voice preset if available
@@ -344,6 +572,21 @@ function checkForAddChannelOption(selectElement) {
               }
             }
           }
+          
+          // Show and update delete button for existing channels
+          if (deleteChannelBtn) {
+            deleteChannelBtn.style.display = "block";
+            deleteChannelBtn.setAttribute("data-channel", selectElement.value);
+            console.log("Delete button enabled for channel:", selectElement.value);
+          }
+          
+          // Show and update send message button for existing channels
+          const sendMessageBtn = document.getElementById("sendMessageBtn");
+          if (sendMessageBtn) {
+            sendMessageBtn.style.display = "block";
+            sendMessageBtn.setAttribute("data-channel", selectElement.value);
+            console.log("Send Message button enabled for channel:", selectElement.value);
+          }
         }
       })
       .catch(error => {
@@ -354,6 +597,16 @@ function checkForAddChannelOption(selectElement) {
     addChannelDiv.style.display = "none";
     if (channelConfigForm) {
       channelConfigForm.style.display = "none";
+    }
+    // Hide delete button when no channel is selected
+    if (deleteChannelBtn) {
+      deleteChannelBtn.style.display = "none";
+    }
+    
+    // Hide send message button when no channel is selected
+    const sendMessageBtn = document.getElementById("sendMessageBtn");
+    if (sendMessageBtn) {
+      sendMessageBtn.style.display = "none";
     }
   }
 }
@@ -393,11 +646,130 @@ function handleError(error) {
   alert("An error occurred while saving settings.");
 }
 
+// Function to delete a channel
+function deleteChannel(channelName) {
+  if (!channelName) {
+    displayNotification('No channel selected for deletion', 'error');
+    return;
+  }
+  
+  // Confirm with the user before deleting
+  if (!confirm(`Are you sure you want to delete the channel "${channelName}"? This cannot be undone.`)) {
+    return;
+  }
+  
+  console.log(`Deleting channel: ${channelName}`);
+  
+  fetch("/delete-channel", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ channel_name: channelName }),
+  })
+    .then((response) => response.json())
+    .then((result) => {
+      if (result.success) {
+        displayNotification(`Channel "${channelName}" deleted successfully`, 'success');
+        
+        // Reset the form first
+        const channelSelect = document.getElementById("channelSelect");
+        channelSelect.selectedIndex = 0; // Reset to "Select a channel..."
+        
+        // Hide configuration form
+        const channelConfigForm = document.getElementById("channelConfig");
+        if (channelConfigForm) {
+          channelConfigForm.style.display = "none";
+        }
+        
+        // Hide the delete button
+        const deleteChannelBtn = document.getElementById("deleteChannelBtn");
+        if (deleteChannelBtn) {
+          deleteChannelBtn.style.display = "none";
+        }
+        
+        // Clear the form state
+        checkForAddChannelOption(channelSelect);
+        
+        // Finally refresh the channel list from the server
+        setTimeout(() => {
+          fetchChannels(); // Slight delay to ensure server has processed
+        }, 200);
+      } else {
+        displayNotification(`Failed to delete channel: ${result.message}`, 'error');
+      }
+    })
+    .catch((error) => {
+      console.error("Error:", error);
+      displayNotification("An error occurred while deleting the channel", 'error');
+    });
+}
+
+// Function to send a generated message to a channel
+function sendMessageToChannel(channelName) {
+  if (!channelName) {
+    displayNotification('No channel selected', 'error');
+    return;
+  }
+  
+  // Show loading state
+  const button = document.getElementById('sendMessageBtn');
+  if (button) {
+    button.disabled = true;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Sending...';
+  }
+  
+  console.log(`Generating and sending message to channel: ${channelName}`);
+  
+  // Call the API endpoint to generate and send a message
+  fetch(`/send_markov_message/${channelName}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    }
+  })
+  .then(response => response.json())
+  .then(data => {
+    if (data.success) {
+      if (data.sent === true) {
+        // Message was successfully sent to Twitch
+        displayNotification(`Message sent to ${channelName}: "${data.message}"`, 'success');
+      } else {
+        // Message was generated but couldn't be sent to Twitch
+        displayNotification(`Generated message: "${data.message}" (Not sent: bot not running)`, 'warning');
+      }
+    } else {
+      // Error generating message
+      displayNotification(`Failed to generate message: ${data.message || 'Unknown error'}`, 'error');
+    }
+  })
+  .catch(error => {
+    console.error('Error sending message:', error);
+    displayNotification(`Error sending message: ${error.message}`, 'error');
+  })
+  .finally(() => {
+    // Restore button state
+    if (button) {
+      button.disabled = false;
+      button.innerHTML = '<i class="fas fa-comment-dots me-1"></i>Generate & Send';
+    }
+  });
+}
+
 // Make sure this function is called on page load
 document.addEventListener("DOMContentLoaded", function() {
   var channelSelect = document.getElementById("channelSelect");
   if (channelSelect) {
     fetchChannels();
+  }
+  
+  // Set up delete channel button if it exists
+  var deleteChannelBtn = document.getElementById("deleteChannelBtn");
+  if (deleteChannelBtn) {
+    deleteChannelBtn.addEventListener("click", function() {
+      const channelToDelete = this.getAttribute("data-channel");
+      deleteChannel(channelToDelete);
+    });
   }
   
   // Set up voice preset change handler if not already defined

@@ -11,9 +11,12 @@ document.addEventListener('DOMContentLoaded', function() {
         showToast('An error occurred: ' + event.error?.message || 'Unknown error', 'error');
     });
     
-    // Add showToast function if it doesn't exist
-    if (typeof window.showToast !== 'function') {
-        window.showToast = function(message, type = 'info') {
+    // Create notification namespace if it doesn't exist
+    window.notificationSystem = window.notificationSystem || {};
+    
+    // Add showToast function to namespace if it doesn't exist
+    if (typeof window.notificationSystem.showToast !== 'function') {
+        window.notificationSystem.showToast = function(message, type = 'info') {
             console.log(`Toast (${type}): ${message}`);
             
             // Check if Bootstrap is available
@@ -56,6 +59,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             }
         };
+        
+        // Also set window.showToast to point to our implementation in the namespace
+        window.showToast = window.notificationSystem.showToast;
     }
     
     // Fix endpoint inconsistencies in all fetch calls

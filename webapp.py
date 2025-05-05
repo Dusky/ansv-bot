@@ -814,10 +814,12 @@ def update_channel_settings():
     try:
         conn = sqlite3.connect(db_file)
         c = conn.cursor()
+        # Get bark_model with a default if not provided
+        bark_model = data.get("bark_model", "regular")
         c.execute(
             """
             UPDATE channel_configs
-            SET tts_enabled = ?, voice_enabled = ?, join_channel = ?, owner = ?, trusted_users = ?, ignored_users = ?, use_general_model = ?, lines_between_messages = ?, time_between_messages = ?, voice_preset = ?
+            SET tts_enabled = ?, voice_enabled = ?, join_channel = ?, owner = ?, trusted_users = ?, ignored_users = ?, use_general_model = ?, lines_between_messages = ?, time_between_messages = ?, voice_preset = ?, bark_model = ?
             WHERE channel_name = ?""",
             (
                 data["tts_enabled"],
@@ -830,6 +832,7 @@ def update_channel_settings():
                 data["lines_between_messages"],
                 data["time_between_messages"],
                 data["voice_preset"],
+                bark_model,
                 data["channel_name"],
             ),
         )
@@ -869,10 +872,14 @@ def save_channel_settings():
     try:
         conn = sqlite3.connect(db_file)
         c = conn.cursor()
+        # Get bark_model with a default if not provided
+        bark_model = data.get("bark_model", "regular")
+        voice_preset = data.get("voice_preset", "v2/en_speaker_5")
+        
         c.execute(
             """
             UPDATE channel_configs 
-            SET tts_enabled = ?, voice_enabled = ?, join_channel = ?, owner = ?, trusted_users = ?, ignored_users = ?, use_general_model = ?, lines_between_messages = ?, time_between_messages = ?
+            SET tts_enabled = ?, voice_enabled = ?, join_channel = ?, owner = ?, trusted_users = ?, ignored_users = ?, use_general_model = ?, lines_between_messages = ?, time_between_messages = ?, voice_preset = ?, bark_model = ?
             WHERE channel_name = ?""",
             (
                 data["tts_enabled"],
@@ -884,6 +891,8 @@ def save_channel_settings():
                 data["use_general_model"],
                 data["lines_between_messages"],
                 data["time_between_messages"],
+                voice_preset,
+                bark_model,
                 data["channel_name"],
             ),
         )
@@ -1093,7 +1102,7 @@ def get_channel_settings(channelName):
         conn = sqlite3.connect(db_file)
         c = conn.cursor()
         c.execute(
-            "SELECT tts_enabled, voice_enabled, join_channel, owner, trusted_users, ignored_users, use_general_model, lines_between_messages, time_between_messages, voice_preset FROM channel_configs WHERE channel_name = ?",
+            "SELECT tts_enabled, voice_enabled, join_channel, owner, trusted_users, ignored_users, use_general_model, lines_between_messages, time_between_messages, voice_preset, bark_model FROM channel_configs WHERE channel_name = ?",
             (channelName,),
         )
         settings = c.fetchone()
@@ -1109,6 +1118,7 @@ def get_channel_settings(channelName):
                 "lines_between_messages",
                 "time_between_messages",
                 "voice_preset",
+                "bark_model",
             ]
             return jsonify(dict(zip(keys, settings)))
         else:
@@ -1147,11 +1157,13 @@ def add_channel():
 
         if count == 0:
             # Insert new channel as it does not exist
+            # Get the bark_model from the data, defaulting to regular if not provided
+            bark_model = data.get("bark_model", "regular")
             c.execute(
                 """
-                INSERT INTO channel_configs (channel_name, tts_enabled, voice_enabled, join_channel, owner, trusted_users, ignored_users, use_general_model, lines_between_messages, time_between_messages, voice_preset)
-                VALUES (?, 0, 0, 1, ?, '', '', 1, 100, 0, ?)""",
-                (channel_name, channel_name, voice_preset),
+                INSERT INTO channel_configs (channel_name, tts_enabled, voice_enabled, join_channel, owner, trusted_users, ignored_users, use_general_model, lines_between_messages, time_between_messages, voice_preset, bark_model)
+                VALUES (?, 0, 0, 1, ?, '', '', 1, 100, 0, ?, ?)""",
+                (channel_name, channel_name, voice_preset, bark_model),
             )
             conn.commit()
             print(f"Channel '{channel_name}' added successfully.")
@@ -1165,6 +1177,56 @@ def add_channel():
             )
     except Exception as e:
         print(f"Exception occurred in add_channel: {e}")
+        return jsonify({"success": False, "message": str(e)})
+    finally:
+        conn.close()
+        
+@app.route("/delete-channel", methods=["POST"])
+def delete_channel():
+    """Delete a channel from the database."""
+    data = request.json
+    channel_name = data.get("channel_name")
+    
+    # Print the received data for debugging
+    print(f"Received request to delete channel: {channel_name}")
+    
+    if not channel_name:
+        return jsonify({"success": False, "message": "No channel name provided"})
+    
+    try:
+        conn = sqlite3.connect(db_file)
+        c = conn.cursor()
+        
+        # Check if the channel exists
+        c.execute("SELECT 1 FROM channel_configs WHERE channel_name = ?", (channel_name,))
+        exists = c.fetchone() is not None
+        
+        if not exists:
+            conn.close()
+            return jsonify({"success": False, "message": f"Channel {channel_name} does not exist"})
+        
+        # Delete the channel from channel_configs
+        c.execute("DELETE FROM channel_configs WHERE channel_name = ?", (channel_name,))
+        
+        # Make sure the bot leaves the channel if it's connected
+        if bot_instance:
+            channel_with_hash = f"#{channel_name}"
+            if channel_with_hash in bot_instance._joined_channels:
+                print(f"Instructing bot to leave channel: {channel_name}")
+                # Note: The actual leaving will happen asynchronously
+                coroutine = bot_instance.leave_channel(channel_name)
+                asyncio.run_coroutine_threadsafe(coroutine, bot_instance.loop)
+        
+        # Optional: Delete messages associated with this channel
+        # Uncomment the following line if you want to delete all messages from this channel
+        # c.execute("DELETE FROM messages WHERE channel = ?", (channel_name,))
+        
+        conn.commit()
+        print(f"Channel {channel_name} deleted successfully")
+        return jsonify({"success": True, "message": f"Channel {channel_name} deleted"})
+    
+    except Exception as e:
+        print(f"Error deleting channel {channel_name}: {e}")
         return jsonify({"success": False, "message": str(e)})
     finally:
         conn.close()

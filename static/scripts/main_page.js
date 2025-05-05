@@ -1,3 +1,27 @@
+// Helper function to safely show toast notifications
+function safeShowToast(message, type = 'info') {
+  // Function to safely display toast notifications using the notification system
+  try {
+    // Try using the namespaced version first
+    if (window.notificationSystem && typeof window.notificationSystem.showToast === 'function') {
+      window.notificationSystem.showToast(message, type);
+    }
+    // Fall back to global version
+    else if (typeof window.showToast === 'function') {
+      window.showToast(message, type);
+    }
+    // Last resort - log to console
+    else {
+      console.log(`Toast (${type}): ${message}`);
+      if (type === 'error') {
+        alert(message);
+      }
+    }
+  } catch (e) {
+    console.error("Error showing toast:", e);
+  }
+}
+
 // Main page functionality
 document.addEventListener('DOMContentLoaded', function() {
     // Initialize functions

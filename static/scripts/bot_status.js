@@ -6,7 +6,7 @@
  */
 
 // Global bot status variable - accessible to all scripts
-window.BotStatus = {
+window.BotStatus = window.BotStatus || {
   // Status flags
   running: false,
   connected: false,
@@ -18,13 +18,20 @@ window.BotStatus = {
   
   // Initialization
   init: function() {
-    console.log("BotStatus initialized");
+    console.log("BotStatus initializing");
     
     // Do initial check
     this.checkStatus();
     
     // Set up periodic checking
     setInterval(() => this.checkStatus(), 10000); // Check every 10 seconds
+    
+    // Listen for events from the EventBus if available
+    if (window.EventBus) {
+      window.EventBus.on(window.AppEvents?.BOT_STATUS_CHANGED || 'bot:status-changed', data => {
+        this.handleStatusUpdate(data);
+      });
+    }
     
     // Return self for chaining
     return this;
@@ -62,7 +69,7 @@ window.BotStatus = {
         const isSettingsPage = window.location.pathname.includes('settings');
         this.updateUI(isSettingsPage && !statusChanged);
         
-        // Dispatch event for other scripts
+        // Dispatch event for other scripts using DOM events (legacy)
         const event = new CustomEvent('botstatus', { 
           detail: { 
             running: this.running,
@@ -72,6 +79,26 @@ window.BotStatus = {
           }
         });
         window.dispatchEvent(event);
+        
+        // Also dispatch through EventBus if available (modern)
+        if (window.EventBus && window.EventBus.emit) {
+          const botStatusEvent = window.AppEvents?.BOT_STATUS_CHANGED || 'bot:status-changed';
+          window.EventBus.emit(botStatusEvent, { 
+            running: this.running,
+            connected: this.connected,
+            tts_enabled: this.tts_enabled,
+            statusChanged: statusChanged
+          });
+          
+          // Also emit specific events for started/stopped for better component control
+          if (this.running) {
+            const botStartedEvent = window.AppEvents?.BOT_STARTED || 'bot:started';
+            window.EventBus.emit(botStartedEvent, { uptime: this.uptime });
+          } else {
+            const botStoppedEvent = window.AppEvents?.BOT_STOPPED || 'bot:stopped';
+            window.EventBus.emit(botStoppedEvent, {});
+          }
+        }
       })
       .catch(error => {
         console.error("Error checking bot status:", error);
@@ -81,7 +108,42 @@ window.BotStatus = {
         
         // Still update UI but skip notifications
         this.updateUI(true);
+        
+        // Emit error event if EventBus is available
+        if (window.EventBus && window.EventBus.emit) {
+          const errorEvent = window.AppEvents?.BOT_ERROR || 'bot:error';
+          window.EventBus.emit(errorEvent, {
+            message: error.message,
+            error: error
+          });
+        }
       });
+  },
+  
+  // Handle status updates from other sources (like WebSockets)
+  handleStatusUpdate: function(data) {
+    // Update status if we have valid data
+    if (data && (typeof data.running !== 'undefined' || typeof data.status !== 'undefined')) {
+      // Handle both data formats (direct running property or status property)
+      if (typeof data.running !== 'undefined') {
+        this.running = !!data.running;
+      } else if (typeof data.status !== 'undefined') {
+        this.running = data.status === 'running';
+      }
+      
+      // Update other properties if available
+      if (typeof data.connected !== 'undefined') this.connected = !!data.connected;
+      if (typeof data.tts_enabled !== 'undefined') this.tts_enabled = !!data.tts_enabled;
+      
+      // Update timestamp
+      this.last_checked = new Date();
+      
+      // Update uptime if provided
+      if (data.uptime) this.uptime = data.uptime;
+      
+      // Update UI
+      this.updateUI(false);
+    }
   },
   
   // Update all UI elements
