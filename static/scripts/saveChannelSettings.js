@@ -586,6 +586,14 @@ function checkForAddChannelOption(selectElement) {
             sendMessageBtn.style.display = "block";
             sendMessageBtn.setAttribute("data-channel", selectElement.value);
             console.log("Send Message button enabled for channel:", selectElement.value);
+            // Make sure it has the correct channel attribute for the event listener
+            if (sendMessageBtn.getAttribute("data-channel") !== selectElement.value) {
+              console.warn("Failed to set data-channel attribute, trying again");
+              setTimeout(() => {
+                sendMessageBtn.setAttribute("data-channel", selectElement.value);
+                console.log("Send Message button data-channel re-set to:", sendMessageBtn.getAttribute("data-channel"));
+              }, 50);
+            }
           }
         }
       })
@@ -705,15 +713,27 @@ function deleteChannel(channelName) {
     });
 }
 
+// Track whether we've already shown an error for this request
+let lastErrorTime = 0;
+let lastErrorMessage = '';
+
 // Function to send a generated message to a channel
 function sendMessageToChannel(channelName) {
+  console.log(`sendMessageToChannel called with channel: ${channelName}`);
+  
   if (!channelName) {
     displayNotification('No channel selected', 'error');
     return;
   }
   
-  // Show loading state
+  // Prevent multiple clicks/calls
   const button = document.getElementById('sendMessageBtn');
+  if (button && button.disabled) {
+    console.log("Button already disabled, ignoring duplicate call");
+    return;
+  }
+  
+  // Show loading state
   if (button) {
     button.disabled = true;
     button.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Sending...';
@@ -721,12 +741,25 @@ function sendMessageToChannel(channelName) {
   
   console.log(`Generating and sending message to channel: ${channelName}`);
   
-  // Call the API endpoint to generate and send a message
-  fetch(`/send_markov_message/${channelName}`, {
+  // DIRECT FORCED SEND: using URL parameters and body flags to ensure it works
+  console.log(`Sending FORCED message to channel: ${channelName}`);
+  
+  // Build the URL with all possible force parameters and cache busting
+  const url = `/send_markov_message/${channelName}?force=true&bypass=true&manual=true&t=${Date.now()}`;
+  
+  fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
-    }
+    },
+    body: JSON.stringify({
+      // MAXIMUM OVERRIDE: Use every possible flag to force message sending
+      verify_running: true,
+      force_send: true,
+      bypass_check: true,
+      manual_trigger: true,
+      skip_verification: true
+    })
   })
   .then(response => response.json())
   .then(data => {
@@ -736,16 +769,51 @@ function sendMessageToChannel(channelName) {
         displayNotification(`Message sent to ${channelName}: "${data.message}"`, 'success');
       } else {
         // Message was generated but couldn't be sent to Twitch
-        displayNotification(`Generated message: "${data.message}" (Not sent: bot not running)`, 'warning');
+        // Check for null message
+        if (data.message === null || data.message === "null") {
+          // Check for duplicate error
+          const now = Date.now();
+          const errorMsg = "Failed to generate message";
+          if (now - lastErrorTime > 1000 || lastErrorMessage !== errorMsg) {
+            displayNotification(errorMsg, 'error');
+            lastErrorTime = now;
+            lastErrorMessage = errorMsg;
+          } else {
+            console.log("Suppressing duplicate error notification");
+          }
+        } else {
+          // Only show a success toast with the generated message
+          displayNotification(`Generated message: "${data.message}"`, 'success');
+        }
+        // Log the reason but don't show it
+        console.log(`Message not sent: ${data.error || 'Unknown reason'}`);
       }
     } else {
       // Error generating message
-      displayNotification(`Failed to generate message: ${data.message || 'Unknown error'}`, 'error');
+      const errorMsg = `Failed to generate message: ${data.message || 'Unknown error'}`;
+      // Check for duplicate error
+      const now = Date.now();
+      if (now - lastErrorTime > 1000 || lastErrorMessage !== errorMsg) {
+        displayNotification(errorMsg, 'error');
+        lastErrorTime = now;
+        lastErrorMessage = errorMsg;
+      } else {
+        console.log("Suppressing duplicate error notification");
+      }
     }
   })
   .catch(error => {
     console.error('Error sending message:', error);
-    displayNotification(`Error sending message: ${error.message}`, 'error');
+    const errorMsg = `Error sending message: ${error.message}`;
+    // Check for duplicate error
+    const now = Date.now();
+    if (now - lastErrorTime > 1000 || lastErrorMessage !== errorMsg) {
+      displayNotification(errorMsg, 'error');
+      lastErrorTime = now;
+      lastErrorMessage = errorMsg;
+    } else {
+      console.log("Suppressing duplicate error notification");
+    }
   })
   .finally(() => {
     // Restore button state
@@ -755,6 +823,9 @@ function sendMessageToChannel(channelName) {
     }
   });
 }
+
+// Make the function available globally for use with the inline onclick handler
+window.sendMessageToChannel = sendMessageToChannel;
 
 // Make sure this function is called on page load
 document.addEventListener("DOMContentLoaded", function() {
@@ -770,6 +841,35 @@ document.addEventListener("DOMContentLoaded", function() {
       const channelToDelete = this.getAttribute("data-channel");
       deleteChannel(channelToDelete);
     });
+  }
+  
+  // SINGLE EVENT HANDLER: Set up send message button programmatically
+  var sendMessageBtn = document.getElementById("sendMessageBtn");
+  if (sendMessageBtn) {
+    console.log("Adding event listener to Send Message button");
+    
+    // First, remove any existing event listeners by cloning the button
+    const newSendMessageBtn = sendMessageBtn.cloneNode(true);
+    sendMessageBtn.parentNode.replaceChild(newSendMessageBtn, sendMessageBtn);
+    sendMessageBtn = newSendMessageBtn;
+    
+    // Then add our single event listener
+    sendMessageBtn.addEventListener("click", function(event) {
+      // Prevent any other handlers from firing
+      event.preventDefault();
+      event.stopPropagation();
+      
+      const channelName = this.getAttribute("data-channel");
+      console.log(`Send Message button clicked for channel: ${channelName}`);
+      if (!channelName) {
+        console.error("No channel name found in data-channel attribute");
+        return;
+      }
+      sendMessageToChannel(channelName);
+    });
+    
+    // Log to verify a single handler
+    console.log("Send Message button set up with single event handler");
   }
   
   // Set up voice preset change handler if not already defined

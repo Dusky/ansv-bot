@@ -109,19 +109,15 @@ window.ThemeManager = {
                 window.notificationSystem.showToast('Theme updated successfully', 'success');
             }
             
-            // After success, reload the page to fully apply the theme
-            setTimeout(() => {
-                window.location.href = window.location.pathname + '?refresh=' + Date.now();
-            }, 500); // Short delay to allow the toast to be seen
+            // Apply theme changes without page reload
+            console.log("Theme change successful - applying without page reload");
         })
         .catch(error => {
             console.error('Error setting theme:', error);
             window.notificationSystem.showToast('Error changing theme. Reloading to apply local changes.', 'warning');
             
-            // Even if server request fails, try to reload with the cookie we set
-            setTimeout(() => {
-                window.location.href = window.location.pathname + '?refresh=' + Date.now();
-            }, 1000);
+            // Apply theme changes without page reload
+            console.log("Theme change failed but applying local changes without reload");
         })
         .finally(() => {
             if (loadingIndicator) {

@@ -530,6 +530,12 @@ function hideLoading() {
 
 // Auto-refresh stats data periodically
 function setupStatsAutoRefresh() {
+  // IMPORTANT: Do not auto-refresh on settings page to prevent constant refreshing
+  if (window.location.pathname.includes('/settings')) {
+    console.log("On settings page - disabling auto-refresh to prevent refresh loops");
+    return;
+  }
+
   const statsContainer = document.getElementById('statsContainer');
   if (statsContainer) {
     try {
@@ -554,18 +560,21 @@ function setupStatsAutoRefresh() {
       }
       
       // Refresh every 2 minutes with the best available function
-      setInterval(function() {
-        console.log("Auto-refreshing stats...");
-        if (typeof window.loadStatistics === 'function') {
-          window.loadStatistics();
-        } else if (typeof window.eventListenerLoadStats === 'function') {
-          window.eventListenerLoadStats();
-        } else if (typeof window.loadStats === 'function') {
-          window.loadStats();
-        } else if (typeof window.updateChannelCount === 'function') {
-          window.updateChannelCount();
-        }
-      }, 120000);
+      // But ONLY if we're not on the settings page
+      if (!window.location.pathname.includes('/settings')) {
+        setInterval(function() {
+          console.log("Auto-refreshing stats...");
+          if (typeof window.loadStatistics === 'function') {
+            window.loadStatistics();
+          } else if (typeof window.eventListenerLoadStats === 'function') {
+            window.eventListenerLoadStats();
+          } else if (typeof window.loadStats === 'function') {
+            window.loadStats();
+          } else if (typeof window.updateChannelCount === 'function') {
+            window.updateChannelCount();
+          }
+        }, 120000);
+      }
     } catch (error) {
       console.error("Error in setupStatsAutoRefresh:", error);
     }

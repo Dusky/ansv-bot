@@ -46,9 +46,14 @@ document.addEventListener('DOMContentLoaded', function() {
         console.error('Error initializing system info:', e);
     }
     
-    // Set up refresh intervals
-    setInterval(checkBotStatus, 30000); // Every 30 seconds
-    setInterval(loadRecentTTS, 60000);  // Every minute
+    // Set up refresh intervals, but NOT on settings page
+    if (!window.location.pathname.includes('settings')) {
+        console.log("Setting up main page refresh intervals");
+        setInterval(checkBotStatus, 30000); // Every 30 seconds
+        setInterval(loadRecentTTS, 60000);  // Every minute
+    } else {
+        console.log("On settings page - skipping refresh intervals");
+    }
     
     // Set up event listeners - with null check
     const refreshRecentBtn = document.getElementById('refreshRecentBtn');

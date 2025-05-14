@@ -519,18 +519,32 @@ class Bot(commands.Bot):
         print(tabulate(files_data, headers=headers, tablefmt="pretty", numalign="right"))
 
     def determine_cache_status(self, channel_name, file_text, create_individual_caches, cache_directory):
+        """Determine cache status for a given channel"""
         cache_file_path = os.path.join(cache_directory, f"{channel_name}_model.json")
         cache_status = "Unchanged"
         cache_file_display = "general_markov_model.json"
 
+        # Check for DB-registered channels
+        conn = sqlite3.connect(self.db_file)
+        c = conn.cursor()
+        c.execute("SELECT channel_name FROM channel_configs")
+        valid_channels = set(row[0] for row in c.fetchall())
+        conn.close()
+
         if channel_name in valid_channels and create_individual_caches:
             channel_model = markovify.Text(file_text)
             self.models[channel_name] = channel_model
+            
             # Check if the cache file needs to be updated
-            if self.should_update_cache(channel_name):
+            # Note: Checking last build time or model differences to decide
+            last_build_time = self.cache_build_times.get(channel_name)
+            if self.rebuild_cache or last_build_time is None:
                 with open(cache_file_path, 'w') as cache_file:
                     cache_file.write(channel_model.to_json())
                 cache_status = "Updated"
+                # Update the build time
+                self.cache_build_times[channel_name] = time.time()
+                
             cache_file_display = f"{channel_name}_model.json"
 
         return cache_status, cache_file_display
@@ -1278,35 +1292,150 @@ class Bot(commands.Bot):
 
     async def check_message_requests(self):
         """Check for message requests from the web interface"""
+        # First check for task restart requests
+        restart_file = 'bot_task_restart.json'
+        if os.path.exists(restart_file):
+            try:
+                with open(restart_file, 'r') as f:
+                    import json
+                    restart_data = json.load(f)
+                
+                task_name = restart_data.get('task', '')
+                self.logger.info(f"{YELLOW}Found task restart request for {task_name}{RESET}")
+                
+                if task_name == 'message_request_checker' and self.message_request_check:
+                    # Cancel the existing task
+                    try:
+                        self.message_request_check.cancel()
+                        self.logger.info(f"{YELLOW}Cancelled existing message_request_checker task{RESET}")
+                    except:
+                        pass
+                    
+                    # Create a new task
+                    self.message_request_check = self.loop.create_task(self.message_request_checker())
+                    self.logger.info(f"{GREEN}Restarted message_request_checker task{RESET}")
+                
+                # Remove the restart file
+                try:
+                    os.remove(restart_file)
+                except Exception as e:
+                    self.logger.error(f"{RED}Error removing restart file: {e}{RESET}")
+            except Exception as e:
+                self.logger.error(f"{RED}Error processing restart request: {e}{RESET}")
+                try:
+                    os.remove(restart_file)
+                except:
+                    pass
+        
+        # Now check for message requests
         request_file = 'bot_message_request.json'
         
         if os.path.exists(request_file):
+            self.logger.info(f"{YELLOW}Found message request file{RESET}")
             try:
+                # Read the request file
                 with open(request_file, 'r') as f:
                     import json
                     data = json.load(f)
-                    
+                
+                # Log the request details
+                request_id = data.get('request_id', 'unknown')
+                action = data.get('action', 'unknown')
+                force = data.get('force', False)
+                self.logger.info(f"{YELLOW}Processing message request{RESET}: ID={request_id}, Action={action}, Force={force}")
+                
                 # Process the message request
                 if data['action'] == 'send_message':
                     channel = data['channel']
                     message = data['message']
                     
-                    # Send the message
-                    await self.send_message_to_channel(channel, message)
+                    # Make sure the channel is in the correct format
+                    if not channel.startswith('#'):
+                        channel = f"#{channel}"
                     
-                    # Log the successful processing
-                    self.logger.info(f"{GREEN}Processed message request{RESET}: Sent to {PURPLE}#{channel}{RESET}")
+                    self.logger.info(f"{YELLOW}Attempting to send message to {channel}{RESET}: {message[:50]}...")
                     
-                # Remove the request file after processing
-                os.remove(request_file)
+                    try:
+                        # Try to get the channel object first
+                        channel_obj = self.get_channel(channel.lstrip('#'))
+                        success = False
+                        
+                        if channel_obj:
+                            # Send directly with channel object
+                            await channel_obj.send(message)
+                            self.logger.info(f"{GREEN}Successfully sent message via channel object to {channel}{RESET}")
+                            success = True
+                        else:
+                            # Fallback to our helper method
+                            sent = await self.send_message_to_channel(channel, message)
+                            if sent:
+                                self.logger.info(f"{GREEN}Successfully sent message via helper to {channel}{RESET}")
+                                success = True
+                            else:
+                                self.logger.error(f"{RED}Failed to send message to {channel}{RESET}")
+                                
+                                # Try to join the channel and send again - especially if force flag is set
+                                self.logger.info(f"{YELLOW}Attempting to join {channel} and retry...{RESET}")
+                                join_success = await self.join_channel(channel)
+                                
+                                if join_success:
+                                    # Try sending one more time - with a slight delay to ensure the join completes
+                                    await asyncio.sleep(0.5)
+                                    
+                                    # Try to get channel object again
+                                    channel_obj = self.get_channel(channel.lstrip('#'))
+                                    if channel_obj:
+                                        try:
+                                            await channel_obj.send(message)
+                                            self.logger.info(f"{GREEN}Successfully sent message on retry to {channel}{RESET}")
+                                            success = True
+                                        except Exception as send_error:
+                                            self.logger.error(f"{RED}Error sending message on retry: {send_error}{RESET}")
+                                    else:
+                                        # Last fallback - try helper again
+                                        sent = await self.send_message_to_channel(channel, message)
+                                        if sent:
+                                            self.logger.info(f"{GREEN}Successfully sent message on second retry to {channel}{RESET}")
+                                            success = True
+                                        else:
+                                            self.logger.error(f"{RED}Failed to send message on second retry to {channel}{RESET}")
+                                else:
+                                    self.logger.error(f"{RED}Failed to join channel {channel}{RESET}")
+                        
+                        # Log the final result
+                        if success:
+                            self.logger.info(f"{GREEN}Message request processed successfully{RESET}: Sent to {PURPLE}{channel}{RESET}")
+                            # Save message to logs
+                            self.my_logger.log_message(channel.lstrip('#'), self.nick, message)
+                        else:
+                            self.logger.error(f"{RED}Failed to send message to {channel} after all attempts{RESET}")
+                            
+                    except Exception as send_error:
+                        self.logger.error(f"{RED}Error sending message to {channel}: {send_error}{RESET}")
+                
+                # Always remove the request file after processing
+                try:
+                    os.remove(request_file)
+                    self.logger.info(f"{GREEN}Removed processed request file{RESET}")
+                except Exception as rm_error:
+                    self.logger.error(f"{RED}Error removing request file: {rm_error}{RESET}")
+                
             except Exception as e:
-                self.logger.error(f"Error processing message request: {e}")
+                self.logger.error(f"{RED}Error processing message request: {e}{RESET}")
                 
                 # Rename the file to avoid repeated errors
                 try:
-                    os.rename(request_file, f"{request_file}.error")
-                except:
-                    pass
+                    error_file = f"{request_file}.error.{int(time.time())}"
+                    os.rename(request_file, error_file)
+                    self.logger.info(f"{YELLOW}Renamed error file to {error_file}{RESET}")
+                except Exception as rename_error:
+                    self.logger.error(f"{RED}Error renaming request file: {rename_error}{RESET}")
+                    try:
+                        # Last resort: try to delete it
+                        os.remove(request_file)
+                        self.logger.info(f"{YELLOW}Deleted error file as fallback{RESET}")
+                    except:
+                        pass
 
     async def message_request_checker(self):
         """Periodically check for message requests"""
@@ -1314,6 +1443,24 @@ class Bot(commands.Bot):
             await self.check_message_requests()
             await asyncio.sleep(2)  # Check every 2 seconds
 
+    def is_tts_enabled(self, channel_name):
+        """Check if TTS is enabled for a channel"""
+        try:
+            # Remove # prefix if present for database lookup
+            clean_channel = channel_name.lstrip('#')
+            
+            conn = sqlite3.connect(self.db_file)
+            c = conn.cursor()
+            c.execute("SELECT tts_enabled FROM channel_configs WHERE channel_name = ?", (clean_channel,))
+            result = c.fetchone()
+            conn.close()
+            
+            # Return True if tts_enabled is 1, False otherwise
+            return result is not None and result[0] == 1
+        except Exception as e:
+            self.logger.error(f"Error checking TTS status for {channel_name}: {e}")
+            return False
+            
     async def handle_speak_command(self, ctx):
         """Handle the !speak command with improved TTS processing"""
         channel = ctx.channel.name
@@ -1348,7 +1495,15 @@ class Bot(commands.Bot):
                 return
             
             # Process the TTS with proper error handling
-            success, audio_file = await process_text(channel, message_to_speak)
+            # Use the correct parameter order based on how process_text is defined
+            try:
+                from utils.tts import process_text
+                # Note: We're using the import here to ensure we're calling the right function
+                # The expected signature is process_text(message, channel, db_file)
+                success, audio_file = await process_text(message_to_speak, channel, self.db_file)
+            except Exception as tts_error:
+                self.logger.error(f"Error processing TTS: {tts_error}")
+                success, audio_file = False, None
             
             if success and audio_file:
                 # TTS was successful, log and notify
@@ -1365,12 +1520,12 @@ class Bot(commands.Bot):
                     conn.commit()
                     conn.close()
                 except Exception as e:
-                    print(f"Error logging TTS usage: {e}")
+                    self.logger.error(f"Error logging TTS usage: {e}")
             else:
                 # TTS failed, inform the user
                 await ctx.send("Sorry, there was an error generating the TTS audio.")
         except Exception as e:
-            print(f"Error in speak command: {e}")
+            self.logger.error(f"Error in speak command: {e}")
             await ctx.send(f"Error: {str(e)}")
 
 
