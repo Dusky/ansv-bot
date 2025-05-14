@@ -31,6 +31,8 @@ This document catalogs issues found in the ANSV Bot's Markov chain implementatio
 #### 6. Web API Inconsistencies
 - Two different endpoints for message generation with different behaviors
 - Missing rate limiting for API endpoints
+- **400 Bad Request errors due to missing or null request bodies**
+- **Misleading "bot not running" messages despite the bot actually running**
 
 ### Suggested Improvements
 
@@ -42,10 +44,91 @@ For each issue, the following improvements are recommended:
 4. **Performance**: Precompile models and implement async processing
 5. **Error Handling**: Improve error reporting and add metrics collection
 6. **API Design**: Consolidate endpoints and add rate limiting
+7. **Request Format Standardization**: Ensure all API calls use proper JSON bodies
+8. **Status Verification**: Add `verify_running: true` to all relevant API calls
 
 Each issue should be addressed systematically, with careful testing between changes.
 
-## Part 2: JavaScript Code Organization Improvements
+## Part 2: Message Generation API Issues
+
+### Issues Identified and Fixed
+
+1. **400 Bad Request Errors**
+   - Requests to `/generate-message` and `/send_markov_message/<channel>` endpoints were failing with 400 errors
+   - Root cause: JavaScript was sending null or empty request bodies, but server requires valid JSON objects
+   - Several implementations were inconsistent in how they structured and sent API requests
+
+2. **False "Bot Not Running" Messages**
+   - After generating messages, users would get "Generated message: 'null' (Not sent: bot not running)" despite the bot running
+   - Root cause: Missing `verify_running: true` flag in API requests and poor error handling for null messages
+   - Misleading error messages were being shown to users
+
+3. **Cross-module Communication Issues**
+   - The server architecture has issues with sharing the `bot_instance` variable between modules
+   - Multiple competing implementations of message generation exist across files
+
+4. **Duplicate Notifications**
+   - The "Generate & Send" button in channel settings was causing duplicate notifications and API calls
+   - Root cause: Both inline onclick handler and addEventListener were triggering the same function
+   - Fixed by removing the inline onclick handler and using only the programmatic event listener
+
+5. **Messages Not Being Sent to Twitch**
+   - The "Generate & Send" button wasn't reliably sending messages to Twitch even when the bot was running
+   - Root cause: Server-side bot status detection was overly cautious, preventing message sending
+   - Fixed by adding force_send and bypass_check flags to bypass status verification
+
+### Instances of API Calls Found
+
+#### 1. `/send_markov_message/<channelName>` Endpoints:
+
+In **markov.js**:
+- Direct implementation in `sendMarkovMessage()` (line 160)
+- Implementation via `MessageManager.generateMessage()` (line 268)
+- Multiple aliases via window functions (lines 449-472)
+
+In **saveChannelSettings.js**:
+- Direct implementation in `sendMessageToChannel()` (line 709)
+
+#### 2. `/generate-message` Endpoints:
+
+In **markov.js**:
+- Direct implementation in fallback `generateMessage()` (line 16)
+- Implementation via `MessageManager.generateMessage()` (line 268)
+
+In **data_handler.js**:
+- Primary implementation in `generateMessage()` (line 419)
+
+### Fixes Implemented
+
+1. **In markov.js**:
+   - Added `verify_running: true` to direct `sendMarkovMessage()` implementation 
+   - Fixed body format in `MessageManager.generateMessage()`
+   - Added null message checking in both implementations
+   - Improved error handling and user notifications
+
+2. **In saveChannelSettings.js**:
+   - Added `verify_running: true` to `sendMessageToChannel()` implementation
+   - Improved handling of null messages
+   - Standardized notification messages
+
+3. **In data_handler.js**:
+   - Verified that primary `generateMessage()` implementation was correctly formatted
+
+### Future Recommendations
+
+1. **Consolidate Implementations**:
+   - Centralize all message generation through `MessageManager` for consistency
+   - Eliminate redundant implementations where possible
+
+2. **Server-side Improvements**:
+   - Fix cross-module sharing of the `bot_instance` variable
+   - Add more validation and error handling in server endpoints
+
+3. **Documentation**:
+   - Add inline comments explaining required parameters for API endpoints
+   - Document the need for `verify_running: true` to prevent misleading messages
+
+## Part 3: JavaScript Code Organization Improvements
 
 ### Issues Addressed
 
@@ -134,10 +217,3 @@ Each issue should be addressed systematically, with careful testing between chan
    - Reduced DOM manipulation
    - Fewer network requests through better state management
    - Unified event listeners reduce memory usage
-
-### Next Steps
-
-1. Continue refactoring other JavaScript files to use the centralized systems
-2. Update HTML templates to use the new data attributes for better integration
-3. Add comprehensive documentation for the new architecture
-4. Implement automated tests for the core functionality

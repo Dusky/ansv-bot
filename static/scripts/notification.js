@@ -7,6 +7,9 @@
 // Create a namespace for notification functions to avoid global conflicts
 window.notificationSystem = window.notificationSystem || {};
 
+// Track recently shown toasts to prevent duplicates
+window.notificationSystem.recentToasts = [];
+
 /**
  * Primary toast notification function
  * @param {string} message - The message to display
@@ -15,6 +18,33 @@ window.notificationSystem = window.notificationSystem || {};
  * @returns {string} The ID of the created toast element
  */
 window.notificationSystem.showToast = function(message, type = 'info', duration = 5000) {
+    console.log(`Showing toast: ${message} (${type})`);
+    
+    // DUPLICATE PREVENTION: Check if we've shown this message recently
+    const now = Date.now();
+    const toastSignature = `${message}|${type}`;
+    
+    // Filter out old toasts (older than 1 second)
+    window.notificationSystem.recentToasts = window.notificationSystem.recentToasts.filter(
+        toast => now - toast.timestamp < 1000
+    );
+    
+    // Check for duplicate
+    const isDuplicate = window.notificationSystem.recentToasts.some(
+        toast => toast.signature === toastSignature
+    );
+    
+    if (isDuplicate) {
+        console.log(`Suppressing duplicate toast: ${message}`);
+        return null;
+    }
+    
+    // Add this toast to recent toasts
+    window.notificationSystem.recentToasts.push({
+        signature: toastSignature,
+        timestamp: now
+    });
+    
     // Get or create toast container
     let container = document.getElementById('toastContainer');
     if (!container) {
@@ -25,7 +55,7 @@ window.notificationSystem.showToast = function(message, type = 'info', duration 
     }
     
     // Create unique ID for this toast
-    const toastId = 'toast-' + Date.now();
+    const toastId = 'toast-' + now;
     
     // Set color and icon based on type
     let bgClass = 'bg-primary';

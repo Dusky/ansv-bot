@@ -39,6 +39,15 @@ window.BotStatus = window.BotStatus || {
   
   // Check bot status from server
   checkStatus: function() {
+    // CRITICAL: Don't check bot status repeatedly on settings page to prevent theme refresh loop
+    const isSettingsPage = window.location.pathname.includes('settings');
+    
+    // If on settings page, only check status once and then skip future auto-checks
+    if (isSettingsPage && this._settingsPageChecked) {
+        console.log("Skipping auto status check on settings page");
+        return;
+    }
+    
     console.log("Checking bot status...");
     
     fetch('/api/bot-status')
@@ -64,10 +73,15 @@ window.BotStatus = window.BotStatus || {
         this.last_checked = new Date();
         this.uptime = data.uptime || null;
         
-        // Trigger UI updates - but don't trigger toast notifications if we're on the settings page
-        // and the status hasn't changed
-        const isSettingsPage = window.location.pathname.includes('settings');
-        this.updateUI(isSettingsPage && !statusChanged);
+        // If on settings page, mark that we've checked once
+        if (isSettingsPage) {
+            this._settingsPageChecked = true;
+        }
+        
+        // Skip updates on settings page to avoid theme refresh loops
+        if (!isSettingsPage) {
+            this.updateUI(false);
+        }
         
         // Dispatch event for other scripts using DOM events (legacy)
         const event = new CustomEvent('botstatus', { 

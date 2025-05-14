@@ -53,13 +53,38 @@ class MarkovHandler:
 
 
 
-    def generate_message(self, channel_name=None):
-        """Generate a message using the specified channel's model, or the general model if None"""
+    def generate_message(self, channel_name=None, max_attempts=8, max_fallbacks=2):
+        """
+        Generate a message using the specified channel's model, or the general model if None.
+        
+        Args:
+            channel_name (str, optional): Channel name to generate message for. Defaults to None (general).
+            max_attempts (int, optional): Maximum attempts to generate a message. Defaults to 8.
+            max_fallbacks (int, optional): Maximum number of fallback attempts. Defaults to 2.
+            
+        Returns:
+            str: Generated message or None if generation failed
+        """
+        # Keep track of fallbacks to prevent infinite recursion
+        fallback_count = getattr(self, '_fallback_count', 0)
+        self._fallback_count = fallback_count 
+        
+        # If we've exceeded max fallbacks, return a default message
+        if fallback_count > max_fallbacks:
+            self.logger.warning(f"Max fallback attempts ({max_fallbacks}) reached")
+            self._fallback_count = 0  # Reset for next call
+            return "Could not generate a message after multiple attempts."
+            
         try:
+            # Use general model as fallback if specified channel not found
+            fallback_to_general = True
+            
             if channel_name is None or channel_name == 'general':
                 # Use the general model
                 model_file = os.path.join(self.cache_directory, "general_markov_model.json")
                 model_name = "general_markov"
+                # Don't fallback to general since we're already using it
+                fallback_to_general = False 
             else:
                 # Use the channel-specific model
                 model_file = os.path.join(self.cache_directory, f"{channel_name}_model.json")
@@ -68,29 +93,114 @@ class MarkovHandler:
             # Check if model exists
             if not os.path.exists(model_file):
                 self.logger.error(f"Model file not found: {model_file}")
+                # Try general model as fallback if appropriate
+                if fallback_to_general:
+                    self.logger.info(f"Falling back to general model for channel: {channel_name}")
+                    self._fallback_count = fallback_count + 1
+                    return self.generate_message("general", max_attempts, max_fallbacks)
                 return None
             
             # Load the model
             model = self.models.get(model_name)
             if not model:
                 self.logger.info(f"Loading model: {model_name}")
-                with open(model_file, 'r') as f:
-                    model_data = json.load(f)
-                self.models[model_name] = model_data
-                model = model_data
+                try:
+                    with open(model_file, 'r') as f:
+                        model_data = json.load(f)
+                    self.models[model_name] = model_data
+                    model = model_data
+                except json.JSONDecodeError as e:
+                    self.logger.error(f"Failed to parse model JSON for {model_name}: {e}")
+                    if fallback_to_general:
+                        self.logger.info(f"JSON error with {channel_name} model, trying general model")
+                        self._fallback_count = fallback_count + 1
+                        return self.generate_message("general", max_attempts, max_fallbacks)
+                    return None
+                except Exception as e:
+                    self.logger.error(f"Error loading model {model_name}: {e}")
+                    if fallback_to_general:
+                        self.logger.info(f"Error loading {channel_name} model, trying general model")
+                        self._fallback_count = fallback_count + 1
+                        return self.generate_message("general", max_attempts, max_fallbacks)
+                    return None
             
-            # Generate message using markovify's built-in method
+            # Generate message using markovify's built-in method with multiple attempts
             # The model might be a Markovify model or a JSON representation
+            message = None
+            
+            # Log the generation attempt for monitoring
+            self.logger.info(f"Attempting to generate message for {channel_name} (attempt 1/{max_attempts})")
+            
             if isinstance(model, dict):
                 # It's already the JSON, use it to create a Text model
-                model_obj = markovify.Text.from_json(json.dumps(model))
-                return model_obj.make_sentence()
+                try:
+                    model_obj = markovify.Text.from_json(json.dumps(model))
+                    
+                    # Make multiple attempts
+                    for attempt in range(1, max_attempts + 1):
+                        try:
+                            message = model_obj.make_sentence(tries=100)  # More internal tries as well
+                            if message:
+                                self.logger.info(f"Generated message on attempt {attempt}/{max_attempts}")
+                                break
+                            elif attempt < max_attempts:
+                                self.logger.debug(f"Failed to generate on attempt {attempt}/{max_attempts}, trying again")
+                        except Exception as e:
+                            self.logger.error(f"Error during sentence generation (attempt {attempt}): {e}")
+                except Exception as e:
+                    self.logger.error(f"Failed to create model from JSON for {channel_name}: {e}")
+                    # Try fallback if appropriate
+                    if fallback_to_general:
+                        self.logger.info(f"Error creating model for {channel_name}, trying general model")
+                        self._fallback_count = fallback_count + 1
+                        return self.generate_message("general", max_attempts, max_fallbacks)
+                    return None
             else:
                 # It's already a model object
-                return model.make_sentence()
+                # Make multiple attempts
+                for attempt in range(1, max_attempts + 1):
+                    try:
+                        message = model.make_sentence(tries=100)  # More internal tries as well
+                        if message:
+                            self.logger.info(f"Generated message on attempt {attempt}/{max_attempts}")
+                            break
+                        elif attempt < max_attempts:
+                            self.logger.debug(f"Failed to generate on attempt {attempt}/{max_attempts}, trying again")
+                    except Exception as e:
+                        self.logger.error(f"Error during sentence generation (attempt {attempt}): {e}")
+            
+            # If still no message, try fallback to general model
+            if not message and fallback_to_general:
+                self.logger.info(f"Couldn't generate message for {channel_name}, trying general model")
+                self._fallback_count = fallback_count + 1
+                return self.generate_message("general", max_attempts, max_fallbacks)
+            
+            # Return either the generated message or a default message
+            if message:
+                # Reset fallback counter on success
+                self._fallback_count = 0
+                return message
+            else:
+                # Only provide a default message if we can't fallback or are already in a fallback
+                if not fallback_to_general or fallback_count > 0:
+                    self.logger.warning(f"Failed to generate message for {channel_name or 'general'} after {max_attempts} attempts")
+                    self._fallback_count = 0  # Reset for next call
+                    return "Could not generate a message at this time."
+                return None
+                
         except Exception as e:
             self.logger.error(f"Error generating message: {e}")
-            return None
+            if fallback_to_general and channel_name != "general":
+                self.logger.info(f"Error with {channel_name} model, trying general model")
+                try:
+                    self._fallback_count = fallback_count + 1
+                    return self.generate_message("general", max_attempts, max_fallbacks)
+                except Exception as e2:
+                    self.logger.error(f"Error with fallback to general model: {e2}")
+            
+            # Reset fallback counter and return default message
+            self._fallback_count = 0  # Reset for next call
+            return "Could not generate a message due to an error."
 
     def get_available_models(self):
         """Get a list of available models from the cache directory."""

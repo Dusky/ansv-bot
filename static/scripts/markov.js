@@ -185,7 +185,12 @@ function sendMarkovMessage(channelName) {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
-    }
+    },
+    body: JSON.stringify({
+      verify_running: true,
+      force_send: true,  // Add force_send flag to bypass status checks
+      bypass_check: true // Additional parameter for backward compatibility
+    })
   })
     .then(response => {
       if (!response.ok) {
@@ -205,8 +210,13 @@ function sendMarkovMessage(channelName) {
           safeShowToast(`Message sent to ${channelName}: "${data.message}"`, 'success');
         } else {
           // Message was generated but couldn't be sent to Twitch
-          // Important: Only show a success toast with the generated message
-          safeShowToast(`Generated message: "${data.message}"`, 'success');
+          // Check for null message
+          if (data.message === null || data.message === "null") {
+            safeShowToast("Failed to generate message", 'error');
+          } else {
+            // Only show a success toast with the generated message
+            safeShowToast(`Generated message: "${data.message}"`, 'success');
+          }
           
           // Log but DON'T SHOW any "bot is not running" messages to user
           console.log(`Message generated but not sent: ${data.error || 'No reason provided'}`);
@@ -304,7 +314,11 @@ window.MessageManager = window.MessageManager || {
             
         // Prepare payload for POST request
         const payload = config.sendToTwitch
-            ? {} // sendMarkovMessage endpoint doesn't need a body
+            ? {
+                verify_running: true, // Add verify_running flag for send endpoint
+                force_send: true,     // Force the message to be sent
+                bypass_check: true    // Additional parameter for backward compatibility
+              } 
             : {
                 model: config.model,
                 channel: config.channel
@@ -316,7 +330,7 @@ window.MessageManager = window.MessageManager || {
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: config.sendToTwitch ? null : JSON.stringify(payload)
+            body: JSON.stringify(payload)
         })
         .then(response => {
             if (!response.ok) {
@@ -341,7 +355,14 @@ window.MessageManager = window.MessageManager || {
                     this.showNotification(`Message sent to ${config.channel}: "${message}"`, 'success');
                 } else if (config.sendToTwitch) {
                     // Message was generated but couldn't be sent
-                    this.showNotification(`Generated message: "${message}" (Not sent: bot not running)`, 'warning');
+                    // But don't automatically assume bot isn't running
+                    if (message === null || message === "null") {
+                        this.showNotification("Failed to generate message", 'error');
+                    } else {
+                        this.showNotification(`Generated message: "${message}"`, 'info');
+                        // Log the actual reason but don't show to user
+                        console.warn("Message was not sent:", data.error || "Unknown reason");
+                    }
                 } else {
                     // Message was only generated, not sent
                     this.showNotification(`Generated message: "${message}"`, 'success');
