@@ -45,11 +45,12 @@ pyarrow-hotfix==0.6
 python-dateutil==2.8.2
 python-engineio==4.9.0
 python-socketio==5.11.1
+python-dotenv==1.0.0
 pytz==2024.1
 PyYAML==6.0.1
 regex==2023.12.25
 requests==2.31.0
-safetensors==0.4.2
+safetensors>=0.4.3
 scipy==1.13.0
 sentencepiece==0.1.99
 simple-websocket==1.0.0
