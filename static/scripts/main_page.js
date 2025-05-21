@@ -400,52 +400,73 @@ function loadRecentTTS() {
 
 // Updated loadSystemInfo with better error handling
 function loadSystemInfo() {
-    // Check if elements exist first
-    const botUptime = document.getElementById('botUptime');
-    const messageCount = document.getElementById('messageCount');
-    
-    if (!botUptime && !messageCount) {
-        console.log('System info elements not found, skipping update');
-        return;
+    // Elements on index.html for Bot Analytics
+    const totalMessagesElement = document.getElementById('totalMessages'); // Total lines processed by Markov
+    const totalTTSElement = document.getElementById('totalTTS');       // Total TTS clips generated
+    // const totalResponsesElement = document.getElementById('totalResponses'); // Bot messages sent (needs backend)
+    // const activeSinceElement = document.getElementById('activeSince'); // Bot uptime (handled by bot_status.js)
+
+    // Elements for System Metrics (mostly placeholders currently)
+    // const cpuUsageElement = document.getElementById('cpuUsage');
+    // const memoryUsageElement = document.getElementById('memoryUsage');
+    // const diskUsageElement = document.getElementById('diskUsage');
+    // const serverUptimeElement = document.getElementById('uptime');
+
+
+    // Fetch data for "Total Messages" (from Markov line counts)
+    if (totalMessagesElement) {
+        fetch('/get-stats') // This endpoint returns model stats including line_count
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`Error fetching /get-stats: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(statsData => {
+                if (Array.isArray(statsData)) {
+                    let totalLines = 0;
+                    statsData.forEach(channel => {
+                        if (channel.line_count) {
+                            totalLines += parseInt(channel.line_count, 10);
+                        }
+                    });
+                    totalMessagesElement.textContent = totalLines.toLocaleString();
+                } else {
+                    totalMessagesElement.textContent = 'N/A';
+                    console.warn("/get-stats did not return an array for totalMessages:", statsData);
+                }
+            })
+            .catch(error => {
+                console.error('Error loading model stats for #totalMessages:', error);
+                totalMessagesElement.textContent = 'Error';
+            });
     }
-    
-    // Get the total model stats (including lines processed)
-    fetch('/get-stats')
-        .then(response => {
-            if (!response.ok) {
-                throw new Error(`Server responded with ${response.status}`);
-            }
-            return response.json();
-        })
-        .then(data => {
-            // Update message count using the brain stats
-            if (messageCount) {
-                let totalLines = 0;
-                data.forEach(channel => {
-                    if (channel.line_count) {
-                        totalLines += parseInt(channel.line_count);
-                    }
-                });
-                messageCount.textContent = totalLines.toLocaleString();
-            }
-            
-            // Get additional bot info for uptime
-            fetch('/api/bot-status')
-                .then(response => response.json())
-                .then(botData => {
-                    if (botUptime && botData.uptime) {
-                        botUptime.textContent = botData.uptime;
-                    } else if (botUptime) {
-                        botUptime.textContent = 'Not running';
-                    }
-                })
-                .catch(error => {
-                    console.error('Error loading bot status:', error);
-                });
-        })
-        .catch(error => {
-            console.error('Error loading model stats:', error);
-        });
+
+    // Fetch data for "Total TTS Generated" (from tts_logs count)
+    if (totalTTSElement) {
+        fetch('/api/tts-stats') // This endpoint returns { today, week, total }
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`Error fetching /api/tts-stats: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(ttsStatsData => {
+                if (ttsStatsData && typeof ttsStatsData.total !== 'undefined') {
+                    totalTTSElement.textContent = ttsStatsData.total.toLocaleString();
+                } else {
+                    totalTTSElement.textContent = 'N/A';
+                    console.warn("/api/tts-stats did not return expected data for #totalTTS:", ttsStatsData);
+                }
+            })
+            .catch(error => {
+                console.error('Error loading TTS stats for #totalTTS:', error);
+                totalTTSElement.textContent = 'Error';
+            });
+    }
+
+    // Note: #activeSince (Bot Uptime) is handled by static/scripts/bot_status.js
+    // Other metrics like CPU, Memory, Disk, Server Uptime, Bot Responses would need their own backend data sources.
 }
 
 // Add this function to handle reconnect requests

@@ -485,8 +485,14 @@ function safeShowToast(message, type = 'info') {
 
 // Load stats when the page loads
 document.addEventListener('DOMContentLoaded', function() {
+  // Check if we are on the stats page before doing anything
+  if (!document.getElementById('statsContainer')) { // 'statsContainer' is unique to stats.html
+    console.log("Not on stats page, stats.js will not initialize its main functions.");
+    return; 
+  }
+
   const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-  if (isDev) console.log("Stats.js loaded and initializing...");
+  if (isDev) console.log("Stats.js loaded and initializing on stats page...");
   
   // Initialize search and sort functionality for the channel table
   initSearch(); // Call the function to set up search/sort
