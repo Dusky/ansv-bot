@@ -755,12 +755,16 @@ def get_stats_route():
         
         available_models_info = None
         try:
-            app.logger.debug("Calling markov_handler.get_available_models()")
-            available_models_info = markov_handler.get_available_models()
-            app.logger.debug(f"markov_handler.get_available_models() returned: {type(available_models_info)} - {str(available_models_info)[:200]}")
+            app.logger.debug("Checking and calling markov_handler.get_available_models()")
+            if markov_handler and hasattr(markov_handler, 'get_available_models') and callable(markov_handler.get_available_models):
+                available_models_info = markov_handler.get_available_models()
+                app.logger.debug(f"markov_handler.get_available_models() returned: {type(available_models_info)} - {str(available_models_info)[:200]}")
+            else:
+                app.logger.error("markov_handler is not properly initialized or get_available_models is not callable. Proceeding with no model info.")
+                # available_models_info remains None
         except Exception as mh_exc:
-            app.logger.error(f"Exception from markov_handler.get_available_models(): {mh_exc}", exc_info=True)
-            # Proceed with available_models_info as None, which is handled below
+            app.logger.error(f"Exception during call to markov_handler.get_available_models(): {mh_exc}", exc_info=True)
+            # Proceed with available_models_info as None, which is handled by the logic below
 
         model_info_map = {}
         if isinstance(available_models_info, list): # Check if it's a list
