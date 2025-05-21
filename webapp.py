@@ -624,6 +624,36 @@ def server_error_handler(e):
     # theme = request.cookies.get('theme', 'darkly') # Theme is now injected by context_processor
     return render_template('500.html', error_message="500: Internal Server Error"), 500 # No need to pass theme
 
+@app.route('/api/recent-tts')
+def api_recent_tts():
+    try:
+        conn = sqlite3.connect(db_file)
+        conn.row_factory = sqlite3.Row # To access columns by name
+        c = conn.cursor()
+        # Fetch necessary fields, including channel and voice_preset
+        c.execute("""
+            SELECT message_id, channel, file_path, message, timestamp, voice_preset 
+            FROM tts_logs 
+            ORDER BY created_at DESC, message_id DESC 
+            LIMIT 10
+        """)
+        rows = c.fetchall()
+        conn.close()
+        
+        files_data = [{
+            "id": row["message_id"], 
+            "channel": row["channel"],
+            "file_path": row["file_path"], 
+            "message": row["message"], 
+            "timestamp": row["timestamp"], # Ensure this is in a format JS Date() can parse (ISO 8601 ideally)
+            "voice_preset": row["voice_preset"]
+        } for row in rows]
+        
+        return jsonify(files_data)
+    except Exception as e:
+        app.logger.error(f"Error in /api/recent-tts: {e}")
+        return jsonify({"error": str(e), "files": []}), 500
+
 if __name__ == "__main__":
     markov_handler.load_models()
     

@@ -25,7 +25,10 @@ function safeShowToast(message, type = 'info') {
 // Main page functionality
 document.addEventListener('DOMContentLoaded', function() {
     // Initialize functions
-    checkBotStatus();
+    // checkBotStatus(); // Removed: Handled by bot_status.js
+    if (window.BotStatus) { // Ensure BotStatus is available
+        window.BotStatus.checkStatus(); // Initial explicit check if needed, or rely on its internal init
+    }
     loadChannels();
     
     try {
@@ -49,7 +52,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Set up refresh intervals, but NOT on settings page
     if (!window.location.pathname.includes('settings')) {
         console.log("Setting up main page refresh intervals");
-        setInterval(checkBotStatus, 30000); // Every 30 seconds
+        // setInterval(checkBotStatus, 30000); // Removed: Handled by bot_status.js
         setInterval(loadRecentTTS, 60000);  // Every minute
     } else {
         console.log("On settings page - skipping refresh intervals");
@@ -66,7 +69,8 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 
-// Enhanced bot status check function
+// Enhanced bot status check function - REMOVED as bot_status.js handles this.
+/*
 function checkBotStatus() {
     const statusSpinner = document.getElementById('statusSpinner');
     const statusText = document.getElementById('botStatusText');
@@ -152,6 +156,7 @@ function checkBotStatus() {
             }
         });
 }
+*/
 
 // Enhanced channel display function
 function loadChannels() {
@@ -284,80 +289,105 @@ function loadTTSStats() {
 
 // Load recent TTS messages
 function loadRecentTTS() {
-    const container = document.getElementById('recentTTSContainer');
-    const spinner = document.getElementById('ttsLoadingSpinner');
-    
-    if (!container) return;
-    
+    const ttsTableBody = document.getElementById('recentTTSBody');
+    const ttsTable = document.getElementById('recentTTSTable');
+    const noTTSDataMessage = document.getElementById('noTTSData');
+    const spinner = document.getElementById('ttsLoadingSpinner'); // Spinner for the whole TTS panel
+
+    if (!ttsTableBody || !ttsTable || !noTTSDataMessage) {
+        console.warn('Recent TTS table elements not found, skipping update.');
+        return;
+    }
+
     if (spinner) spinner.style.display = 'block';
-    
+    if (ttsTable) ttsTable.style.display = 'none';
+    if (noTTSDataMessage) noTTSDataMessage.style.display = 'none';
+
     fetch('/api/recent-tts')
-        .then(response => response.json())
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`Server responded with ${response.status}`);
+            }
+            return response.json();
+        })
         .then(data => {
             if (spinner) spinner.style.display = 'none';
-            
-            if (data.length === 0) {
-                container.innerHTML = '<div class="text-center text-muted">No recent TTS messages</div>';
+            ttsTableBody.innerHTML = ''; // Clear previous entries
+
+            if (data.error || data.length === 0) {
+                if (noTTSDataMessage) noTTSDataMessage.style.display = 'block';
+                if (ttsTable) ttsTable.style.display = 'none';
+                if (data.error) console.error('Error in TTS data:', data.error);
                 return;
             }
             
-            container.innerHTML = '';
-            
+            if (ttsTable) ttsTable.style.display = 'table'; // Or 'block' if it's not a table element
+            if (noTTSDataMessage) noTTSDataMessage.style.display = 'none';
+
             data.forEach(item => {
-                const col = document.createElement('div');
-                col.className = 'col-md-6 mb-3';
-                
-                const card = document.createElement('div');
-                card.className = 'card tts-message-card h-100';
-                
-                const cardBody = document.createElement('div');
-                cardBody.className = 'card-body';
-                
-                const channel = document.createElement('h6');
-                channel.className = 'card-subtitle mb-2 text-muted';
-                channel.textContent = `Channel: ${item.channel}`;
-                
-                const message = document.createElement('p');
-                message.className = 'card-text';
-                message.textContent = item.message.length > 100 ? 
-                    item.message.substring(0, 100) + '...' : 
+                const row = ttsTableBody.insertRow();
+
+                const cellChannel = row.insertCell();
+                cellChannel.className = 'text-center';
+                cellChannel.textContent = item.channel;
+
+                const cellMessage = row.insertCell();
+                cellMessage.textContent = item.message.length > 70 ? 
+                    item.message.substring(0, 70) + '...' : 
                     item.message;
-                
-                const timestamp = document.createElement('p');
-                timestamp.className = 'card-text text-muted small';
-                timestamp.textContent = new Date(item.timestamp).toLocaleString();
-                
-                const actions = document.createElement('div');
-                actions.className = 'd-flex justify-content-between';
-                
+                cellMessage.title = item.message;
+
+
+                const cellTime = row.insertCell();
+                try {
+                    cellTime.textContent = new Date(item.timestamp).toLocaleString();
+                } catch (e) {
+                    cellTime.textContent = item.timestamp; // Fallback if date parsing fails
+                    console.warn("Could not parse timestamp:", item.timestamp, e);
+                }
+
+
+                const cellVoice = row.insertCell();
+                cellVoice.textContent = item.voice_preset || 'N/A';
+
+                const cellActions = row.insertCell();
+                cellActions.className = 'text-center';
+
                 const playBtn = document.createElement('button');
-                playBtn.className = 'btn btn-sm btn-primary';
-                playBtn.innerHTML = '<i class="fas fa-play me-1"></i>Play';
-                playBtn.onclick = () => playTTS(item.id, item.channel, item.timestamp);
+                playBtn.className = 'btn btn-sm btn-primary me-1 action-btn';
+                playBtn.innerHTML = '<i class="fas fa-play"></i>';
+                playBtn.title = 'Play TTS';
+                playBtn.onclick = () => {
+                    // Ensure playTTS is defined globally or accessible here
+                    if (typeof playTTS === 'function') {
+                        playTTS(item.id, item.channel, item.timestamp);
+                    } else {
+                        console.warn('playTTS function is not defined.');
+                        alert('Playback functionality is not available.');
+                    }
+                };
                 
                 const downloadBtn = document.createElement('a');
-                downloadBtn.className = 'btn btn-sm btn-secondary';
-                downloadBtn.innerHTML = '<i class="fas fa-download me-1"></i>Download';
-                downloadBtn.href = `/outputs/${item.channel}/${item.channel}-${item.timestamp}.wav`;
-                downloadBtn.download = `${item.channel}-${item.timestamp}.wav`;
-                
-                actions.appendChild(playBtn);
-                actions.appendChild(downloadBtn);
-                
-                cardBody.appendChild(channel);
-                cardBody.appendChild(message);
-                cardBody.appendChild(timestamp);
-                cardBody.appendChild(actions);
-                
-                card.appendChild(cardBody);
-                col.appendChild(card);
-                container.appendChild(col);
+                downloadBtn.className = 'btn btn-sm btn-secondary action-btn';
+                downloadBtn.innerHTML = '<i class="fas fa-download"></i>';
+                downloadBtn.title = 'Download TTS';
+                // Use item.file_path which should be like 'outputs/channel/filename.wav'
+                // The link should be relative to the domain, pointing to the static serve path
+                downloadBtn.href = `/static/${item.file_path}`; 
+                downloadBtn.download = item.file_path.split('/').pop(); // Suggests filename for download
+
+                cellActions.appendChild(playBtn);
+                cellActions.appendChild(downloadBtn);
             });
         })
         .catch(error => {
             console.error('Error loading recent TTS:', error);
             if (spinner) spinner.style.display = 'none';
-            container.innerHTML = '<div class="text-center text-danger">Error loading TTS messages</div>';
+            if (noTTSDataMessage) {
+                noTTSDataMessage.style.display = 'block';
+                noTTSDataMessage.innerHTML = '<div class="empty-state-content"><i class="fas fa-exclamation-circle empty-state-icon text-danger"></i><h4>Error Loading TTS</h4><p class="text-muted">Could not fetch recent TTS messages.</p></div>';
+            }
+            if (ttsTable) ttsTable.style.display = 'none';
         });
 }
 
