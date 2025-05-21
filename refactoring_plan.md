@@ -4,11 +4,11 @@ This document tracks the progress of implementing various fixes, changes, and fe
 
 ## Planned Items:
 
-1.  **[ ] Logger Refinements (`utils/logger.py`)**
-    *   [ ] Consolidate the two `setup_logger` methods.
-    *   [ ] Modify `log_message` to use `self.logger.info()` for `app.log` and remove direct `app_file.write()`.
-    *   [ ] Correct `error(self, message)` method to use `self.logger.error()`.
-    *   [ ] Remove redundant `FileNotFoundError` `except` block in `load_bad_patterns`.
+1.  **[x] Logger Refinements (`utils/logger.py`)**
+    *   [x] Consolidate the two `setup_logger` methods.
+    *   [x] Modify `log_message` to use `self.logger.info()` for `app.log` and remove direct `app_file.write()`.
+    *   [x] Correct `error(self, message)` method to use `self.logger.error()`.
+    *   [x] Remove redundant `FileNotFoundError` `except` block in `load_bad_patterns`.
 
 2.  **[ ] Text-to-Speech (TTS) Enhancements (`utils/tts.py`)**
     *   [ ] Enhance `async def process_text` for dynamic channel-specific `voice_preset` and `bark_model`.
