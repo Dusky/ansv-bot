@@ -793,17 +793,22 @@ def api_tts_logs():
         # Get total count for pagination
         c.execute("SELECT COUNT(*) FROM tts_logs")
         total_items = c.fetchone()[0]
-        total_pages = (total_items + per_page - 1) // per_page # Ceiling division
+        total_pages = (total_items + per_page - 1) // per_page if per_page > 0 else 0 # Ceiling division, handle per_page=0
+        app.logger.debug(f"[api_tts_logs] Request Params: page={page}, per_page={per_page}. DB TotalItems: {total_items}, CalculatedTotalPages: {total_pages}, Offset: {offset}")
 
         # Fetch paginated data
-        c.execute("""
+        query = """
             SELECT message_id, channel, file_path, message, timestamp, voice_preset 
             FROM tts_logs 
             ORDER BY message_id DESC 
             LIMIT ? OFFSET ?
-        """, (per_page, offset))
+        """
+        params = (per_page, offset)
+        app.logger.debug(f"[api_tts_logs] Executing query: {query} with params {params}")
+        c.execute(query, params)
         rows = c.fetchall()
         conn.close()
+        app.logger.debug(f"[api_tts_logs] Fetched {len(rows)} rows from DB for page {page}.")
         
         logs_data = [{
             "id": row["message_id"], 
