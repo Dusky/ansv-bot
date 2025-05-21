@@ -1546,11 +1546,29 @@ class Bot(commands.Bot):
                 try:
                     conn = sqlite3.connect(self.db_file)
                     c = conn.cursor()
-                    c.execute("""
-                        INSERT INTO tts_logs (timestamp, channel, message) 
-                        VALUES (?, ?, ?)
-                    """, (datetime.now().isoformat(), channel, message_to_speak))
-                    conn.commit()
+                    # Get the message_id of the command message itself
+                    command_message_id = ctx.message.id
+                    # Use the timestamp of the command message
+                    command_timestamp_str = ctx.message.timestamp.strftime("%Y%m%d-%H%M%S") if isinstance(ctx.message.timestamp, datetime) else str(ctx.message.timestamp)
+                    
+                    # Assuming file_path from process_text is relative to static/ e.g., "outputs/channel/file.wav"
+                    # If audio_file is absolute, make it relative.
+                    db_audio_file_path = audio_file.replace(os.path.join(os.getcwd(), 'static/'), '', 1) if audio_file else None
+
+                    # Get voice preset used (process_text might need to return this, or we fetch it)
+                    # For now, let's assume a default or fetch it if possible.
+                    # voice_preset_used = self.get_channel_voice_preset(channel) # If you have such a method
+                    voice_preset_used = "v2/en_speaker_0" # Placeholder, as process_text uses this default
+
+                    if db_audio_file_path:
+                        self.logger.info(f"Logging !speak TTS to DB: msg_id={command_message_id}, channel={channel}, timestamp={command_timestamp_str}, path={db_audio_file_path}, voice={voice_preset_used}")
+                        c.execute("""
+                            INSERT INTO tts_logs (message_id, channel, timestamp, file_path, voice_preset, message) 
+                            VALUES (?, ?, ?, ?, ?, ?)
+                        """, (command_message_id, channel, command_timestamp_str, db_audio_file_path, voice_preset_used, message_to_speak))
+                        conn.commit()
+                    else:
+                        self.logger.error(f"Could not log !speak TTS as audio_file path was not determined: {audio_file}")
                     conn.close()
                 except Exception as e:
                     self.logger.error(f"Error logging TTS usage: {e}")
