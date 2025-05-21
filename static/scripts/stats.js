@@ -12,8 +12,6 @@ function loadStatistics() {
   // Show loading indicator
   if (loadingIndicator) loadingIndicator.style.display = 'block';
   
-  // Let the global status checker handle this - it should already be running
-  
   fetch('/get-stats')
     .then(response => {
       if (!response.ok) {
@@ -29,10 +27,8 @@ function loadStatistics() {
       
       // Handle table if it exists
       if (statsContainer) {
-        // Clear existing rows
-        statsContainer.innerHTML = '';
+        statsContainer.innerHTML = ''; // Clear existing rows
         
-        // Calculate max line count for relative scaling (exclude General Model)
         let maxLineCount = 0;
         let totalLineCount = 0;
         
@@ -46,7 +42,6 @@ function loadStatistics() {
         
         if (isDev) console.log(`Max line count: ${maxLineCount}, Total line count: ${totalLineCount}`);
         
-        // Add rows for each channel
         if (data.length === 0) {
           const emptyRow = document.createElement('tr');
           emptyRow.innerHTML = '<td colspan="7" class="text-center">No channel data available</td>';
@@ -54,21 +49,13 @@ function loadStatistics() {
         } else {
           data.forEach(channel => {
             const lineCount = parseInt(channel.line_count || 0);
-            
-            // Calculate the baseline progress (0-100 messages, minimum 5% for visibility)
             const baselineProgress = Math.min(100, Math.max(5, lineCount / 100));
-            
-            // Calculate the relative progress based on total messages
-            // We'll use this for models with >100 messages
             const relativeProgress = totalLineCount > 0 ? (lineCount / totalLineCount) * 100 : 0;
-            
             const row = document.createElement('tr');
+            const isGeneralModel = (channel.name === 'General Model' || channel.name === 'general_markov');
             
-            // Create the layered progress bar HTML
             let progressBarHtml = '';
-            
-            if (channel.name === 'General Model' || channel.name === 'general_markov') {
-              // For General Model, we show a different style progress bar
+            if (isGeneralModel) {
               progressBarHtml = `
                 <div class="progress" style="height: 8px;">
                   <div class="progress-bar bg-info" style="width: 100%"></div>
@@ -76,7 +63,6 @@ function loadStatistics() {
                 <small class="text-muted">Combined model</small>
               `;
             } else {
-              // For regular channels, show the two-layer progress bar
               progressBarHtml = `
                 <div class="progress mb-1" style="height: 6px;" data-bs-toggle="tooltip" title="${lineCount} messages (threshold: 100)">
                   <div class="progress-bar bg-success" style="width: ${baselineProgress}%"></div>
@@ -95,10 +81,6 @@ function loadStatistics() {
               `;
             }
             
-            // Check if General Model for special styling
-            const isGeneralModel = (channel.name === 'General Model' || channel.name === 'general_markov');
-            
-            // Define content rows with styling
             const channelCell = `<td class="${isGeneralModel ? 'fw-bold' : ''}">${channel.name}</td>`;
             const cacheFileCell = `<td>${channel.cache_file || 'N/A'}</td>`;
             const logFileCell = `<td>${channel.log_file || 'N/A'}</td>`;
@@ -106,21 +88,20 @@ function loadStatistics() {
             const lineCountCell = `<td>${lineCount || '0'}</td>`;
             const progressCell = `<td>${progressBarHtml}</td>`;
             
-            // Create action buttons with conditional initial state
             const actionButtons = `
               <td>
                 <div class="d-flex gap-1">
                   <button class="btn btn-warning btn-sm rebuild-btn" 
                           data-channel="${channel.name}" 
                           data-action="rebuild"
-                          title="Rebuild model">
+                          title="Rebuild model for ${channel.name}">
                     <i class="fas fa-tools me-1"></i>Rebuild
                   </button>
                   ${isGeneralModel ? '' : `
-                  <button class="btn btn-success btn-sm send-message-btn"
+                  <button class="btn btn-success btn-sm send-message-stats-btn"
                           data-channel="${channel.name}"
                           data-action="send"
-                          title="Generate and send a message to this channel">
+                          title="Generate and send a message to ${channel.name}">
                     <i class="fas fa-comment-dots me-1"></i>Send
                   </button>
                   `}
@@ -128,25 +109,16 @@ function loadStatistics() {
               </td>
             `;
             
-            // Combine all cells
             row.innerHTML = channelCell + cacheFileCell + logFileCell + cacheSizeCell + 
                           lineCountCell + progressCell + actionButtons;
             statsContainer.appendChild(row);
           });
           
-          // Initialize tooltips after adding rows
-          try {
-            const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
-            if (tooltipTriggerList.length > 0 && typeof bootstrap !== 'undefined' && bootstrap.Tooltip) {
-              tooltipTriggerList.forEach(el => new bootstrap.Tooltip(el));
-            }
-          } catch (e) {
-            console.warn('Could not initialize tooltips:', e);
-          }
+          // Initialize tooltips and attach event listeners after adding rows
+          initializeDynamicElements();
         }
       }
       
-      // Load build times
       try {
         loadBuildTimes();
       } catch (e) {
@@ -160,10 +132,58 @@ function loadStatistics() {
       }
     })
     .finally(() => {
-      // Hide loading indicator
       if (loadingIndicator) loadingIndicator.style.display = 'none';
     });
 }
+
+function initializeDynamicElements() {
+    // Initialize tooltips
+    try {
+        const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+        if (tooltipTriggerList.length > 0 && typeof bootstrap !== 'undefined' && bootstrap.Tooltip) {
+            tooltipTriggerList.forEach(el => new bootstrap.Tooltip(el));
+        }
+    } catch (e) {
+        console.warn('Could not initialize tooltips:', e);
+    }
+
+    // Attach event listeners for rebuild buttons
+    document.querySelectorAll('button.rebuild-btn[data-action="rebuild"]').forEach(button => {
+        // Remove existing listener before adding a new one to prevent duplicates
+        const newButton = button.cloneNode(true);
+        button.parentNode.replaceChild(newButton, button);
+        
+        newButton.addEventListener('click', function() {
+            const channelName = this.getAttribute('data-channel');
+            if (window.markovModule && typeof window.markovModule.rebuildChannelModel === 'function') {
+                window.markovModule.rebuildChannelModel(channelName);
+            } else if (typeof window.rebuildCacheForChannelGlobal === 'function') { // Fallback
+                window.rebuildCacheForChannelGlobal(channelName);
+            } else {
+                console.error('Rebuild function not found for channel:', channelName);
+                safeShowToast('Error: Rebuild functionality not available.', 'error');
+            }
+        });
+    });
+
+    // Attach event listeners for send message buttons
+    document.querySelectorAll('button.send-message-stats-btn[data-action="send"]').forEach(button => {
+        // Remove existing listener
+        const newButton = button.cloneNode(true);
+        button.parentNode.replaceChild(newButton, button);
+
+        newButton.addEventListener('click', function() {
+            const channelName = this.getAttribute('data-channel');
+            if (window.markovModule && typeof window.markovModule.sendMarkovMessage === 'function') {
+                window.markovModule.sendMarkovMessage(channelName, this); // Pass button for UI updates
+            } else {
+                console.error('Send message function not found for channel:', channelName);
+                safeShowToast('Error: Send message functionality not available.', 'error');
+            }
+        });
+    });
+}
+
 
 // Update the summary statistics in hero section
 function updateStatsSummary(data) {
@@ -295,12 +315,10 @@ function updateStatsSummary(data) {
   }
   
   if (lastRebuildElement) {
-    const today = new Date().toLocaleDateString();
-    lastRebuildElement.textContent = today;
-    
-    // Update time since rebuild
+    // This will be updated by loadBuildTimes if a more specific date is available
+    lastRebuildElement.textContent = "Recent"; 
     if (timeSinceRebuildElement) {
-      timeSinceRebuildElement.textContent = "Today";
+      timeSinceRebuildElement.textContent = "Just now";
     }
   }
   
@@ -309,17 +327,14 @@ function updateStatsSummary(data) {
     let healthClass = "bg-success";
     let healthText = "Healthy";
     
-    if (smallModelsCount > healthyModelsCount) {
+    if (smallModelsCount > healthyModelsCount && channelCount > 0) { // only if there are channels
       healthClass = "bg-warning";
       healthText = "Needs Training";
     } else if (channelCount === 0) {
       healthClass = "bg-danger";
       healthText = "No Models";
-    } else if (Date.now() - new Date() > 30 * 24 * 60 * 60 * 1000) {
-      // If last rebuild was over 30 days ago
-      healthClass = "bg-warning";
-      healthText = "Needs Rebuild";
     }
+    // Note: Stale rebuild check will be handled by loadBuildTimes
     
     healthStatusElement.className = `badge ${healthClass} me-2`;
     healthStatusElement.textContent = healthText;
@@ -347,164 +362,115 @@ function updateStatsSummary(data) {
   }
 }
 
-// DIRECT IMPLEMENTATION: Instead of delegating, we'll use a direct implementation
-// We keep this function signature for backward compatibility with existing onclick handlers
-function rebuildCacheForChannel(channel) {
-  console.log(`Stats.js: Directly rebuilding cache for channel: ${channel}`);
-  
-  // Use the globally defined rebuildCacheDirectly function if available
-  if (typeof window.rebuildCacheDirectly === 'function') {
-    window.rebuildCacheDirectly(channel);
-    return;
-  }
-  
-  // If not available, implement directly here as a fallback
-  const button = document.querySelector(`button[data-channel="${channel}"][data-action="rebuild"]`);
-  const originalText = button ? button.textContent : "Rebuild";
-  
-  if (button) {
-    button.textContent = "Building...";
-    button.disabled = true;
-  }
-  
-  // Call the server API directly for reliability
-  fetch(`/rebuild-cache/${channel}`, {
-    method: 'POST'
-  })
-  .then(response => response.json())
-  .then(data => {
-    if (data.success) {
-      showToast(`Model for ${channel} rebuilt successfully`, 'success');
-      // Refresh stats
-      if (typeof loadStatistics === 'function') {
-        loadStatistics();
-      }
-    } else {
-      showToast(`Failed to rebuild model: ${data.message}`, 'error');
-    }
-  })
-  .catch(error => {
-    console.error('Error rebuilding cache:', error);
-    showToast(`Error rebuilding model: ${error.message}`, 'error');
-  })
-  .finally(() => {
-    // Restore button state
-    if (button) {
-      button.textContent = originalText;
-      button.disabled = false;
-    }
-  });
-}
-
-// Function signature remains for compatibility but ensures proper delegation
-function sendMarkovMessage(channel) {
-  console.log("stats.js: Delegating to implementation in markov.js");
-  
-  // First check if markov module is available
-  if (typeof window.markovModule !== 'undefined' && window.markovModule.sendMarkovMessage) {
-    window.markovModule.sendMarkovMessage(channel);
-    return;
-  }
-  
-  // If markov module is not available yet, we'll retry after a short delay
-  // This helps with race conditions when scripts are still loading
-  console.warn("Markov module not immediately available, retrying after delay...");
-  setTimeout(() => {
-    if (typeof window.markovModule !== 'undefined' && window.markovModule.sendMarkovMessage) {
-      window.markovModule.sendMarkovMessage(channel);
-    } else {
-      // If still not available after delay, show a more helpful error
-      console.error("Markov module not available - check script loading order");
-      showToast("Error: Message generation module not properly loaded. Please refresh the page.", "error");
-    }
-  }, 500);
-}
-
-// Remove local implementation - we'll use the global functions from event_listener.js
-// NOTE: This relies on event_listener.js being loaded before stats.js in every page
-
 // Make loadStatistics and loadBuildTimes available globally
 window.loadStatistics = loadStatistics;
 window.loadBuildTimes = loadBuildTimes;
 
 // Function to load and display cache build performance data
 function loadBuildTimes() {
-  // Only log in development environment
   const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
   if (isDev) console.log("Loading build times data...");
   
   const buildTimesContainer = document.getElementById('buildTimesContainer');
-  if (!buildTimesContainer) {
-    if (isDev) console.warn("buildTimesContainer element not found in the DOM");
+  const lastRebuildElement = document.getElementById('lastRebuild'); // For summary
+  const timeSinceRebuildElement = document.getElementById('timeSinceRebuild'); // For summary
+  const healthStatusElement = document.getElementById('healthStatus'); // For summary health update
+
+  if (!buildTimesContainer && !lastRebuildElement) {
+    if (isDev) console.warn("Build times UI elements not found in the DOM");
     return;
   }
   
-  // First try the preferred API endpoint
   fetch('/api/cache-build-performance')
     .then(response => {
       if (!response.ok) {
-        // If the preferred endpoint fails, try fallback
-        if (isDev) console.log("Preferred endpoint failed, trying fallback...");
-        return fetch('/api/build-times');
+        if (isDev) console.log("Preferred build times endpoint failed, trying fallback...");
+        return fetch('/api/build-times'); // Fallback
       }
       return response;
     })
     .then(response => {
       if (!response.ok) {
-        throw new Error('Failed to load build times data');
+        throw new Error('Failed to load build times data from all endpoints');
       }
       return response.json();
     })
     .then(data => {
       if (isDev) console.log("Received build times data:", data);
       if (!data || data.length === 0) {
-        buildTimesContainer.innerHTML = '<tr><td colspan="4" class="text-center py-3">No build data available</td></tr>';
+        if(buildTimesContainer) buildTimesContainer.innerHTML = '<tr><td colspan="4" class="text-center py-3">No build data available</td></tr>';
+        if(lastRebuildElement) lastRebuildElement.textContent = "Never";
+        if(timeSinceRebuildElement) timeSinceRebuildElement.textContent = "N/A";
         return;
       }
-      
-      buildTimesContainer.innerHTML = '';
       
       // Sort by timestamp descending to show newest first
       data.sort((a, b) => b.timestamp - a.timestamp);
       
-      // Process build times data - take only the 10 most recent
-      const recentData = data.slice(0, 10);
-      recentData.forEach(item => {
-        const row = document.createElement('tr');
-        const timestamp = item.timestamp ? new Date(item.timestamp * 1000).toLocaleString() : 'Unknown';
-        const status = item.success ? 
-          '<span class="badge bg-success">Success</span>' : 
-          '<span class="badge bg-danger">Failed</span>';
-        
-        row.innerHTML = `
-          <td>${item.channel || 'Unknown'}</td>
-          <td>${timestamp}</td>
-          <td>${item.duration ? (item.duration.toFixed(2) + 's') : 'N/A'}</td>
-          <td>${status}</td>
-        `;
-        buildTimesContainer.appendChild(row);
-      });
+      if (buildTimesContainer) {
+        buildTimesContainer.innerHTML = ''; // Clear existing
+        const recentData = data.slice(0, 10); // Show 10 most recent
+        recentData.forEach(item => {
+          const row = document.createElement('tr');
+          const timestamp = item.timestamp ? new Date(item.timestamp * 1000).toLocaleString() : 'Unknown';
+          const status = item.success ? 
+            '<span class="badge bg-success">Success</span>' : 
+            '<span class="badge bg-danger">Failed</span>';
+          
+          row.innerHTML = `
+            <td>${item.channel || 'Unknown'}</td>
+            <td>${timestamp}</td>
+            <td>${item.duration ? (item.duration.toFixed(2) + 's') : 'N/A'}</td>
+            <td>${status}</td>
+          `;
+          buildTimesContainer.appendChild(row);
+        });
+      }
+
+      // Update summary last rebuild time
+      const mostRecentSuccessfulBuild = data.find(item => item.success);
+      if (mostRecentSuccessfulBuild && mostRecentSuccessfulBuild.timestamp) {
+          const lastBuildDate = new Date(mostRecentSuccessfulBuild.timestamp * 1000);
+          if (lastRebuildElement) lastRebuildElement.textContent = lastBuildDate.toLocaleDateString();
+          
+          if (timeSinceRebuildElement) {
+              const now = new Date();
+              const diffMs = now - lastBuildDate;
+              const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+              if (diffDays === 0) timeSinceRebuildElement.textContent = "Today";
+              else if (diffDays === 1) timeSinceRebuildElement.textContent = "Yesterday";
+              else timeSinceRebuildElement.textContent = `${diffDays} days ago`;
+
+              // Update health status if rebuild is stale
+              if (diffDays > 30 && healthStatusElement) {
+                  if (!healthStatusElement.classList.contains('bg-danger')) { // Don't override more critical errors
+                    healthStatusElement.className = 'badge bg-warning me-2';
+                    healthStatusElement.textContent = "Needs Rebuild";
+                  }
+              }
+          }
+      } else {
+          if (lastRebuildElement) lastRebuildElement.textContent = "Never";
+          if (timeSinceRebuildElement) timeSinceRebuildElement.textContent = "N/A";
+      }
+
     })
     .catch(error => {
       if (isDev) console.error('Error loading build times:', error);
-      buildTimesContainer.innerHTML = '<tr><td colspan="4" class="text-center text-danger">Error loading build data</td></tr>';
+      if (buildTimesContainer) buildTimesContainer.innerHTML = '<tr><td colspan="4" class="text-center text-danger">Error loading build data</td></tr>';
+      if (lastRebuildElement) lastRebuildElement.textContent = "Error";
+      if (timeSinceRebuildElement) timeSinceRebuildElement.textContent = "Error";
     });
 }
 
 // Helper function to safely show toast notifications
 function safeShowToast(message, type = 'info') {
-  // Function to safely display toast notifications using the notification system
   try {
-    // Try using the namespaced version first
     if (window.notificationSystem && typeof window.notificationSystem.showToast === 'function') {
       window.notificationSystem.showToast(message, type);
-    }
-    // Fall back to global version
-    else if (typeof window.showToast === 'function') {
+    } else if (typeof window.showToast === 'function') {
       window.showToast(message, type);
-    }
-    // Last resort - log to console
-    else {
+    } else {
       console.log(`Toast (${type}): ${message}`);
       if (type === 'error') {
         alert(message);
@@ -517,164 +483,49 @@ function safeShowToast(message, type = 'info') {
 
 // Load stats when the page loads
 document.addEventListener('DOMContentLoaded', function() {
-  // Only log in development environment
   const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
   if (isDev) console.log("Stats.js loaded and initializing...");
   
-  // Execute after a small delay to ensure all scripts are loaded
   setTimeout(function() {
-    // Initialize stats loading
     if (typeof window.loadStatistics === 'function') {
       if (isDev) console.log("Loading statistics from stats.js...");
-      window.loadStatistics();
-      
-      // Load build times data after statistics are loaded
-      if (isDev) console.log("Loading build times data...");
-      loadBuildTimes();
+      window.loadStatistics(); // This will also call loadBuildTimes
     } else {
       console.error("loadStatistics is not available as a function");
     }
     
-    // Setup refresh button event listener
     const refreshStatsBtn = document.getElementById('refreshStatsBtn');
     if (refreshStatsBtn) {
       refreshStatsBtn.addEventListener('click', function() {
         if (typeof window.loadStatistics === 'function') {
-          window.loadStatistics();
-          loadBuildTimes(); // Also refresh build times
+          window.loadStatistics(); // This refreshes both stats and build times
         }
       });
     }
     
-    // Update stats when bot status changes
     window.addEventListener('botstatus', function(e) {
-      console.log("Received bot status update event:", e.detail);
-      // Refresh stats when bot status changes - specifically when it starts running
+      if (isDev) console.log("Received bot status update event:", e.detail);
       if (e.detail.running && typeof window.loadStatistics === 'function') {
         window.loadStatistics();
       }
     });
     
-    // Setup rebuild all button with direct implementation
+    // Global rebuild buttons are now handled in markov.js
+    // Ensure they are initialized if markov.js didn't do it (e.g. if stats.js loads first)
     const rebuildAllBtn = document.getElementById('rebuildAllCachesBtn');
-    if (rebuildAllBtn) {
-      // Remove any existing event listeners
-      rebuildAllBtn.replaceWith(rebuildAllBtn.cloneNode(true));
-      
-      // Get the fresh reference after replacement
-      const freshBtn = document.getElementById('rebuildAllCachesBtn');
-      
-      // Add our own direct implementation
-      freshBtn.addEventListener('click', function(event) {
-        // Stop any other handlers
-        event.preventDefault();
-        event.stopPropagation();
-        
-        // Create confirmation locally to avoid conflicts
-        const confirmRebuild = confirm('Are you sure you want to rebuild all brains? This may take a while.');
-        if (!confirmRebuild) return;
-        
-        // Show feedback
-        showToast('Rebuilding all brains...', 'info');
-        
-        // Disable button and show loading state
-        this.disabled = true;
-        const originalText = this.textContent;
-        this.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Rebuilding...';
-        
-        // Make direct API call
-        fetch('/rebuild-all-caches', {
-          method: 'POST'
-        })
-        .then(response => response.json())
-        .then(data => {
-          if (data.success) {
-            showToast('Successfully started rebuilding all brains', 'success');
-            // Refresh after a delay to allow rebuild to complete
-            setTimeout(function() {
-              if (typeof window.loadStatistics === 'function') {
-                window.loadStatistics();
-              }
-            }, 5000);
-          } else {
-            showToast(`Failed to rebuild brains: ${data.message}`, 'error');
-          }
-        })
-        .catch(error => {
-          console.error('Error rebuilding all caches:', error);
-          showToast('Error rebuilding brains', 'error');
-        })
-        .finally(() => {
-          // Restore button state
-          this.disabled = false;
-          this.textContent = originalText;
-        });
-      });
-      
-      // Make rebuild function globally available
-      window.rebuildAllCachesDirectly = function() {
-        freshBtn.click();
-      };
-    }
-  }, 500);  // 500ms delay to ensure DOM is ready and other scripts are loaded
-  
-  // Setup general model rebuild button with direct implementation
-  const rebuildGeneralBtn = document.getElementById('rebuildGeneralCacheBtn');
-  if (rebuildGeneralBtn) {
-    // Remove any existing event listeners
-    rebuildGeneralBtn.replaceWith(rebuildGeneralBtn.cloneNode(true));
-    
-    // Get the fresh reference after replacement
-    const freshBtn = document.getElementById('rebuildGeneralCacheBtn');
-    
-    // Add our own direct implementation
-    freshBtn.addEventListener('click', function(event) {
-      // Stop any other handlers
-      event.preventDefault();
-      event.stopPropagation();
-      
-      // Create confirmation locally to avoid conflicts
-      const confirmRebuild = confirm('Are you sure you want to rebuild the general brain?');
-      if (!confirmRebuild) return;
-      
-      // Show feedback
-      showToast('Rebuilding general brain...', 'info');
-      
-      // Disable button and show loading state
-      this.disabled = true;
-      const originalText = this.textContent;
-      this.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Rebuilding...';
-      
-      // Make direct API call
-      fetch('/rebuild-general-cache', {
-        method: 'POST'
-      })
-      .then(response => response.json())
-      .then(data => {
-        if (data.success) {
-          showToast('Successfully rebuilt general brain', 'success');
-          // Refresh stats
-          if (typeof window.loadStatistics === 'function') {
-            window.loadStatistics();
-          }
-        } else {
-          showToast(`Failed to rebuild general brain: ${data.message}`, 'error');
+    if (rebuildAllBtn && typeof window.rebuildAllCaches === 'function') {
+        if (!rebuildAllBtn.getAttribute('listener-attached')) {
+            rebuildAllBtn.addEventListener('click', window.rebuildAllCaches);
+            rebuildAllBtn.setAttribute('listener-attached', 'true');
         }
-      })
-      .catch(error => {
-        console.error('Error rebuilding general cache:', error);
-        showToast('Error rebuilding general brain', 'error');
-      })
-      .finally(() => {
-        // Restore button state
-        this.disabled = false;
-        this.textContent = originalText;
-      });
-    });
-    
-    // Make function globally available
-    window.rebuildGeneralCacheDirectly = function() {
-      freshBtn.click();
-    };
-  }
-}); 
+    }
+    const rebuildGeneralBtn = document.getElementById('rebuildGeneralCacheBtn');
+    if (rebuildGeneralBtn && typeof window.rebuildGeneralCache === 'function') {
+         if (!rebuildGeneralBtn.getAttribute('listener-attached')) {
+            rebuildGeneralBtn.addEventListener('click', window.rebuildGeneralCache);
+            rebuildGeneralBtn.setAttribute('listener-attached', 'true');
+        }
+    }
+
+  }, 500);
+});
