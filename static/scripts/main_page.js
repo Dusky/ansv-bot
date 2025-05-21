@@ -188,6 +188,9 @@ function loadChannels() {
         .then(data => {
             if (spinner) spinner.style.display = 'none';
             
+            // Log the raw data received for channels
+            console.log("Data received for /api/channels:", JSON.parse(JSON.stringify(data)));
+
             // Count connected channels - update even if the list doesn't exist
             const connectedCount = data.filter(channel => channel.currently_connected).length;
             if (channelCountElement) {

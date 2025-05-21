@@ -538,7 +538,9 @@ def api_channels_list():
 
             # Set 'configured_to_join' (boolean) based on 'join_channel' (integer 0 or 1)
             # Defaults to False (0) if 'join_channel' is missing from the DB row for some reason.
-            channel_item['configured_to_join'] = bool(raw_channel_config.get('join_channel', 0))
+            join_channel_val = raw_channel_config.get('join_channel', 0) # Default to 0 if missing
+            channel_item['configured_to_join'] = bool(join_channel_val)
+            app.logger.debug(f"Channel: {channel_item.get('name', 'N/A')}, DB join_channel raw value: {join_channel_val}, configured_to_join set to: {channel_item['configured_to_join']}")
 
             # Set 'currently_connected' (boolean)
             # Ensure comparison is with channel name without '#' prefix
