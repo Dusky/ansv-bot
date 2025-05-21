@@ -98,12 +98,12 @@
             </a>
           </li>
           <li class="nav-item">
-            <a class="nav-link {{ 'active' if request.endpoint == 'settings' else '' }}" href="{{ url_for('settings') }}">
+            <a class="nav-link {{ 'active' if request.endpoint == 'settings_page' else '' }}" href="{{ url_for('settings_page') }}">
               <i class="fas fa-cog me-1"></i> Settings
             </a>
           </li>
           <li class="nav-item">
-            <a class="nav-link {{ 'active' if request.endpoint == 'stats' else '' }}" href="{{ url_for('stats') }}">
+            <a class="nav-link {{ 'active' if request.endpoint == 'stats_page' else '' }}" href="{{ url_for('stats_page') }}">
               <i class="fas fa-brain me-1"></i> Brain
             </a>
           </li>
