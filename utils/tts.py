@@ -250,8 +250,13 @@ def process_text_thread(input_text, channel_name, db_file='./messages.db', full_
             return full_path, logged_tts_table_id # Return the ID of the tts_logs table entry
             
         except Exception as e:
-            print(f"[TTS] Thread processing error: {e}")
-            return None
+            # Ensure output is restored before printing error from this broad catch-all
+            sys.stdout = original_stdout
+            sys.stderr = original_stderr
+            print(f"[TTS THREAD FATAL ERROR] Uncaught exception in process_text_thread: {e}") # This print will now be visible
+            import traceback
+            traceback.print_exc() # Print full traceback
+            return None, None # Ensure two values are returned as expected if caller unpacks
             
     finally:
         # Always restore original stdout and stderr
@@ -366,9 +371,40 @@ def split_sentence(sentence, max_length):
     pieces.append(sentence)
     return pieces
     
-def start_tts_processing(input_text, channel_name, db_file='./messages.db'):
-    tts_thread = threading.Thread(target=process_text_thread, args=(input_text, channel_name, db_file), daemon=True)
+def start_tts_processing(input_text, channel_name, db_file='./messages.db', message_id=None, timestamp_str=None, voice_preset_override=None):
+    """
+    Starts the TTS processing in a separate thread.
+    message_id: The ID of the original message that triggered this TTS.
+    timestamp_str: The timestamp string of the original message.
+    voice_preset_override: Optional voice preset to use, otherwise fetched from DB.
+    """
+    filename_timestamp = datetime.now().strftime("%Y%m%d-%H%M%S") 
+    clean_channel_name = channel_name.lstrip('#')
+    output_dir = f"static/outputs/{clean_channel_name}"
+    os.makedirs(output_dir, exist_ok=True)
+    generated_full_path = f"{output_dir}/{clean_channel_name}-{filename_timestamp}.wav"
+
+    logging.info(f"Preparing TTS thread for bot message. Original message_id: {message_id}, original_timestamp_str: {timestamp_str}, voice_preset_override: {voice_preset_override}, generated_path: {generated_full_path}")
+
+    # Arguments for process_text_thread:
+    # input_text, channel_name, db_file, full_path, timestamp, message_id, voice_preset, bark_model=None
+    tts_thread = threading.Thread(
+        target=process_text_thread, 
+        args=(
+            input_text, 
+            channel_name, 
+            db_file,
+            generated_full_path,      # This becomes 'full_path' in process_text_thread
+            timestamp_str,            # This becomes 'timestamp' (original message timestamp)
+            message_id,               # This becomes 'message_id'
+            voice_preset_override     # This becomes 'voice_preset'
+            # bark_model will be fetched by process_text_thread if None
+        ), 
+        daemon=True
+    )
     tts_thread.start()
+    # Logging that the thread has been dispatched. The thread itself will log its entry.
+    # logging.info(f"TTS processing thread dispatched for original message_id {message_id} in channel {channel_name}.")
 
 def notify_new_audio_available(channel_name, message_id):
     # Define the URL of the Flask endpoint
