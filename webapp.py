@@ -434,7 +434,7 @@ def api_bot_status():
     return jsonify(status_details)
 
 @app.route('/settings')
-def settings_page(): # Renamed to avoid conflict with module-level 'settings'
+def settings_page(): 
     theme = request.cookies.get("theme", "darkly") 
     bot_running = is_bot_actually_running()
     channels_data = []
@@ -451,12 +451,20 @@ def settings_page(): # Renamed to avoid conflict with module-level 'settings'
     return render_template("settings.html", theme=theme, channels=channels_data, bot_running=bot_running)
 
 @app.route('/stats')
-def stats_page(): # Renamed
+def stats_page(): 
     theme = request.cookies.get("theme", "darkly")
     return render_template("stats.html", theme=theme)
 
+@app.route('/bot-control')
+def bot_control_page(): # Renamed function
+    """Render the bot control page."""
+    theme = request.cookies.get("theme", "darkly")
+    bot_running_status = is_bot_actually_running() 
+    return render_template("bot_control.html", theme=theme, bot_status={'running': bot_running_status})
+
+
 @app.route('/api/channels')
-def api_channels_list(): # Renamed
+def api_channels_list(): 
     try:
         conn = sqlite3.connect(db_file)
         conn.row_factory = sqlite3.Row
@@ -469,7 +477,7 @@ def api_channels_list(): # Renamed
         return jsonify({"error": str(e)}), 500
 
 @app.route('/get-channel-settings/<channel_name>')
-def get_channel_settings_route(channel_name): # Renamed
+def get_channel_settings_route(channel_name): 
     try:
         conn = sqlite3.connect(db_file)
         conn.row_factory = sqlite3.Row
@@ -485,7 +493,7 @@ def get_channel_settings_route(channel_name): # Renamed
         return jsonify({"error": str(e)}), 500
 
 @app.route('/update-channel-settings', methods=['POST'])
-def update_channel_settings_route(): # Renamed
+def update_channel_settings_route(): 
     try:
         data = request.json
         channel_name = data.get('channel_name')
@@ -507,7 +515,7 @@ def update_channel_settings_route(): # Renamed
         return jsonify({"success": False, "message": str(e)}), 500
 
 @app.route('/add-channel', methods=['POST'])
-def add_channel_route(): # Renamed
+def add_channel_route(): 
     try:
         data = request.json
         channel_name = data.get('channel_name')
@@ -548,7 +556,7 @@ def add_channel_route(): # Renamed
         return jsonify({"success": False, "message": str(e)}), 500
 
 @app.route('/delete-channel', methods=['POST'])
-def delete_channel_route(): # Renamed
+def delete_channel_route(): 
     try:
         data = request.json
         channel_name = data.get('channel_name')
@@ -564,7 +572,7 @@ def delete_channel_route(): # Renamed
         return jsonify({"success": False, "message": str(e)}), 500
 
 @app.route('/list-voices')
-def list_voices_route(): # Renamed
+def list_voices_route(): 
     try:
         voices_dir = "voices"
         if not os.path.exists(voices_dir): os.makedirs(voices_dir) # Ensure dir exists
@@ -574,11 +582,11 @@ def list_voices_route(): # Renamed
         return jsonify({"error": str(e)}), 500
 
 @app.route('/rebuild-voice-index') # This seems like a placeholder
-def rebuild_voice_index_route(): # Renamed
+def rebuild_voice_index_route(): 
     return jsonify({"success": True, "message": "Voice index rebuild (placeholder) successful."})
 
 @app.route('/get-latest-tts')
-def get_latest_tts_route(): # Renamed
+def get_latest_tts_route(): 
     try:
         last_id = int(request.args.get('last_id', '0'))
         conn = sqlite3.connect(db_file)
@@ -602,18 +610,18 @@ def serve_tts_output(filename):
     return send_from_directory(directory, filename)
 
 @app.route('/set-theme/<theme_name>') # Renamed param for clarity
-def set_theme_route(theme_name): # Renamed
+def set_theme_route(theme_name): 
     response = make_response(redirect(request.referrer or url_for('main')))
     response.set_cookie('theme', theme_name, max_age=60*60*24*365)
     return response
 
 @app.errorhandler(404)
-def page_not_found_error(e): # Renamed
+def page_not_found_error(e): 
     theme = request.cookies.get('theme', 'darkly')
     return render_template('index.html', theme=theme, error_message="404: Page Not Found"), 404
 
 @app.errorhandler(500)
-def server_error_handler(e): # Renamed
+def server_error_handler(e): 
     app.logger.error(f"Server Error: {e}\n{traceback.format_exc()}")
     theme = request.cookies.get('theme', 'darkly')
     return render_template('index.html', theme=theme, error_message="500: Internal Server Error"), 500
@@ -622,7 +630,7 @@ if __name__ == "__main__":
     markov_handler.load_models()
     
     @app.route('/health')
-    def health_check_route(): # Renamed
+    def health_check_route(): 
         return jsonify({"status": "ok", "tts_enabled_webapp": _enable_tts_webapp})
     
     # Use socketio.run for Flask-SocketIO

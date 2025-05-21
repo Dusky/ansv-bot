@@ -108,7 +108,7 @@
             </a>
           </li>
           <li class="nav-item">
-            <a class="nav-link {{ 'active' if request.endpoint == 'bot_control' else '' }}" href="{{ url_for('bot_control') }}">
+            <a class="nav-link {{ 'active' if request.endpoint == 'bot_control_page' else '' }}" href="{{ url_for('bot_control_page') }}">
               <span class="d-flex align-items-center">
                 <i class="fas fa-server me-1"></i> Bot Control 
                 <i id="botStatusIcon" class="bi bi-circle-fill ms-2" style="font-size: 0.6rem;"></i>
