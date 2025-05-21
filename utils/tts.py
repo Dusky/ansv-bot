@@ -98,7 +98,18 @@ def silence_output():
 def process_text_thread(input_text, channel_name, db_file='./messages.db', full_path=None, timestamp=None, message_id=None, voice_preset=None, bark_model=None):
     """Process TTS in a separate thread with silenced output"""
     global original_stdout, original_stderr
-    silence_output()
+    
+    # Log parameters *before* silencing, for critical debugging
+    logging.info(f"[TTS THREAD ENTRY] Params: input_text='{str(input_text)[:30]}...', channel='{channel_name}', db_file='{db_file}', full_path='{full_path}', timestamp='{timestamp}', message_id='{message_id}', voice_preset='{voice_preset}', bark_model='{bark_model}'")
+    if message_id is None:
+        logging.error("[TTS THREAD CRITICAL] message_id is None at entry. This will likely cause DB insert to fail or be incorrect.")
+    if full_path is None:
+        logging.error("[TTS THREAD CRITICAL] full_path is None at entry. Cannot save audio or log correctly.")
+    if timestamp is None: # This is the original message timestamp
+        logging.warning("[TTS THREAD WARNING] Original message timestamp (timestamp param) is None at entry.")
+
+
+    silence_output() # Now silence output for Bark
 
     try:
         # Make sure we have the necessary TTS dependencies
