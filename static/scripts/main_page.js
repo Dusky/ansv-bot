@@ -317,11 +317,14 @@ function loadRecentTTS() {
             }
             return response.json();
         })
-        .then(data => {
+        .then(data => { // 'data' here is the array of TTS log objects
+            console.log('[loadRecentTTS] Data received from /api/recent-tts:', JSON.parse(JSON.stringify(data))); // Log the received data
+            console.log(`[loadRecentTTS] Number of items received: ${data ? data.length : 0}`);
+
             if (spinner) spinner.style.display = 'none';
             ttsTableBody.innerHTML = ''; // Clear previous entries
 
-            if (data.error || data.length === 0) {
+            if (!data || data.error || data.length === 0) { // Check if data is null, has an error, or is empty
                 if (noTTSDataMessage) noTTSDataMessage.style.display = 'block';
                 if (ttsTable) ttsTable.style.display = 'none';
                 if (data.error) console.error('Error in TTS data:', data.error);
