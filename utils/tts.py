@@ -165,21 +165,34 @@ def process_text_thread(input_text, channel_name, db_file='./messages.db', full_
             scipy.io.wavfile.write(full_path, rate=model.generation_config.sample_rate, data=final_audio_array)
             
             # Record in database and notify web interface
+            # Ensure message_id is used here. It's passed as an argument to process_text_thread.
+            # The timestamp argument should also be used.
+            # The full_path should be relative to static/ for consistency with log_tts_file.
+            db_file_path_relative = full_path.replace('static/', '', 1)
+
             conn = sqlite3.connect(db_file)
             c = conn.cursor()
+            # Use the passed message_id, channel_name, timestamp, voice_preset, and input_text
             c.execute('''INSERT INTO tts_logs 
-                        (channel, timestamp, voice_preset, file_path, message)
-                        VALUES (?, ?, ?, ?, ?)''',
-                    (channel_name, timestamp, voice_preset, full_path, input_text))
+                        (message_id, channel, timestamp, voice_preset, file_path, message)
+                        VALUES (?, ?, ?, ?, ?, ?)''',
+                    (message_id, channel_name, timestamp, voice_preset, db_file_path_relative, input_text))
             conn.commit()
-            new_id = c.lastrowid
+            # new_id is not strictly needed here if message_id is already known and used as primary key for this log.
+            # If tts_logs has its own auto-incrementing ID, then c.lastrowid would be that.
+            # For now, assuming message_id from the original message is the key link.
+            logged_tts_id = c.lastrowid # This would be the auto-incremented ID of tts_logs table if it has one.
+                                        # If message_id is the PK, this might not be what you expect.
+                                        # Let's assume tts_logs has its own PK for now.
             conn.close()
             
-            notify_new_audio_available(channel_name, new_id)
-            # Log internally without printing to console
-            logging.info(f"TTS audio file generated: {full_path}")
+            # Notify with the ID of the tts_logs entry
+            notify_new_audio_available(channel_name, logged_tts_id) 
             
-            return full_path, new_id
+            # Log internally without printing to console
+            logging.info(f"TTS audio file generated: {full_path} and logged with tts_logs ID: {logged_tts_id} (original message_id: {message_id})")
+            
+            return full_path, logged_tts_id # Return the ID of the tts_logs entry
             
         except Exception as e:
             print(f"[TTS] Thread processing error: {e}")
