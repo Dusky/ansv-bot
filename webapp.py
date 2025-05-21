@@ -752,8 +752,28 @@ def get_stats_route():
         stats_data = []
         # Assuming markov_handler.get_available_models() returns a list of dicts
         # e.g., [{'name': 'channel1', 'cache_file': '...', 'cache_size': '...', 'line_count': ...}, ...]
-        available_models_info = markov_handler.get_available_models() 
-        model_info_map = {model.get('name'): model for model in available_models_info if model.get('name')}
+        # Or it might return a list of strings (model names)
+        available_models_info = markov_handler.get_available_models()
+        model_info_map = {}
+        if available_models_info:
+            if isinstance(available_models_info[0], dict):
+                # It's a list of dicts, as originally expected
+                model_info_map = {model.get('name'): model for model in available_models_info if model.get('name')}
+            elif isinstance(available_models_info[0], str):
+                # It's a list of strings (model names)
+                # We need to fetch detailed info for each model string if markov_handler provides such a method,
+                # or adapt. For now, we'll assume the string is the name and other details might be missing or
+                # need to be fetched differently.
+                # This simplified approach might mean some 'model_data.get(...)' calls below return None.
+                # A more robust solution would be for get_available_models() to consistently return dicts
+                # or provide a separate function to get details for a string model name.
+                for model_name_str in available_models_info:
+                    # If markov_handler can provide details for a string name, use it here.
+                    # Example: model_details = markov_handler.get_model_details(model_name_str)
+                    # For now, we'll just store the name and assume other details might be fetched later or are N/A.
+                    model_info_map[model_name_str] = {'name': model_name_str} # Basic info
+            else:
+                app.logger.warning(f"Unexpected format for available_models_info: {type(available_models_info[0])}")
 
 
         for row in config_rows:
