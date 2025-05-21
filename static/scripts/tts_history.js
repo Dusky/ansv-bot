@@ -33,21 +33,25 @@ document.addEventListener('DOMContentLoaded', function() {
                 return response.json();
             })
             .then(data => {
+                console.log(`[TTS History] Received data for page ${page}:`, JSON.parse(JSON.stringify(data)));
                 spinner.style.display = 'none';
                 ttsTableBody.innerHTML = ''; // Clear previous entries
 
                 if (data.error || !data.logs || data.logs.length === 0) {
+                    console.log(`[TTS History] No logs found or error. Total items from API: ${data.total_items}, Total pages from API: ${data.total_pages}`);
                     noTTSDataMessage.style.display = 'block';
                     ttsTableContainer.style.display = 'none';
-                    if (data.error) console.error('Error in TTS history data:', data.error);
-                    updatePaginationControls(0, 0); // No pages
+                    if (data.error) console.error('[TTS History] Error in TTS history data:', data.error);
+                    updatePaginationControls(data.page || 0, data.total_pages || 0);
                     return;
                 }
                 
                 ttsTableContainer.style.display = 'block';
                 noTTSDataMessage.style.display = 'none';
 
-                data.logs.forEach(item => {
+                console.log(`[TTS History] Populating table with ${data.logs.length} items. API says Page: ${data.page}, Total Pages: ${data.total_pages}`);
+                data.logs.forEach((item, index) => {
+                    // console.log(`[TTS History] Processing item ${index + 1}/${data.logs.length}:`, JSON.parse(JSON.stringify(item))); // Uncomment for very detailed item logging
                     const row = ttsTableBody.insertRow();
 
                     const cellChannel = row.insertCell();
