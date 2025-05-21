@@ -755,26 +755,25 @@ def get_stats_route():
         # Or it might return a list of strings (model names)
         available_models_info = markov_handler.get_available_models()
         model_info_map = {}
-        if available_models_info:
-            if isinstance(available_models_info[0], dict):
+
+        if isinstance(available_models_info, list) and available_models_info: # Check if it's a list and non-empty
+            first_item = available_models_info[0]
+            if isinstance(first_item, dict):
                 # It's a list of dicts, as originally expected
                 model_info_map = {model.get('name'): model for model in available_models_info if model.get('name')}
-            elif isinstance(available_models_info[0], str):
+            elif isinstance(first_item, str):
                 # It's a list of strings (model names)
-                # We need to fetch detailed info for each model string if markov_handler provides such a method,
-                # or adapt. For now, we'll assume the string is the name and other details might be missing or
-                # need to be fetched differently.
-                # This simplified approach might mean some 'model_data.get(...)' calls below return None.
-                # A more robust solution would be for get_available_models() to consistently return dicts
-                # or provide a separate function to get details for a string model name.
                 for model_name_str in available_models_info:
-                    # If markov_handler can provide details for a string name, use it here.
-                    # Example: model_details = markov_handler.get_model_details(model_name_str)
-                    # For now, we'll just store the name and assume other details might be fetched later or are N/A.
-                    model_info_map[model_name_str] = {'name': model_name_str} # Basic info
+                    # Creating a basic structure; more details might be needed from markov_handler
+                    model_info_map[model_name_str] = {'name': model_name_str} 
             else:
-                app.logger.warning(f"Unexpected format for available_models_info: {type(available_models_info[0])}")
-
+                app.logger.warning(f"Unexpected type for items in available_models_info: {type(first_item)}. Expected dict or str.")
+        elif available_models_info is None:
+             app.logger.warning("markov_handler.get_available_models() returned None. Proceeding with empty model_info_map.")
+        elif not isinstance(available_models_info, list):
+             app.logger.warning(f"markov_handler.get_available_models() returned non-list type: {type(available_models_info)}. Proceeding with empty model_info_map.")
+        # If available_models_info is an empty list, model_info_map correctly remains {}, no warning needed.
+        
 
         for row in config_rows:
             channel_name = row['channel_name'] # Or row['name'] if that's the column
