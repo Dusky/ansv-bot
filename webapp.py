@@ -763,18 +763,24 @@ def get_stats_route():
             # Proceed with available_models_info as None, which is handled below
 
         model_info_map = {}
-        if isinstance(available_models_info, list) and available_models_info:
-            first_item = available_models_info[0]
-            if isinstance(first_item, dict):
-                model_info_map = {model.get('name'): model for model in available_models_info if model.get('name')}
-            elif isinstance(first_item, str):
-                for model_name_str in available_models_info:
-                    model_info_map[model_name_str] = {'name': model_name_str} 
-            else:
-                app.logger.warning(f"Unexpected type for items in available_models_info: {type(first_item)}. Expected dict or str.")
+        if isinstance(available_models_info, list): # Check if it's a list
+            if not available_models_info: # Handle empty list
+                app.logger.debug("markov_handler.get_available_models() returned an empty list.")
+            else: # Process non-empty list
+                for item_index, item in enumerate(available_models_info):
+                    if isinstance(item, dict):
+                        model_name = item.get('name')
+                        if model_name:
+                            model_info_map[model_name] = item
+                        else:
+                            app.logger.warning(f"Item at index {item_index} in available_models_info is a dict but missing 'name' key: {str(item)[:100]}")
+                    elif isinstance(item, str):
+                        model_info_map[item] = {'name': item} # Basic info for string items
+                    else:
+                        app.logger.warning(f"Unexpected type for item at index {item_index} in available_models_info: {type(item)}. Item: {str(item)[:100]}")
         elif available_models_info is None:
-             app.logger.warning("markov_handler.get_available_models() returned None. Proceeding with empty model_info_map.")
-        elif not isinstance(available_models_info, list):
+             app.logger.warning("markov_handler.get_available_models() returned None or failed. Proceeding with empty model_info_map.")
+        else: # Not a list and not None
              app.logger.warning(f"markov_handler.get_available_models() returned non-list type: {type(available_models_info)}. Proceeding with empty model_info_map.")
         
         app.logger.debug(f"Processing {len(config_rows)} config_rows with model_info_map: {str(model_info_map)[:200]}")
