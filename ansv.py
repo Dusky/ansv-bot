@@ -7,6 +7,7 @@ import torch # Keep torch import for TTS check
 import signal
 import sys
 import time # For shutdown delay
+import asyncio # Added import for asyncio
 
 # Global variable to hold the bot instance for graceful shutdown
 bot_instance = None
