@@ -741,30 +741,34 @@ def api_tts_stats():
 @app.route('/get-stats')
 def get_stats_route():
     try:
+        app.logger.debug("Attempting to connect to database for /get-stats")
         conn = sqlite3.connect(db_file)
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
-        # Ensure channel_configs has channel_name or adapt if it's just 'name'
+        app.logger.debug("Executing query: SELECT channel_name, use_general_model, lines_between_messages FROM channel_configs")
         c.execute("SELECT channel_name, use_general_model, lines_between_messages FROM channel_configs")
         config_rows = c.fetchall()
         conn.close()
+        app.logger.debug(f"Fetched {len(config_rows)} channel_configs rows.")
 
         stats_data = []
-        # Assuming markov_handler.get_available_models() returns a list of dicts
-        # e.g., [{'name': 'channel1', 'cache_file': '...', 'cache_size': '...', 'line_count': ...}, ...]
-        # Or it might return a list of strings (model names)
-        available_models_info = markov_handler.get_available_models()
-        model_info_map = {}
+        
+        available_models_info = None
+        try:
+            app.logger.debug("Calling markov_handler.get_available_models()")
+            available_models_info = markov_handler.get_available_models()
+            app.logger.debug(f"markov_handler.get_available_models() returned: {type(available_models_info)} - {str(available_models_info)[:200]}")
+        except Exception as mh_exc:
+            app.logger.error(f"Exception from markov_handler.get_available_models(): {mh_exc}", exc_info=True)
+            # Proceed with available_models_info as None, which is handled below
 
-        if isinstance(available_models_info, list) and available_models_info: # Check if it's a list and non-empty
+        model_info_map = {}
+        if isinstance(available_models_info, list) and available_models_info:
             first_item = available_models_info[0]
             if isinstance(first_item, dict):
-                # It's a list of dicts, as originally expected
                 model_info_map = {model.get('name'): model for model in available_models_info if model.get('name')}
             elif isinstance(first_item, str):
-                # It's a list of strings (model names)
                 for model_name_str in available_models_info:
-                    # Creating a basic structure; more details might be needed from markov_handler
                     model_info_map[model_name_str] = {'name': model_name_str} 
             else:
                 app.logger.warning(f"Unexpected type for items in available_models_info: {type(first_item)}. Expected dict or str.")
@@ -772,25 +776,34 @@ def get_stats_route():
              app.logger.warning("markov_handler.get_available_models() returned None. Proceeding with empty model_info_map.")
         elif not isinstance(available_models_info, list):
              app.logger.warning(f"markov_handler.get_available_models() returned non-list type: {type(available_models_info)}. Proceeding with empty model_info_map.")
-        # If available_models_info is an empty list, model_info_map correctly remains {}, no warning needed.
         
+        app.logger.debug(f"Processing {len(config_rows)} config_rows with model_info_map: {str(model_info_map)[:200]}")
+        for i, row in enumerate(config_rows):
+            try:
+                channel_name = row['channel_name'] 
+                use_general_model_val = row['use_general_model']
+                lines_between_messages_val = row['lines_between_messages']
+                
+                model_data = model_info_map.get(channel_name, {})
+                
+                log_file_path = os.path.join('logs', f"{channel_name}.log")
+                log_file_exists = os.path.exists(log_file_path)
 
-        for row in config_rows:
-            channel_name = row['channel_name'] # Or row['name'] if that's the column
-            model_data = model_info_map.get(channel_name, {})
-            
-            log_file_path = os.path.join('logs', f"{channel_name}.log")
-            log_file_exists = os.path.exists(log_file_path)
-
-            stats_data.append({
-                "name": channel_name, # Ensure this matches what JS expects
-                "cache_file": model_data.get('cache_file', 'N/A'),
-                "log_file": f"{channel_name}.log" if log_file_exists else 'N/A',
-                "cache_size": model_data.get('cache_size_str', model_data.get('cache_size', '0 KB')), # Prefer cache_size_str if available
-                "line_count": model_data.get('line_count', 0),
-                "use_general_model": bool(row['use_general_model']),
-                "lines_between_messages": row['lines_between_messages']
-            })
+                stats_data.append({
+                    "name": channel_name,
+                    "cache_file": model_data.get('cache_file', 'N/A'),
+                    "log_file": f"{channel_name}.log" if log_file_exists else 'N/A',
+                    "cache_size": model_data.get('cache_size_str', model_data.get('cache_size', '0 KB')),
+                    "line_count": model_data.get('line_count', 0),
+                    "use_general_model": bool(use_general_model_val),
+                    "lines_between_messages": lines_between_messages_val
+                })
+            except KeyError as ke:
+                app.logger.error(f"KeyError processing row {i} in /get-stats: {ke}. Row data: {dict(row) if row else 'Row is None'}", exc_info=True)
+                continue 
+            except Exception as row_exc:
+                app.logger.error(f"Exception processing row {i} ('{row['channel_name'] if row and 'channel_name' in row else 'UnknownChannel'}') in /get-stats: {row_exc}", exc_info=True)
+                continue
 
         # Add general model if it exists and isn't already covered
         if "general_markov" in model_info_map:
@@ -806,9 +819,10 @@ def get_stats_route():
                     "lines_between_messages": 0 # Not applicable
                 })
         
+        app.logger.debug(f"Successfully prepared stats_data for {len(stats_data)} items for /get-stats.")
         return jsonify(stats_data)
     except Exception as e:
-        app.logger.error(f"Error in /get-stats: {e}\n{traceback.format_exc()}")
+        app.logger.error(f"Error in /get-stats: {e}", exc_info=True)
         return jsonify({"error": str(e), "data": []}), 500
 
 @app.route('/api/cache-build-performance')

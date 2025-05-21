@@ -15,7 +15,8 @@ function loadStatistics() {
   fetch('/get-stats')
     .then(response => {
       if (!response.ok) {
-        throw new Error('Failed to load stats data');
+        // Throw a more detailed error to help diagnose
+        throw new Error(`Failed to load stats data: ${response.status} ${response.statusText}`);
       }
       return response.json();
     })
@@ -126,9 +127,10 @@ function loadStatistics() {
       }
     })
     .catch(error => {
-      if (isDev) console.error('Error loading stats:', error);
+      if (isDev) console.error('Error loading stats:', error.message); // Log the more detailed error message
       if (statsContainer) {
-        statsContainer.innerHTML = '<tr><td colspan="7" class="text-center text-danger">Failed to load data.</td></tr>';
+        // Display the more detailed error message in the table
+        statsContainer.innerHTML = `<tr><td colspan="7" class="text-center text-danger">${error.message}</td></tr>`;
       }
     })
     .finally(() => {
