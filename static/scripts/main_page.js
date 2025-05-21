@@ -331,7 +331,8 @@ function loadRecentTTS() {
             if (ttsTable) ttsTable.style.display = 'table'; // Or 'block' if it's not a table element
             if (noTTSDataMessage) noTTSDataMessage.style.display = 'none';
 
-            data.forEach(item => {
+            data.forEach((item, index) => {
+                console.log(`[loadRecentTTS] Processing item ${index + 1}/${data.length}:`, JSON.parse(JSON.stringify(item)));
                 const row = ttsTableBody.insertRow();
 
                 const cellChannel = row.insertCell();
