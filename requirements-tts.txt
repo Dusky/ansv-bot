@@ -19,7 +19,7 @@ Flask-SocketIO==5.3.6
 frozenlist==1.4.1
 fsspec==2023.10.0
 h11==0.14.0
-huggingface-hub==0.23.0
+huggingface-hub>=0.30.0,<1.0
 humanfriendly==10.0
 idna==3.6
 iso8601==2.1.0
