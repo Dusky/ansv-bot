@@ -139,60 +139,6 @@
         </div>
     </div>
 
-    <!-- Recent TTS Activity Section -->
-    <div class="row mb-4">
-        <div class="col-12">
-            <div class="dashboard-card activity-panel">
-                <div class="activity-panel-header">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <h3 class="panel-title"><i class="fas fa-history me-2"></i>Recent TTS Activity</h3>
-                        <div class="panel-actions">
-                            <button id="refreshRecentBtn" class="btn btn-icon" onclick="loadRecentTTS()" title="Refresh TTS data">
-                                <i class="fas fa-sync-alt"></i>
-                            </button>
-                            <a href="#" class="btn btn-sm btn-outline-primary ms-2" onclick="alert('TTS History page not yet implemented'); return false;">View All History</a>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="activity-panel-body p-0">
-                    <!-- Loading state -->
-                    <div id="ttsLoadingSpinner" class="text-center py-5">
-                        <div class="spinner-border text-primary" role="status"></div>
-                        <p class="mt-3">Loading recent TTS messages...</p>
-                    </div>
-                    
-                    <!-- TTS messages table -->
-                    <div id="recentTTSTable" class="table-responsive" style="display: none;">
-                        <table class="table table-hover activity-table mb-0">
-                            <thead>
-                                <tr>
-                                    <th class="text-center" style="width: 10%;">Channel</th>
-                                    <th style="width: 45%;">Message</th>
-                                    <th style="width: 15%;">Time</th>
-                                    <th style="width: 15%;">Voice</th>
-                                    <th class="text-center" style="width: 15%;">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody id="recentTTSBody">
-                                <!-- TTS entries will be loaded here by static/scripts/main_page.js -->
-                            </tbody>
-                        </table>
-                    </div>
-                    
-                    <!-- No data state -->
-                    <div id="noTTSData" class="empty-state" style="display: none;">
-                        <div class="empty-state-content">
-                            <i class="fas fa-comment-slash empty-state-icon"></i>
-                            <h4>No TTS Messages</h4>
-                            <p class="text-muted">There are no recent TTS messages to display</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
     <!-- Stats Dashboard Section -->
     <div class="row">
         <!-- System Info Card -->

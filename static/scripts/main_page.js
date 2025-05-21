@@ -38,12 +38,6 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     try {
-        loadRecentTTS();
-    } catch (e) {
-        console.error('Error initializing recent TTS:', e);
-    }
-    
-    try {
         loadSystemInfo();
     } catch (e) {
         console.error('Error initializing system info:', e);
@@ -53,20 +47,20 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!window.location.pathname.includes('settings')) {
         console.log("Setting up main page refresh intervals");
         // setInterval(checkBotStatus, 30000); // Removed: Handled by bot_status.js
-        setInterval(loadRecentTTS, 60000);  // Every minute
+        // setInterval(loadRecentTTS, 60000);  // Removed: Recent TTS table is being removed
     } else {
         console.log("On settings page - skipping refresh intervals");
     }
     
     // Set up event listeners - with null check
-    const refreshRecentBtn = document.getElementById('refreshRecentBtn');
-    if (refreshRecentBtn) {
-        refreshRecentBtn.addEventListener('click', function() {
-            this.disabled = true;
-            loadRecentTTS();
-            setTimeout(() => { this.disabled = false; }, 2000);
-        });
-    }
+    // const refreshRecentBtn = document.getElementById('refreshRecentBtn'); // Removed: Recent TTS table is being removed
+    // if (refreshRecentBtn) {
+    //     refreshRecentBtn.addEventListener('click', function() {
+    //         this.disabled = true;
+    //         loadRecentTTS();
+    //         setTimeout(() => { this.disabled = false; }, 2000);
+    //     });
+    // }
 });
 
 // Enhanced bot status check function - REMOVED as bot_status.js handles this.
@@ -294,7 +288,8 @@ function loadTTSStats() {
         });
 }
 
-// Load recent TTS messages
+// Load recent TTS messages - REMOVED as the table is being removed
+/*
 function loadRecentTTS() {
     const ttsTableBody = document.getElementById('recentTTSBody');
     const ttsTable = document.getElementById('recentTTSTable');
@@ -401,6 +396,7 @@ function loadRecentTTS() {
             if (ttsTable) ttsTable.style.display = 'none';
         });
 }
+*/
 
 // Updated loadSystemInfo with better error handling
 function loadSystemInfo() {
