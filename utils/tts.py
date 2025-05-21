@@ -214,18 +214,23 @@ def process_text_thread(input_text, channel_name, db_file='./messages.db', full_
                     # then lastrowid will be that new log_id.
                     logged_tts_table_id = c.lastrowid 
                     
-                    # Verify the insert by trying to fetch the row using message_id if it's supposed to be unique or a key.
-                    # This is optional but good for debugging.
+                    # Verify the insert by trying to fetch the row using message_id.
                     c.execute("SELECT COUNT(*) FROM tts_logs WHERE message_id = ?", (message_id,))
                     count_for_message_id = c.fetchone()[0]
                     
                     conn.close()
                     logging.info(f"[TTS DB LOG] Successfully logged. TTS Log Table ID (ROWID): {logged_tts_table_id}, Original Message ID: {message_id}. Count for this message_id in tts_logs: {count_for_message_id}.")
-                    if count_for_message_id > 1:
-                        logging.warning(f"[TTS DB LOG] Multiple tts_logs entries found for message_id {message_id}. This might indicate an issue if message_id should be unique per TTS event.")
+                    # Since message_id is PRIMARY KEY, count_for_message_id should always be 1 after a successful insert.
+                    # If it were >1, it would imply message_id is not truly a PK or there's an issue.
+                    # However, an IntegrityError would prevent this state.
 
-                except sqlite3.Error as db_err:
-                    logging.error(f"[TTS DB LOG] SQLite error during tts_logs insert: {db_err}")
+                except sqlite3.IntegrityError as integrity_err:
+                    # This will catch "UNIQUE constraint failed" if message_id is PK and a duplicate is inserted.
+                    logging.error(f"[TTS DB LOG] SQLite IntegrityError (likely duplicate message_id): {integrity_err}")
+                    logging.error(f"[TTS DB LOG] Failed Data: message_id={message_id}, channel={channel_name}, timestamp={timestamp_for_log}, voice={voice_preset}, path={db_file_path_relative}, text='{str(input_text)[:30]}...'")
+                    logged_tts_table_id = None # Ensure it's None on error
+                except sqlite3.Error as db_err: # Catch other SQLite errors
+                    logging.error(f"[TTS DB LOG] Other SQLite error during tts_logs insert: {db_err}")
                     logging.error(f"[TTS DB LOG] Data was: message_id={message_id}, channel={channel_name}, timestamp={timestamp_for_log}, voice={voice_preset}, path={db_file_path_relative}, text='{str(input_text)[:30]}...'")
                     logged_tts_table_id = None # Ensure it's None on error
                 except Exception as general_db_err:
