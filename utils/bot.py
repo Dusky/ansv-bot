@@ -1117,10 +1117,43 @@ class Bot(commands.Bot):
                             # If TTS is enabled for the current channel.
                             if self.enable_tts and tts_enabled:
                                 # Generate TTS audio for the response.
-                                # Note: process_text function logs internally, so we don't need to log here
-                                tts_output = process_text(response, channel_name, self.db_file)
-                                if not tts_output:
-                                    print("Failed to generate TTS audio file.")
+                                # Ensure start_tts_processing is called correctly with message_id and timestamp_str
+                                original_message_id = message.id # ID of the original message that triggered this response
+                                
+                                # Format the timestamp of the original message
+                                if isinstance(message.timestamp, datetime):
+                                    original_timestamp_str = message.timestamp.strftime("%Y%m%d-%H%M%S")
+                                elif isinstance(message.timestamp, str):
+                                    original_timestamp_str = message.timestamp
+                                else: # Fallback
+                                    self.logger.warning(f"Unexpected timestamp type for original message {message.id}: {type(message.timestamp)}. Using current time for TTS log.")
+                                    original_timestamp_str = datetime.now().strftime("%Y%m%d-%H%M%S")
+
+                                # Get voice preset for the channel
+                                # Assuming get_channel_voice_preset method exists or can be added
+                                voice_preset_for_tts = None 
+                                if hasattr(self, 'get_channel_voice_preset'):
+                                    voice_preset_for_tts = self.get_channel_voice_preset(channel_name)
+                                else:
+                                    self.logger.warning("Method 'get_channel_voice_preset' not found in Bot class. TTS will use default preset.")
+
+                                self.logger.debug(f"Calling start_tts_processing for bot response to msg_id: {original_message_id}, channel: {channel_name}, text: {response[:30]}..., timestamp: {original_timestamp_str}, voice: {voice_preset_for_tts}")
+                                
+                                # Call start_tts_processing from utils.tts
+                                # Note: The process_text function was previously called here, but start_tts_processing is the one
+                                # that takes message_id and timestamp_str for proper logging.
+                                # We need to import it if not already.
+                                from utils.tts import start_tts_processing # Ensure this import is at the top of the file or within the method
+                                
+                                start_tts_processing(
+                                    input_text=response, # The bot's generated response
+                                    channel_name=channel_name,
+                                    message_id=original_message_id, # Link to the original user message
+                                    timestamp_str=original_timestamp_str, # Timestamp of the original user message
+                                    voice_preset_override=voice_preset_for_tts,
+                                    db_file=self.db_file
+                                )
+                                # The process_text_thread called by start_tts_processing will handle logging to tts_logs.
 
                             # Reset the chat line count and last message time for the current channel.
                             self.channel_chat_line_count[channel_name] = 0
