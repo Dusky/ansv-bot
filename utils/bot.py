@@ -17,7 +17,7 @@ from utils.logger import Logger
 from utils.color_control import ColorManager
 from commands.ansv_command import ansv_command
 from utils.db_setup import ensure_db_setup
-from utils.tts import process_text
+from utils.tts import process_text, start_tts_processing # Added start_tts_processing
 
 config = configparser.ConfigParser()
 config.read("settings.conf")
@@ -1142,9 +1142,9 @@ class Bot(commands.Bot):
                                 # Call start_tts_processing from utils.tts
                                 # Note: The process_text function was previously called here, but start_tts_processing is the one
                                 # that takes message_id and timestamp_str for proper logging.
-                                # We need to import it if not already.
-                                from utils.tts import start_tts_processing # Ensure this import is at the top of the file or within the method
-                                
+                                # start_tts_processing is now imported at the top of utils/bot.py
+
+                                self.logger.info(f"Attempting to start TTS processing for bot auto-response. MsgID: {original_message_id}, Channel: {channel_name}, Text: '{response[:30]}...'")
                                 start_tts_processing(
                                     input_text=response, # The bot's generated response
                                     channel_name=channel_name,
@@ -1153,6 +1153,7 @@ class Bot(commands.Bot):
                                     voice_preset_override=voice_preset_for_tts,
                                     db_file=self.db_file
                                 )
+                                self.logger.info("start_tts_processing called for bot auto-response.")
                                 # The process_text_thread called by start_tts_processing will handle logging to tts_logs.
 
                             # Reset the chat line count and last message time for the current channel.
@@ -1532,18 +1533,27 @@ class Bot(commands.Bot):
             try:
                 from utils.tts import process_text
                 # Note: We're using the import here to ensure we're calling the right function
-                # The expected signature is process_text(message, channel, db_file)
-                success, audio_file = await process_text(message_to_speak, channel, self.db_file)
+                # The signature for async def process_text(channel, text, model_type="bark") in utils/tts.py
+                self.logger.info(f"Calling process_text for !speak command. Channel: {channel}, Text: '{message_to_speak[:30]}...'")
+                success, audio_file = await process_text(channel, message_to_speak) # Corrected call
             except Exception as tts_error:
-                self.logger.error(f"Error processing TTS: {tts_error}")
+                self.logger.error(f"Error calling or during TTS generation via process_text for !speak: {tts_error}", exc_info=True)
                 success, audio_file = False, None
             
+            self.logger.info(f"!speak TTS generation result: success={success}, audio_file='{audio_file}'")
+
             if success and audio_file:
                 # TTS was successful, log and notify
-                await ctx.send(f"Speaking the last message. Audio available at: {audio_file}")
+                # The audio_file path from process_text should be like "static/outputs/channel/file.wav"
+                web_path = audio_file 
+                if not web_path.startswith('static/'): # Ensure it's a web path if not already
+                    web_path = f"static/{web_path.lstrip('/')}"
+                
+                await ctx.send(f"Speaking: {message_to_speak[:50]}... (Audio: {web_path})")
                 
                 # Log the TTS usage in the database for tracking
                 try:
+                    self.logger.info(f"Attempting to log !speak TTS to DB. audio_file from process_text: {audio_file}")
                     conn = sqlite3.connect(self.db_file)
                     c = conn.cursor()
                     # Get the message_id of the command message itself
