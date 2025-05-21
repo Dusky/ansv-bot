@@ -24,9 +24,9 @@ MUSIC="🎵"
 VENV_DIR=".venv"
 CONFIG_FILE="settings.conf"
 EXAMPLE_CONFIG="settings.example.conf"
-TTS_MODELS_DIR="models/tts"
+TTS_MODELS_DIR="models/tts" # This is where Bark models will be cached by HuggingFace
 TTS_OUTPUT_DIR="static/outputs"
-TTS_VOICES_DIR="voices"
+TTS_VOICES_DIR="voices" # This is for custom .npz voice files
 
 # ASCII Art Banner with Animation Frames
 print_banner() {
@@ -276,7 +276,7 @@ parse_arguments() {
                 source $VENV_DIR/bin/activate
                 prepare_tts_directories
                 check_tts_models
-                download_voice_preset "v2/en_speaker_6"
+                download_voice_presets # Changed to download_voice_presets
                 echo -e "${GREEN}✅ Models downloaded successfully!${NC}"
                 exit 0 
                 ;;
@@ -393,40 +393,22 @@ install_requirements() {
         echo -e "${MUSIC} Installing TTS dependencies...${NC}"
         prepare_tts_directories
         
-        # Create a temporary requirements file with pinned versions to avoid dependency resolution issues
-        TMP_REQ=$(mktemp)
-        cat > "$TMP_REQ" << EOF
-accelerate==0.26.1
-transformers==4.36.2
-scipy==1.11.4
-numpy==1.26.2
-huggingface-hub==0.19.4
-soundfile==0.12.1
-nltk==3.8.1
-encodec>=0.1.1
-funcy>=2.0
-EOF
-
-        # Install dependencies with pinned versions first
-        echo -e "${CYAN}Installing core dependencies with pinned versions...${NC}"
-        pip install -r "$TMP_REQ" --no-cache-dir
+        echo -e "${CYAN}Installing TTS dependencies from requirements-tts.txt...${NC}"
+        pip install -r requirements-tts.txt --no-cache-dir
         
-        # Then install Bark from GitHub
-        echo -e "${CYAN}Installing Bark from GitHub...${NC}"
-        pip install git+https://github.com/suno-ai/bark.git@main
-        
-        # Platform-specific PyTorch installation
+        # Platform-specific PyTorch installation (if needed, requirements-tts.txt might handle it)
+        # This step can override the PyTorch from requirements-tts.txt if a specific build is needed.
         case "$PLATFORM" in
             "macos")
-                echo "Installing PyTorch for macOS..."
+                echo "Ensuring PyTorch for macOS (CPU)..."
                 pip install torch==2.1.2 torchaudio==2.1.2 --index-url https://download.pytorch.org/whl/cpu
                 ;;
             "linux"|"windows")
                 if command -v nvidia-smi &> /dev/null; then
-                    echo "Installing PyTorch with CUDA support..."
+                    echo "Ensuring PyTorch with CUDA support..."
                     pip install torch==2.1.2 torchaudio==2.1.2 --index-url https://download.pytorch.org/whl/cu121
                 else
-                    echo "Installing PyTorch CPU version..."
+                    echo "Ensuring PyTorch CPU version..."
                     pip install torch==2.1.2 torchaudio==2.1.2 --index-url https://download.pytorch.org/whl/cpu
                 fi
                 ;;
@@ -434,10 +416,7 @@ EOF
         
         # Download required NLTK resources
         echo -e "${CYAN}📦 Downloading NLTK resources for TTS...${NC}"
-        python -c "import nltk; nltk.download('punkt')"
-        
-        # Clean up
-        rm "$TMP_REQ"
+        python -c "import nltk; nltk.download('punkt', quiet=True)"
         
         check_tts_models
         
@@ -468,10 +447,16 @@ prepare_tts_directories() {
     
     # Create channel-specific output directories from settings
     if [ -f "$CONFIG_FILE" ]; then
-        channels=$(grep -A 1 "channels =" "$CONFIG_FILE" | tail -1 | tr -d ' ' | tr ',' ' ')
-        for channel in $channels; do
-            mkdir -p "$TTS_OUTPUT_DIR/$channel"
-        done
+        channels_line=$(grep "^channels[[:space:]]*=" "$CONFIG_FILE" | head -n 1)
+        if [ -n "$channels_line" ]; then
+            channels_value=$(echo "$channels_line" | cut -d'=' -f2- | tr -d ' ')
+            IFS=',' read -ra channel_array <<< "$channels_value"
+            for channel in "${channel_array[@]}"; do
+                if [ -n "$channel" ]; then # Ensure channel name is not empty
+                    mkdir -p "$TTS_OUTPUT_DIR/$channel"
+                fi
+            done
+        fi
     fi
 }
 
@@ -489,15 +474,41 @@ check_tts_models() {
 }
 
 download_voice_preset() {
-    preset="$1"
-    echo -e "${CYAN}🎤 Downloading voice preset: $preset...${NC}"
+    local preset="$1"
+    echo -e "${CYAN}🎤 Downloading/caching voice preset: $preset...${NC}"
     
+    # Use python to trigger the download via transformers library
+    # This attempts a minimal generation which forces speaker embedding download
     python -c "
-from transformers import BarkModel
-model = BarkModel.from_pretrained('suno/bark-small', cache_dir='$TTS_MODELS_DIR')
-model._get_speaker_embedding('$preset')
-print('Voice preset downloaded successfully!')
-" || echo -e "${RED}Failed to download voice preset${NC}"
+import os
+from transformers import AutoProcessor, BarkModel
+import torch
+
+# Suppress most Bark warnings for cleaner output during preset download
+os.environ['SUNO_ENABLE_MPS'] = 'False' # Avoid MPS specific warnings if not used
+os.environ['SUNO_OFFLOAD_CPU'] = 'True' # Offload to CPU to reduce memory if GPU not primary
+
+try:
+    processor = AutoProcessor.from_pretrained('suno/bark-small', cache_dir='$TTS_MODELS_DIR')
+    model = BarkModel.from_pretrained('suno/bark-small', cache_dir='$TTS_MODELS_DIR')
+    
+    # If CUDA is available, move model to GPU, otherwise use CPU
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    model = model.to(device)
+
+    # A short, simple text for generation
+    text_prompt = 'Hello.'
+    inputs = processor(text_prompt, voice_preset='$preset', return_tensors='pt').to(device)
+    
+    # Generate a very short audio sample to trigger speaker embedding download
+    # Use min_eos_p to make it finish quickly.
+    with torch.no_grad(): # Ensure no gradients are computed
+      speech_values = model.generate(**inputs, do_sample=True, min_eos_p=0.2, max_new_tokens=16) # Generate minimal tokens
+    
+    print(f'Voice preset $preset cached successfully!')
+except Exception as e:
+    print(f'Failed to cache voice preset $preset: {e}')
+" || echo -e "${RED}Python script failed for preset $preset${NC}"
 }
 
 # Add standard voice presets to download during setup
@@ -523,4 +534,4 @@ if [ $# -eq 0 ]; then
 else
     # Parse command line arguments
     parse_arguments "$@"
-fi 
+fi
