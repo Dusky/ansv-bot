@@ -486,6 +486,9 @@ document.addEventListener('DOMContentLoaded', function() {
   const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
   if (isDev) console.log("Stats.js loaded and initializing...");
   
+  // Initialize search and sort functionality for the channel table
+  initSearch(); // Call the function to set up search/sort
+
   setTimeout(function() {
     if (typeof window.loadStatistics === 'function') {
       if (isDev) console.log("Loading statistics from stats.js...");
@@ -529,3 +532,138 @@ document.addEventListener('DOMContentLoaded', function() {
 
   }, 500);
 });
+
+// Function to initialize search and sort functionality for the channel table
+function initSearch() {
+    const searchInput = document.getElementById('channelSearch');
+    const clearBtn = document.getElementById('clearSearchBtn');
+    const sortSelector = document.getElementById('sortSelector');
+    
+    if (!searchInput || !clearBtn) {
+        // console.warn("Stats page search or clear button not found.");
+        return;
+    }
+    
+    searchInput.addEventListener('input', function() {
+        filterChannels(this.value.toLowerCase());
+    });
+    
+    clearBtn.addEventListener('click', function() {
+        searchInput.value = '';
+        filterChannels('');
+    });
+    
+    // Add sort selector functionality
+    if (sortSelector) {
+        sortSelector.addEventListener('change', function() {
+            sortChannelTable(this.value);
+        });
+    } else {
+        // console.warn("Stats page sort selector not found.");
+    }
+}
+
+function filterChannels(query) {
+    const rows = document.querySelectorAll('#statsContainer tr');
+    const filteredCountElement = document.getElementById('filteredCount');
+    let visibleCount = 0;
+    
+    rows.forEach(row => {
+        // Ensure it's a data row (has td elements)
+        const firstCell = row.querySelector('td:first-child');
+        if (!firstCell) return; 
+
+        const channelName = firstCell.textContent.toLowerCase();
+        
+        if (channelName.includes(query)) {
+            row.style.display = '';
+            visibleCount++;
+        } else {
+            row.style.display = 'none';
+        }
+    });
+    
+    // Update the filtered count
+    if (filteredCountElement) {
+        filteredCountElement.textContent = visibleCount;
+    }
+}
+
+function sortChannelTable(sortBy) {
+    const tbody = document.getElementById('statsContainer');
+    if (!tbody) return;
+    
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    
+    // Skip if there are no rows or loading indicator is present
+    if (rows.length === 0 || (rows.length === 1 && rows[0].querySelector('#loadingIndicator'))) return;
+    
+    // Sort the rows based on the selected criteria
+    rows.sort((rowA, rowB) => {
+        // Skip rows with no data cells (e.g., loading indicator row)
+        if (!rowA.querySelector('td') || !rowB.querySelector('td')) return 0;
+        
+        // General model always at the top
+        const channelA_Name = rowA.querySelector('td:first-child')?.textContent;
+        const channelB_Name = rowB.querySelector('td:first-child')?.textContent;
+        
+        if (channelA_Name === 'General Model' || channelA_Name === 'general_markov') return -1;
+        if (channelB_Name === 'General Model' || channelB_Name === 'general_markov') return 1;
+        
+        switch (sortBy) {
+            case 'name':
+                return (channelA_Name || '').localeCompare(channelB_Name || '');
+                
+            case 'size':
+                // Extract cache size values
+                const sizeA = extractNumericValue(rowA.querySelector('td:nth-child(4)')?.textContent);
+                const sizeB = extractNumericValue(rowB.querySelector('td:nth-child(4)')?.textContent);
+                return sizeB - sizeA; // Sort by size descending
+                
+            case 'messages':
+                // Extract message count values
+                const messagesA = parseInt(rowA.querySelector('td:nth-child(5)')?.textContent || '0', 10);
+                const messagesB = parseInt(rowB.querySelector('td:nth-child(5)')?.textContent || '0', 10);
+                return messagesB - messagesA; // Sort by message count descending
+                
+            case 'activity': // This is a proxy for model health/training status
+                const activityA_raw = rowA.querySelector('td:nth-child(6) .badge')?.textContent.toLowerCase() || '';
+                const activityB_raw = rowB.querySelector('td:nth-child(6) .badge')?.textContent.toLowerCase() || '';
+                
+                const score = (status) => {
+                    if (status.includes('well-trained')) return 3;
+                    if (status.includes('adequate')) return 2;
+                    if (status.includes('needs training')) return 1;
+                    return 0;
+                };
+                return score(activityB_raw) - score(activityA_raw); // Sort by activity descending
+                
+            default:
+                return 0;
+        }
+    });
+    
+    // Reappend the sorted rows
+    rows.forEach(row => tbody.appendChild(row));
+}
+
+// Helper function to extract numeric value from formatted strings like "1.23 MB"
+function extractNumericValue(text) {
+    if (!text) return 0;
+    
+    // Extract the number portion
+    const matches = text.match(/^([\d.]+)/);
+    if (!matches || !matches[1]) return 0;
+    
+    const value = parseFloat(matches[1]);
+    const unit = text.trim().split(' ')[1];
+    
+    // Convert to a common unit (KB) for comparison
+    switch (unit) {
+        case 'B': return value / 1024;
+        case 'KB': return value;
+        case 'MB': return value * 1024;
+        case 'GB': return value * 1024 * 1024;
+        default: return value; // Assume KB if unit is unknown or missing
+    }
+}
