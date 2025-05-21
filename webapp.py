@@ -455,7 +455,7 @@ def stats_page():
     # theme = request.cookies.get("theme", "darkly") # Theme is now injected by context_processor
     return render_template("stats.html") # No need to pass theme
 
-@app.route('/bot-control')
+@app.route('/bot-control', endpoint='bot_control_page')
 def bot_control_page(): 
     """Render the bot control page."""
     # theme = request.cookies.get("theme", "darkly") # Theme is now injected by context_processor
@@ -616,13 +616,13 @@ def set_theme_route(theme_name):
 @app.errorhandler(404)
 def page_not_found_error(e): 
     # theme = request.cookies.get('theme', 'darkly') # Theme is now injected by context_processor
-    return render_template('index.html', error_message="404: Page Not Found"), 404 # No need to pass theme
+    return render_template('404.html', error_message="404: Page Not Found"), 404 # No need to pass theme
 
 @app.errorhandler(500)
 def server_error_handler(e): 
     app.logger.error(f"Server Error: {e}\n{traceback.format_exc()}")
     # theme = request.cookies.get('theme', 'darkly') # Theme is now injected by context_processor
-    return render_template('index.html', error_message="500: Internal Server Error"), 500 # No need to pass theme
+    return render_template('500.html', error_message="500: Internal Server Error"), 500 # No need to pass theme
 
 if __name__ == "__main__":
     markov_handler.load_models()
