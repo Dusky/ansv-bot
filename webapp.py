@@ -48,6 +48,12 @@ last_status_check = 0
 # Global to store TTS status from ansv.py
 _enable_tts_webapp = False
 
+@app.context_processor
+def inject_theme():
+    """Injects theme information into the template context."""
+    theme = request.cookies.get('theme', 'darkly') # Default to 'darkly'
+    return dict(theme=theme)
+
 def set_enable_tts(status: bool):
     """Allows ansv.py to set the TTS status for the webapp."""
     global _enable_tts_webapp
@@ -278,7 +284,8 @@ def send_markov_message(channel_name):
 
 @app.route('/')
 def main():
-    theme = request.cookies.get("theme", "darkly")
+    # Theme is now injected by context_processor, but can be accessed here if needed
+    # theme = request.cookies.get("theme", "darkly") 
     tts_files_data, last_id_val = get_last_10_tts_files_with_last_id(db_file)
     
     bot_running_status = is_bot_actually_running()
@@ -302,13 +309,11 @@ def main():
         except (FileNotFoundError, json.JSONDecodeError) as e:
             app.logger.warning(f"Could not read or parse bot_heartbeat.json: {e}")
     
-    return render_template("index.html", theme=theme, tts_files=tts_files_data, 
-                           last_id=last_id_val, bot_status=bot_status_info)
+    return render_template("index.html", tts_files=tts_files_data, 
+                           last_id=last_id_val, bot_status=bot_status_info) # No need to pass theme explicitly
 
-@app.route("/generate-message/<channel_name>") # This seems like a GET request, should probably be POST or part of the main generate-message
-def generate_message_get(channel_name): # Renamed to avoid conflict
-    # This route is likely less used if the POST version is primary.
-    # For simplicity, let's assume it generates for display only.
+@app.route("/generate-message/<channel_name>") 
+def generate_message_get(channel_name): 
     try:
         message = markov_handler.generate_message(channel_name, max_attempts=8, max_fallbacks=2)
         if message:
@@ -324,12 +329,8 @@ def generate_message_post():
     try:
         data = request.get_json(silent=True) or {}
         model_name_req = data.get('model')
-        channel_req = data.get('channel') # Channel can provide context or be the model itself
+        channel_req = data.get('channel') 
         
-        # Determine the model to use
-        # If a specific model is requested, use it.
-        # If only channel is provided, try using channel as model name.
-        # Otherwise, default to general model.
         model_to_use = model_name_req or channel_req or "general_markov"
         
         app.logger.info(f"Generating message with effective model: {model_to_use} (requested model: {model_name_req}, channel context: {channel_req})")
@@ -377,19 +378,18 @@ def rebuild_all_caches():
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
 
-@app.route('/start_bot', methods=['POST']) # Consistent endpoint name
+@app.route('/start_bot', methods=['POST']) 
 def start_bot_route():
     if is_bot_actually_running():
         return jsonify({"success": False, "message": "Bot is already running"}), 400
     try:
         import subprocess
-        # Pass relevant flags to launch.sh, assuming it handles TTS flags based on its internal logic or ansv.py does
         subprocess.Popen(["./launch.sh", "--web", "--tts"], creationflags=subprocess.DETACHED_PROCESS if os.name == 'nt' else 0)
         return jsonify({"success": True, "message": "Bot start command issued."})
     except Exception as e:
         return jsonify({"success": False, "message": f"Error starting bot: {str(e)}"}), 500
 
-@app.route('/stop_bot', methods=['POST']) # Consistent endpoint name
+@app.route('/stop_bot', methods=['POST']) 
 def stop_bot_route():
     if not is_bot_actually_running():
         return jsonify({"success": False, "message": "Bot is not running"}), 400
@@ -398,9 +398,9 @@ def stop_bot_route():
             with open("bot.pid", "r") as f:
                 pid = int(f.read().strip())
             if psutil.pid_exists(pid):
-                os.kill(pid, signal.SIGTERM) # Send SIGTERM for graceful shutdown
-                time.sleep(1) # Give it a moment
-                if psutil.pid_exists(pid): # If still running, force SIGKILL
+                os.kill(pid, signal.SIGTERM) 
+                time.sleep(1) 
+                if psutil.pid_exists(pid): 
                     os.kill(pid, signal.SIGKILL)
                 return jsonify({"success": True, "message": "Bot stop command issued."})
             else:
@@ -430,17 +430,17 @@ def api_bot_status():
                 })
         except (FileNotFoundError, json.JSONDecodeError) as e:
             app.logger.warning(f"Could not read or parse bot_heartbeat.json for status: {e}")
-    status_details["tts_enabled_webapp"] = _enable_tts_webapp # Add webapp's understanding of TTS status
+    status_details["tts_enabled_webapp"] = _enable_tts_webapp 
     return jsonify(status_details)
 
 @app.route('/settings')
 def settings_page(): 
-    theme = request.cookies.get("theme", "darkly") 
+    # theme = request.cookies.get("theme", "darkly") # Theme is now injected by context_processor
     bot_running = is_bot_actually_running()
     channels_data = []
     try:
         conn = sqlite3.connect(db_file)
-        conn.row_factory = sqlite3.Row # Access columns by name
+        conn.row_factory = sqlite3.Row 
         c = conn.cursor()
         c.execute("SELECT * FROM channel_configs")
         channels_data = [dict(row) for row in c.fetchall()]
@@ -448,19 +448,19 @@ def settings_page():
     except Exception as e:
         app.logger.error(f"Error fetching channels for settings page: {e}")
     
-    return render_template("settings.html", theme=theme, channels=channels_data, bot_running=bot_running)
+    return render_template("settings.html", channels=channels_data, bot_running=bot_running) # No need to pass theme
 
 @app.route('/stats')
 def stats_page(): 
-    theme = request.cookies.get("theme", "darkly")
-    return render_template("stats.html", theme=theme)
+    # theme = request.cookies.get("theme", "darkly") # Theme is now injected by context_processor
+    return render_template("stats.html") # No need to pass theme
 
 @app.route('/bot-control')
-def bot_control_page(): # Renamed function
+def bot_control_page(): 
     """Render the bot control page."""
-    theme = request.cookies.get("theme", "darkly")
+    # theme = request.cookies.get("theme", "darkly") # Theme is now injected by context_processor
     bot_running_status = is_bot_actually_running() 
-    return render_template("bot_control.html", theme=theme, bot_status={'running': bot_running_status})
+    return render_template("bot_control.html", bot_status={'running': bot_running_status}) # No need to pass theme
 
 
 @app.route('/api/channels')
@@ -470,7 +470,7 @@ def api_channels_list():
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         c.execute("SELECT * FROM channel_configs")
-        channels_data = [dict(row) for row in c.fetchall()] # Convert to list of dicts
+        channels_data = [dict(row) for row in c.fetchall()] 
         conn.close()
         return jsonify(channels_data)
     except Exception as e:
@@ -528,7 +528,6 @@ def add_channel_route():
             conn.close()
             return jsonify({"success": False, "message": "Channel already exists"}), 400
         
-        # Define all possible fields and their defaults if not provided in data
         fields = {
             'channel_name': channel_name,
             'tts_enabled': data.get('tts_enabled', 0),
@@ -540,8 +539,8 @@ def add_channel_route():
             'use_general_model': data.get('use_general_model', 1),
             'lines_between_messages': data.get('lines_between_messages', 100),
             'time_between_messages': data.get('time_between_messages', 0),
-            'voice_preset': data.get('voice_preset', 'v2/en_speaker_0'), # Default from db_setup
-            'bark_model': data.get('bark_model', 'regular') # Default from db_setup
+            'voice_preset': data.get('voice_preset', 'v2/en_speaker_0'), 
+            'bark_model': data.get('bark_model', 'regular') 
         }
         
         columns = ', '.join(fields.keys())
@@ -575,13 +574,13 @@ def delete_channel_route():
 def list_voices_route(): 
     try:
         voices_dir = "voices"
-        if not os.path.exists(voices_dir): os.makedirs(voices_dir) # Ensure dir exists
+        if not os.path.exists(voices_dir): os.makedirs(voices_dir) 
         voices = [f for f in os.listdir(voices_dir) if f.endswith('.npz')]
         return jsonify({"voices": voices})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route('/rebuild-voice-index') # This seems like a placeholder
+@app.route('/rebuild-voice-index') 
 def rebuild_voice_index_route(): 
     return jsonify({"success": True, "message": "Voice index rebuild (placeholder) successful."})
 
@@ -591,7 +590,6 @@ def get_latest_tts_route():
         last_id = int(request.args.get('last_id', '0'))
         conn = sqlite3.connect(db_file)
         c = conn.cursor()
-        # Use message_id as the primary key for tts_logs
         c.execute("SELECT message_id, file_path, message, timestamp FROM tts_logs WHERE message_id > ? ORDER BY message_id DESC LIMIT 10", (last_id,))
         rows = c.fetchall()
         conn.close()
@@ -609,7 +607,7 @@ def serve_tts_output(filename):
     directory = os.path.join(app.root_path, 'static', 'outputs')
     return send_from_directory(directory, filename)
 
-@app.route('/set-theme/<theme_name>') # Renamed param for clarity
+@app.route('/set-theme/<theme_name>') 
 def set_theme_route(theme_name): 
     response = make_response(redirect(request.referrer or url_for('main')))
     response.set_cookie('theme', theme_name, max_age=60*60*24*365)
@@ -617,14 +615,14 @@ def set_theme_route(theme_name):
 
 @app.errorhandler(404)
 def page_not_found_error(e): 
-    theme = request.cookies.get('theme', 'darkly')
-    return render_template('index.html', theme=theme, error_message="404: Page Not Found"), 404
+    # theme = request.cookies.get('theme', 'darkly') # Theme is now injected by context_processor
+    return render_template('index.html', error_message="404: Page Not Found"), 404 # No need to pass theme
 
 @app.errorhandler(500)
 def server_error_handler(e): 
     app.logger.error(f"Server Error: {e}\n{traceback.format_exc()}")
-    theme = request.cookies.get('theme', 'darkly')
-    return render_template('index.html', theme=theme, error_message="500: Internal Server Error"), 500
+    # theme = request.cookies.get('theme', 'darkly') # Theme is now injected by context_processor
+    return render_template('index.html', error_message="500: Internal Server Error"), 500 # No need to pass theme
 
 if __name__ == "__main__":
     markov_handler.load_models()
@@ -633,5 +631,4 @@ if __name__ == "__main__":
     def health_check_route(): 
         return jsonify({"status": "ok", "tts_enabled_webapp": _enable_tts_webapp})
     
-    # Use socketio.run for Flask-SocketIO
     socketio.run(app, host="0.0.0.0", port=5001, debug=True, use_reloader=False)
