@@ -266,6 +266,29 @@ window.BotStatus = window.BotStatus || {
   
   // Update status indicators
   updateStatusIndicators: function(skipNotifications = false) {
+    // Hero Status Elements
+    const heroStatusDot = document.getElementById('heroStatusDot');
+    const heroStatusText = document.getElementById('heroStatusText');
+
+    if (heroStatusDot && heroStatusText) {
+        if (this.running) {
+            // Using class for hero status dot as defined in index.html CSS
+            if (this.connected) {
+                heroStatusDot.parentElement.classList.add('status-active'); // Assumes heroStatusDot is child of element with status-active
+                heroStatusDot.style.backgroundColor = ''; // Rely on CSS
+                heroStatusText.textContent = 'Online & Connected';
+            } else {
+                heroStatusDot.parentElement.classList.remove('status-active');
+                heroStatusDot.style.backgroundColor = '#ffc107'; // Yellow for 'Online (Not Connected)'
+                heroStatusText.textContent = 'Online (Not Connected)';
+            }
+        } else {
+            heroStatusDot.parentElement.classList.remove('status-active');
+            heroStatusDot.style.backgroundColor = '#dc3545'; // Red for 'Offline'
+            heroStatusText.textContent = 'Offline';
+        }
+    }
+
     // Main status in navbar
     const navbarIcon = document.getElementById('botStatusIcon');
     if (navbarIcon) {
@@ -337,12 +360,30 @@ window.BotStatus = window.BotStatus || {
   
   // Update uptime display
   updateUptimeDisplay: function() {
-    const uptimeDisplay = document.getElementById('botUptime');
+    const uptimeDisplay = document.getElementById('activeSince'); // Target 'activeSince' in Bot Analytics
     if (uptimeDisplay) {
-      if (this.running && this.uptime) {
-        uptimeDisplay.textContent = this.uptime;
-      } else {
-        uptimeDisplay.textContent = 'Not running';
+      if (this.running && typeof this.uptime === 'number' && this.uptime > 0) {
+        let seconds = this.uptime;
+        const days = Math.floor(seconds / (3600 * 24));
+        seconds -= days * 3600 * 24;
+        const hours = Math.floor(seconds / 3600);
+        seconds -= hours * 3600;
+        const minutes = Math.floor(seconds / 60);
+        seconds -= minutes * 60;
+        const secs = Math.floor(seconds);
+
+        let uptimeString = '';
+        if (days > 0) uptimeString += `${days}d `;
+        if (hours > 0 || days > 0) uptimeString += `${hours}h `; // Show hours if days are present
+        if (minutes > 0 || hours > 0 || days > 0) uptimeString += `${minutes}m `; // Show minutes if hours/days are present
+        uptimeString += `${secs}s`;
+        
+        uptimeDisplay.textContent = uptimeString.trim();
+      } else if (this.running) {
+        uptimeDisplay.textContent = 'Calculating...'; // Or 'Online' if uptime is 0/null but running
+      }
+      else {
+        uptimeDisplay.textContent = 'Offline';
       }
     }
   }
