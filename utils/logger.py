@@ -21,6 +21,13 @@ BRIGHT_BLUE = "\x1b[94m"
 
 APP_LOG_FILE = 'app.log'
 
+# Define month_colors at the module level
+MONTH_COLORS = {
+    "JAN": "196", "FEB": "201", "MAR": "46", "APR": "226",
+    "MAY": "201", "JUN": "214", "JUL": "196", "AUG": "46",
+    "SEP": "214", "OCT": "201", "NOV": "226", "DEC": "46"
+}
+
 class Logger:
     def __init__(self):
         self.color_manager = ColorManager()  # Initialize the ColorManager
@@ -102,12 +109,8 @@ class Logger:
         day_year_time = timestamp_dt.strftime('%d %y %H:%M:%S')
         month_str = timestamp_dt.strftime("%b").upper()
         
-        month_colors = {
-            "JAN": "196", "FEB": "201", "MAR": "46", "APR": "226",
-            "MAY": "201", "JUN": "214", "JUL": "196", "AUG": "46",
-            "SEP": "214", "OCT": "201", "NOV": "226", "DEC": "46"
-        }
-        colored_month = f"\x1b[38;5;{month_colors[month_str]}m{month_str}\x1b[0m"
+        # Use the module-level MONTH_COLORS
+        colored_month = f"\x1b[38;5;{MONTH_COLORS[month_str]}m{month_str}\x1b[0m"
         
         timestamp_color_index = 14  # Cyan
         colored_timestamp_str = f"\x1b[38;5;{timestamp_color_index}m{day_year_time}\x1b[0m"
@@ -234,7 +237,8 @@ class CustomHandler(logging.StreamHandler):
         # Skip further custom colorizing if the message (after formatter) already contains ANSI color codes.
         # This happens if a method like log_warning, log_error, etc., was called, which pre-colors.
         # Or if log_message printed its own colorized version and then logged an uncolored one.
-        if '\x1b[' in msg_str and not msg_str.startswith(tuple(month_colors.keys())): # Avoid re-coloring our direct prints from log_message
+        # Use the module-level MONTH_COLORS here
+        if '\x1b[' in msg_str and not msg_str.startswith(tuple(MONTH_COLORS.keys())): # Avoid re-coloring our direct prints from log_message
              # Check if it ends with RESET, if not, add it for safety.
             if not msg_str.endswith(RESET):
                 msg_str += RESET
