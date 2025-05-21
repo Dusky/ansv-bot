@@ -488,13 +488,17 @@ def stats_page():
     # theme = request.cookies.get("theme", "darkly") # Theme is now injected by context_processor
     return render_template("stats.html") # No need to pass theme
 
-@app.route('/bot-control', endpoint='bot_control_page')
+@app.route('/bot-control', endpoint='bot_control_page') # Corrected endpoint name based on previous fixes
 def bot_control_page(): 
     """Render the bot control page."""
     # theme = request.cookies.get("theme", "darkly") # Theme is now injected by context_processor
     bot_running_status = is_bot_actually_running() 
     return render_template("bot_control.html", bot_status={'running': bot_running_status}) # No need to pass theme
 
+@app.route('/tts-history')
+def tts_history_page():
+    """Render the TTS history page."""
+    return render_template("tts_history.html")
 
 @app.route('/api/channels')
 def api_channels_list(): 
@@ -774,6 +778,52 @@ def api_tts_stats():
     except Exception as e:
         app.logger.error(f"Error in /api/tts-stats: {e}\n{traceback.format_exc()}")
         return jsonify({"error": str(e), "today": 0, "week": 0, "total": 0}), 500
+
+@app.route('/api/tts-logs')
+def api_tts_logs():
+    try:
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 15, type=int) # Number of items per page
+        offset = (page - 1) * per_page
+
+        conn = sqlite3.connect(db_file)
+        conn.row_factory = sqlite3.Row 
+        c = conn.cursor()
+
+        # Get total count for pagination
+        c.execute("SELECT COUNT(*) FROM tts_logs")
+        total_items = c.fetchone()[0]
+        total_pages = (total_items + per_page - 1) // per_page # Ceiling division
+
+        # Fetch paginated data
+        c.execute("""
+            SELECT message_id, channel, file_path, message, timestamp, voice_preset 
+            FROM tts_logs 
+            ORDER BY message_id DESC 
+            LIMIT ? OFFSET ?
+        """, (per_page, offset))
+        rows = c.fetchall()
+        conn.close()
+        
+        logs_data = [{
+            "id": row["message_id"], 
+            "channel": row["channel"],
+            "file_path": row["file_path"], 
+            "message": row["message"], 
+            "timestamp": row["timestamp"],
+            "voice_preset": row["voice_preset"]
+        } for row in rows]
+        
+        return jsonify({
+            "logs": logs_data,
+            "page": page,
+            "per_page": per_page,
+            "total_items": total_items,
+            "total_pages": total_pages
+        })
+    except Exception as e:
+        app.logger.error(f"Error in /api/tts-logs: {e}", exc_info=True)
+        return jsonify({"error": str(e), "logs": [], "total_pages": 0, "total_items": 0}), 500
 
 @app.route('/get-stats')
 def get_stats_route():
