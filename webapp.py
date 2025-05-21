@@ -506,15 +506,50 @@ def api_channels_list():
         raw_channels_data = [dict(row) for row in c.fetchall()] 
         conn.close()
 
-        # Adapt to ensure a 'name' key exists, as JS expects it for sorting and display
+        heartbeat_joined_channels = []
+        bot_is_running_for_heartbeat = is_bot_actually_running() # Check if bot is running to trust heartbeat
+
+        if bot_is_running_for_heartbeat and os.path.exists("bot_heartbeat.json"):
+            try:
+                with open("bot_heartbeat.json", "r") as f:
+                    heartbeat = json.load(f)
+                # Check if heartbeat is recent
+                if time.time() - heartbeat.get("timestamp", 0) < 120: # Within 2 minutes
+                    heartbeat_joined_channels = [ch.lstrip('#') for ch in heartbeat.get("channels", [])]
+                else:
+                    app.logger.warning("Heartbeat file is stale for /api/channels, 'currently_connected' status might be inaccurate.")
+            except (FileNotFoundError, json.JSONDecodeError) as e:
+                app.logger.warning(f"Could not read or parse bot_heartbeat.json for /api/channels: {e}")
+        elif bot_is_running_for_heartbeat:
+            app.logger.warning("Bot is running but bot_heartbeat.json not found for /api/channels.")
+
+
         channels_data_adapted = []
-        for raw_channel in raw_channels_data:
-            channel_item = dict(raw_channel) 
-            if 'channel_name' in channel_item and 'name' not in channel_item:
-                channel_item['name'] = channel_item['channel_name']
-            elif 'name' not in channel_item and 'channel_name' not in channel_item:
-                # Fallback if neither 'name' nor 'channel_name' exists (should not happen with proper DB schema)
+        for raw_channel_config in raw_channels_data:
+            channel_item = dict(raw_channel_config)
+            db_channel_name = raw_channel_config.get('channel_name')
+
+            # Ensure 'name' field exists
+            if db_channel_name and 'name' not in channel_item:
+                channel_item['name'] = db_channel_name
+            elif 'name' not in channel_item and not db_channel_name:
                 channel_item['name'] = 'Unknown Channel'
+                app.logger.warning(f"Channel config row missing 'channel_name': {raw_channel_config}")
+
+            # Set 'configured_to_join' (boolean) based on 'join_channel' (integer 0 or 1)
+            # Defaults to False (0) if 'join_channel' is missing from the DB row for some reason.
+            channel_item['configured_to_join'] = bool(raw_channel_config.get('join_channel', 0))
+
+            # Set 'currently_connected' (boolean)
+            # Ensure comparison is with channel name without '#' prefix
+            current_channel_name_for_check = channel_item.get('name', '').lstrip('#')
+            channel_item['currently_connected'] = current_channel_name_for_check in heartbeat_joined_channels
+            
+            # Pass through tts_enabled from DB if it exists
+            if 'tts_enabled' in raw_channel_config:
+                 channel_item['tts_enabled'] = bool(raw_channel_config.get('tts_enabled',0))
+
+
             channels_data_adapted.append(channel_item)
             
         return jsonify(channels_data_adapted)
