@@ -503,9 +503,21 @@ def api_channels_list():
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         c.execute("SELECT * FROM channel_configs")
-        channels_data = [dict(row) for row in c.fetchall()] 
+        raw_channels_data = [dict(row) for row in c.fetchall()] 
         conn.close()
-        return jsonify(channels_data)
+
+        # Adapt to ensure a 'name' key exists, as JS expects it for sorting and display
+        channels_data_adapted = []
+        for raw_channel in raw_channels_data:
+            channel_item = dict(raw_channel) 
+            if 'channel_name' in channel_item and 'name' not in channel_item:
+                channel_item['name'] = channel_item['channel_name']
+            elif 'name' not in channel_item and 'channel_name' not in channel_item:
+                # Fallback if neither 'name' nor 'channel_name' exists (should not happen with proper DB schema)
+                channel_item['name'] = 'Unknown Channel'
+            channels_data_adapted.append(channel_item)
+            
+        return jsonify(channels_data_adapted)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -664,10 +676,12 @@ def api_recent_tts():
         conn.row_factory = sqlite3.Row # To access columns by name
         c = conn.cursor()
         # Fetch necessary fields, including channel and voice_preset
+        # Order by message_id DESC as it's likely the primary key and indicates insertion order.
+        # The 'created_at' column caused an error, indicating it might not exist or is named differently.
         c.execute("""
             SELECT message_id, channel, file_path, message, timestamp, voice_preset 
             FROM tts_logs 
-            ORDER BY created_at DESC, message_id DESC 
+            ORDER BY message_id DESC 
             LIMIT 10
         """)
         rows = c.fetchall()
@@ -686,6 +700,118 @@ def api_recent_tts():
     except Exception as e:
         app.logger.error(f"Error in /api/recent-tts: {e}")
         return jsonify({"error": str(e), "files": []}), 500
+
+@app.route('/api/tts-stats')
+def api_tts_stats():
+    try:
+        conn = sqlite3.connect(db_file)
+        c = conn.cursor()
+
+        now = datetime.now()
+        today_start_dt = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        # Assuming 'timestamp' in tts_logs is stored in a format like 'YYYY-MM-DD HH:MM:SS'
+        # or any format that allows lexicographical comparison for dates.
+        # If timestamp is Unix epoch, adjustments would be needed here.
+        # For simplicity, assuming string format that works with direct comparison.
+        # A more robust way would be to convert DB timestamp to datetime objects or use SQL date functions.
+        today_start_str = today_start_dt.strftime('%Y-%m-%d %H:%M:%S') 
+        
+        # This query assumes 'timestamp' is text and can be compared.
+        # If 'timestamp' is a Unix timestamp (numeric), the query should be:
+        # c.execute("SELECT COUNT(*) FROM tts_logs WHERE timestamp >= ?", (today_start_dt.timestamp(),))
+        c.execute("SELECT COUNT(*) FROM tts_logs WHERE timestamp >= ?", (today_start_str,))
+        today_count = c.fetchone()[0]
+
+        seven_days_ago_dt = now - timedelta(days=7)
+        seven_days_ago_str = seven_days_ago_dt.strftime('%Y-%m-%d %H:%M:%S')
+        # Similar consideration for timestamp format here
+        c.execute("SELECT COUNT(*) FROM tts_logs WHERE timestamp >= ?", (seven_days_ago_str,))
+        week_count = c.fetchone()[0]
+
+        c.execute("SELECT COUNT(*) FROM tts_logs")
+        total_count = c.fetchone()[0]
+        
+        conn.close()
+        return jsonify({"today": today_count, "week": week_count, "total": total_count})
+    except Exception as e:
+        app.logger.error(f"Error in /api/tts-stats: {e}\n{traceback.format_exc()}")
+        return jsonify({"error": str(e), "today": 0, "week": 0, "total": 0}), 500
+
+@app.route('/get-stats')
+def get_stats_route():
+    try:
+        conn = sqlite3.connect(db_file)
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        # Ensure channel_configs has channel_name or adapt if it's just 'name'
+        c.execute("SELECT channel_name, use_general_model, lines_between_messages FROM channel_configs")
+        config_rows = c.fetchall()
+        conn.close()
+
+        stats_data = []
+        # Assuming markov_handler.get_available_models() returns a list of dicts
+        # e.g., [{'name': 'channel1', 'cache_file': '...', 'cache_size': '...', 'line_count': ...}, ...]
+        available_models_info = markov_handler.get_available_models() 
+        model_info_map = {model.get('name'): model for model in available_models_info if model.get('name')}
+
+
+        for row in config_rows:
+            channel_name = row['channel_name'] # Or row['name'] if that's the column
+            model_data = model_info_map.get(channel_name, {})
+            
+            log_file_path = os.path.join('logs', f"{channel_name}.log")
+            log_file_exists = os.path.exists(log_file_path)
+
+            stats_data.append({
+                "name": channel_name, # Ensure this matches what JS expects
+                "cache_file": model_data.get('cache_file', 'N/A'),
+                "log_file": f"{channel_name}.log" if log_file_exists else 'N/A',
+                "cache_size": model_data.get('cache_size_str', model_data.get('cache_size', '0 KB')), # Prefer cache_size_str if available
+                "line_count": model_data.get('line_count', 0),
+                "use_general_model": bool(row['use_general_model']),
+                "lines_between_messages": row['lines_between_messages']
+            })
+
+        # Add general model if it exists and isn't already covered
+        if "general_markov" in model_info_map:
+            general_model_data = model_info_map["general_markov"]
+            if not any(s['name'] == "general_markov" for s in stats_data):
+                 stats_data.append({
+                    "name": "general_markov",
+                    "cache_file": general_model_data.get('cache_file', 'N/A'),
+                    "log_file": "N/A (Combined)", 
+                    "cache_size": general_model_data.get('cache_size_str', general_model_data.get('cache_size', '0 KB')),
+                    "line_count": general_model_data.get('line_count', 0),
+                    "use_general_model": True, # General model is always "using" itself
+                    "lines_between_messages": 0 # Not applicable
+                })
+        
+        return jsonify(stats_data)
+    except Exception as e:
+        app.logger.error(f"Error in /get-stats: {e}\n{traceback.format_exc()}")
+        return jsonify({"error": str(e), "data": []}), 500
+
+@app.route('/api/cache-build-performance')
+def api_cache_build_performance():
+    try:
+        conn = sqlite3.connect(db_file)
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        # Fetch data from cache_build_log table
+        # Adjust column names if they are different in your schema
+        c.execute("""
+            SELECT channel_name as channel, timestamp, duration, success 
+            FROM cache_build_log 
+            ORDER BY timestamp DESC 
+            LIMIT 20 
+        """) # Assuming 'channel_name' is the column
+        build_times = [dict(row) for row in c.fetchall()]
+        conn.close()
+        return jsonify(build_times)
+    except Exception as e:
+        app.logger.error(f"Error in /api/cache-build-performance: {e}\n{traceback.format_exc()}")
+        return jsonify({"error": str(e), "data": []}), 500
 
 if __name__ == "__main__":
     markov_handler.load_models()

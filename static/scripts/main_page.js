@@ -206,9 +206,13 @@ function loadChannels() {
                 // Sort channels: connected first, then alphabetically
                 data.sort((a, b) => {
                     if (a.currently_connected !== b.currently_connected) {
-                        return b.currently_connected - a.currently_connected;
+                        // True (connected) should come before false (not connected)
+                        return (b.currently_connected ? 1 : 0) - (a.currently_connected ? 1 : 0);
                     }
-                    return a.name.localeCompare(b.name);
+                    // Ensure names exist before comparing
+                    const nameA = a.name || '';
+                    const nameB = b.name || '';
+                    return nameA.localeCompare(nameB);
                 });
                 
                 data.forEach(channel => {

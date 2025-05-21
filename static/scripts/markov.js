@@ -3,33 +3,45 @@ function fetchAvailableModels() {
       .then((response) => response.json())
       .then((models) => {
           const modelSelector = document.getElementById("modelSelector");
-          // Clear existing options before adding new ones, except for a potential placeholder
-          if (modelSelector) {
-            while (modelSelector.options.length > 0) {
-                modelSelector.remove(0);
-            }
-            // Add a default/placeholder option
-            const defaultOption = document.createElement("option");
-            defaultOption.value = "general_markov"; // Default to general_markov
-            defaultOption.textContent = "General Model";
-            modelSelector.appendChild(defaultOption);
+          
+          // Check if the modelSelector element exists on the page
+          if (!modelSelector) {
+              // console.warn("Element with ID 'modelSelector' not found on this page. Skipping model population for this call.");
+              return; // Exit if the selector isn't there
           }
 
+          // Clear existing options before adding new ones
+          while (modelSelector.options.length > 0) {
+              modelSelector.remove(0);
+          }
+          
+          // Add a default/placeholder option
+          const defaultOption = document.createElement("option");
+          defaultOption.value = "general_markov"; // Default to general_markov
+          defaultOption.textContent = "General Model";
+          modelSelector.appendChild(defaultOption);
+
           models.forEach((model) => {
+              let modelName = model; // Assuming model is a string
+              if (typeof model === 'object' && model !== null && model.hasOwnProperty('name')) {
+                  modelName = model.name; // If model is an object like { name: "model_name", ... }
+              } else if (typeof model !== 'string') {
+                  console.warn("Unexpected model format in /available-models response:", model);
+                  return; 
+              }
+
               // Avoid adding "general_markov" again if it's in the list from the server
-              if (model.toLowerCase() === "general_markov" || model.toLowerCase() === "general model") {
-                  // Ensure the default option's text is consistent if general model has a specific name
+              if (modelName.toLowerCase() === "general_markov" || modelName.toLowerCase() === "general model") {
+                  // Ensure the default option's text is consistent
                   if (modelSelector.options[0].value === "general_markov") {
-                      modelSelector.options[0].textContent = model;
+                      modelSelector.options[0].textContent = modelName;
                   }
                   return;
               }
               const option = document.createElement("option");
-              option.value = model;
-              option.textContent = model;
-              if (modelSelector) {
-                modelSelector.appendChild(option);
-              }
+              option.value = modelName;
+              option.textContent = modelName;
+              modelSelector.appendChild(option);
           });
       })
       .catch((error) => console.error("Error fetching models:", error));
