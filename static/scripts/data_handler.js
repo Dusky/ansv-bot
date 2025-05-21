@@ -536,7 +536,8 @@ function hideLoading() {
   if (overlay) overlay.style.display = 'none';
 }
 
-// Auto-refresh stats data periodically
+// Auto-refresh stats data periodically - THIS IS REMOVED as stats.js now handles its own page logic.
+/*
 function setupStatsAutoRefresh() {
   // IMPORTANT: Do not auto-refresh on settings page to prevent constant refreshing
   if (window.location.pathname.includes('/settings')) {
@@ -545,7 +546,7 @@ function setupStatsAutoRefresh() {
   }
 
   const statsContainer = document.getElementById('statsContainer');
-  if (statsContainer) {
+  if (statsContainer) { // This implies it would only run on stats page anyway
     try {
       // Initial load - try multiple function names in order of preference
       if (typeof window.loadStatistics === 'function') {
@@ -588,12 +589,13 @@ function setupStatsAutoRefresh() {
     }
   }
 }
+*/
 
 // Call this from your DOMContentLoaded event
 document.addEventListener('DOMContentLoaded', function() {
-  console.log("data_handler.js: Setting up stats auto-refresh");
+  // console.log("data_handler.js: Stats auto-refresh setup removed.");
   // Use a longer delay to ensure all other scripts are loaded
-  setTimeout(setupStatsAutoRefresh, 1500);
+  // setTimeout(setupStatsAutoRefresh, 1500); // Removed call
 
   // Make key functions globally available
   // window.generateMessage = generateMessage; // generateMessage is now specific to its button
