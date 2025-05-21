@@ -176,34 +176,58 @@ def process_text_thread(input_text, channel_name, db_file='./messages.db', full_
             scipy.io.wavfile.write(full_path, rate=model.generation_config.sample_rate, data=final_audio_array)
             
             # Record in database and notify web interface
-            # Ensure message_id is used here. It's passed as an argument to process_text_thread.
-            # The timestamp argument should also be used.
-            # The full_path should be relative to static/ for consistency with log_tts_file.
             db_file_path_relative = full_path.replace('static/', '', 1)
+            
+            # Restore stdout/stderr temporarily for critical DB logging
+            sys.stdout = original_stdout
+            sys.stderr = original_stderr
+            
+            logged_tts_table_id = None # Renamed from logged_tts_id for clarity
+            timestamp_for_log = timestamp # Use the passed original message timestamp
 
-            conn = sqlite3.connect(db_file)
-            c = conn.cursor()
-            # Use the passed message_id, channel_name, timestamp, voice_preset, and input_text
-            c.execute('''INSERT INTO tts_logs 
-                        (message_id, channel, timestamp, voice_preset, file_path, message)
-                        VALUES (?, ?, ?, ?, ?, ?)''',
-                    (message_id, channel_name, timestamp, voice_preset, db_file_path_relative, input_text))
-            conn.commit()
-            # new_id is not strictly needed here if message_id is already known and used as primary key for this log.
-            # If tts_logs has its own auto-incrementing ID, then c.lastrowid would be that.
-            # For now, assuming message_id from the original message is the key link.
-            logged_tts_id = c.lastrowid # This would be the auto-incremented ID of tts_logs table if it has one.
-                                        # If message_id is the PK, this might not be what you expect.
-                                        # Let's assume tts_logs has its own PK for now.
-            conn.close()
+            # Validate critical parameters before database operation
+            if message_id is None:
+                logging.error(f"[TTS DB LOG] Critical: message_id is None for channel {channel_name}, text: '{str(input_text)[:30]}...'. Cannot log TTS entry without message_id.")
+                # Do not proceed to DB insert if message_id is None
+            elif full_path is None:
+                logging.error(f"[TTS DB LOG] Critical: full_path is None for message_id {message_id}. Cannot log TTS entry.")
+            else:
+                if timestamp_for_log is None: # This is the original message timestamp string
+                    logging.warning(f"[TTS DB LOG] Warning: Original message timestamp (timestamp param) is None for message_id {message_id}. Using current time for TTS log.")
+                    timestamp_for_log = datetime.now().strftime("%Y%m%d-%H%M%S")
+
+                try:
+                    logging.info(f"[TTS DB LOG] Attempting to log to tts_logs: message_id={message_id}, channel={channel_name}, timestamp={timestamp_for_log}, voice={voice_preset}, path={db_file_path_relative}, text='{str(input_text)[:30]}...'")
+                    conn = sqlite3.connect(db_file)
+                    c = conn.cursor()
+                    c.execute('''INSERT INTO tts_logs 
+                                (message_id, channel, timestamp, voice_preset, file_path, message)
+                                VALUES (?, ?, ?, ?, ?, ?)''',
+                            (message_id, channel_name, timestamp_for_log, voice_preset, db_file_path_relative, input_text))
+                    conn.commit()
+                    logged_tts_table_id = c.lastrowid 
+                    conn.close()
+                    logging.info(f"[TTS DB LOG] Successfully logged. TTS Log Table ID: {logged_tts_table_id}, Original Message ID: {message_id}")
+                except sqlite3.Error as db_err:
+                    logging.error(f"[TTS DB LOG] SQLite error during tts_logs insert: {db_err}")
+                    logging.error(f"[TTS DB LOG] Data was: message_id={message_id}, channel={channel_name}, timestamp={timestamp_for_log}, voice={voice_preset}, path={db_file_path_relative}, text='{str(input_text)[:30]}...'")
+                    # Do not proceed to notify if DB log failed
+                    # Re-raise to be caught by the outer try-except if necessary, or handle gracefully
+                except Exception as general_db_err:
+                    logging.error(f"[TTS DB LOG] General error during tts_logs insert: {general_db_err}")
+                    # Re-raise or handle
+
+            # Re-silence output if further Bark/TTS processing was needed (though it's done here)
+            silence_output()
             
-            # Notify with the ID of the tts_logs entry
-            notify_new_audio_available(channel_name, logged_tts_id) 
+            # Notify with the ID of the tts_logs table entry only if logging was successful
+            if logged_tts_table_id is not None:
+                notify_new_audio_available(channel_name, logged_tts_table_id) 
             
-            # Log internally without printing to console
-            logging.info(f"TTS audio file generated: {full_path} and logged with tts_logs ID: {logged_tts_id} (original message_id: {message_id})")
+            # Log internally without printing to console (already done above with [TTS DB LOG])
+            # logging.info(f"TTS audio file generated: {full_path}. Logged to tts_logs with table ID: {logged_tts_table_id} (linked to original message_id: {message_id})")
             
-            return full_path, logged_tts_id # Return the ID of the tts_logs entry
+            return full_path, logged_tts_table_id # Return the ID of the tts_logs table entry
             
         except Exception as e:
             print(f"[TTS] Thread processing error: {e}")
