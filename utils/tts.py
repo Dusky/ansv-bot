@@ -200,22 +200,37 @@ def process_text_thread(input_text, channel_name, db_file='./messages.db', full_
                     logging.info(f"[TTS DB LOG] Attempting to log to tts_logs: message_id={message_id}, channel={channel_name}, timestamp={timestamp_for_log}, voice={voice_preset}, path={db_file_path_relative}, text='{str(input_text)[:30]}...'")
                     conn = sqlite3.connect(db_file)
                     c = conn.cursor()
+                    # It's good practice to ensure message_id is not None if it's a key part of your log.
+                    # The earlier check for message_id being None should prevent this block from running if it's critical.
                     c.execute('''INSERT INTO tts_logs 
                                 (message_id, channel, timestamp, voice_preset, file_path, message)
                                 VALUES (?, ?, ?, ?, ?, ?)''',
                             (message_id, channel_name, timestamp_for_log, voice_preset, db_file_path_relative, input_text))
                     conn.commit()
+                    
+                    # lastrowid gets the ROWID of the last inserted row.
+                    # If message_id is the primary key and not an alias for ROWID, lastrowid might not be message_id.
+                    # If tts_logs has its own auto-incrementing integer primary key (e.g., log_id INTEGER PRIMARY KEY AUTOINCREMENT),
+                    # then lastrowid will be that new log_id.
                     logged_tts_table_id = c.lastrowid 
+                    
+                    # Verify the insert by trying to fetch the row using message_id if it's supposed to be unique or a key.
+                    # This is optional but good for debugging.
+                    c.execute("SELECT COUNT(*) FROM tts_logs WHERE message_id = ?", (message_id,))
+                    count_for_message_id = c.fetchone()[0]
+                    
                     conn.close()
-                    logging.info(f"[TTS DB LOG] Successfully logged. TTS Log Table ID: {logged_tts_table_id}, Original Message ID: {message_id}")
+                    logging.info(f"[TTS DB LOG] Successfully logged. TTS Log Table ID (ROWID): {logged_tts_table_id}, Original Message ID: {message_id}. Count for this message_id in tts_logs: {count_for_message_id}.")
+                    if count_for_message_id > 1:
+                        logging.warning(f"[TTS DB LOG] Multiple tts_logs entries found for message_id {message_id}. This might indicate an issue if message_id should be unique per TTS event.")
+
                 except sqlite3.Error as db_err:
                     logging.error(f"[TTS DB LOG] SQLite error during tts_logs insert: {db_err}")
                     logging.error(f"[TTS DB LOG] Data was: message_id={message_id}, channel={channel_name}, timestamp={timestamp_for_log}, voice={voice_preset}, path={db_file_path_relative}, text='{str(input_text)[:30]}...'")
-                    # Do not proceed to notify if DB log failed
-                    # Re-raise to be caught by the outer try-except if necessary, or handle gracefully
+                    logged_tts_table_id = None # Ensure it's None on error
                 except Exception as general_db_err:
-                    logging.error(f"[TTS DB LOG] General error during tts_logs insert: {general_db_err}")
-                    # Re-raise or handle
+                    logging.error(f"[TTS DB LOG] General error during tts_logs insert: {general_db_err}", exc_info=True)
+                    logged_tts_table_id = None # Ensure it's None on error
 
             # Re-silence output if further Bark/TTS processing was needed (though it's done here)
             silence_output()
