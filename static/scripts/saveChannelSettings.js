@@ -562,15 +562,20 @@ function checkForAddChannelOption(selectElement) {
               // Custom voice
               voicePresetSelect.value = "custom";
               // Show and populate custom voice row
-              document.getElementById("customVoiceRow").style.display = "block";
+              document.getElementById("customVoiceRow").style.display = "block"; // Changed from "" to "block"
               const customVoiceSelect = document.getElementById("customVoiceSelect");
               // Load custom voices if not already loaded
-              if (customVoiceSelect.options.length <= 1) {
+              if (customVoiceSelect.options.length <= 1 || !Array.from(customVoiceSelect.options).some(opt => opt.value === data.voice_preset)) {
                 loadCustomVoices(data.voice_preset);
               } else {
                 customVoiceSelect.value = data.voice_preset;
               }
             }
+          } else {
+             // Default voice preset if none is set
+            const voicePresetSelect = document.getElementById("voicePreset");
+            voicePresetSelect.value = "v2/en_speaker_0"; // A common default
+            document.getElementById("customVoiceRow").style.display = "none";
           }
           
           // Show and update delete button for existing channels
@@ -630,6 +635,16 @@ function loadCustomVoices(selectedVoice) {
       // Clear existing options
       customVoiceSelect.innerHTML = '';
       
+      // Add a default "Select Custom Voice" option if needed, or ensure it's there
+      let placeholderOption = document.createElement('option');
+      placeholderOption.value = ""; // Or a specific placeholder value
+      placeholderOption.textContent = "Select Custom Voice...";
+      placeholderOption.disabled = true;
+      if (!selectedVoice || selectedVoice.startsWith('v2/')) { // Select placeholder if no custom voice is active
+          placeholderOption.selected = true;
+      }
+      customVoiceSelect.appendChild(placeholderOption);
+
       // Add options for each voice
       voices.forEach(voice => {
         const voiceName = voice.replace('.npz', '');
@@ -639,9 +654,12 @@ function loadCustomVoices(selectedVoice) {
         customVoiceSelect.appendChild(option);
       });
       
-      // Set selected voice if provided
+      // Set selected voice if provided and it's a custom voice
       if (selectedVoice && !selectedVoice.startsWith('v2/')) {
         customVoiceSelect.value = selectedVoice;
+      } else if (!selectedVoice) {
+        // If no voice is selected (e.g. new channel), ensure placeholder is selected
+        customVoiceSelect.value = "";
       }
     })
     .catch(error => {
@@ -713,125 +731,15 @@ function deleteChannel(channelName) {
     });
 }
 
-// Track whether we've already shown an error for this request
-let lastErrorTime = 0;
-let lastErrorMessage = '';
-
-// Function to send a generated message to a channel
-function sendMessageToChannel(channelName) {
-  console.log(`sendMessageToChannel called with channel: ${channelName}`);
-  
-  if (!channelName) {
-    displayNotification('No channel selected', 'error');
-    return;
-  }
-  
-  // Prevent multiple clicks/calls
-  const button = document.getElementById('sendMessageBtn');
-  if (button && button.disabled) {
-    console.log("Button already disabled, ignoring duplicate call");
-    return;
-  }
-  
-  // Show loading state
-  if (button) {
-    button.disabled = true;
-    button.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Sending...';
-  }
-  
-  console.log(`Generating and sending message to channel: ${channelName}`);
-  
-  // DIRECT FORCED SEND: using URL parameters and body flags to ensure it works
-  console.log(`Sending FORCED message to channel: ${channelName}`);
-  
-  // Build the URL with all possible force parameters and cache busting
-  const url = `/send_markov_message/${channelName}?force=true&bypass=true&manual=true&t=${Date.now()}`;
-  
-  fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      // MAXIMUM OVERRIDE: Use every possible flag to force message sending
-      verify_running: true,
-      force_send: true,
-      bypass_check: true,
-      manual_trigger: true,
-      skip_verification: true
-    })
-  })
-  .then(response => response.json())
-  .then(data => {
-    if (data.success) {
-      if (data.sent === true) {
-        // Message was successfully sent to Twitch
-        displayNotification(`Message sent to ${channelName}: "${data.message}"`, 'success');
-      } else {
-        // Message was generated but couldn't be sent to Twitch
-        // Check for null message
-        if (data.message === null || data.message === "null") {
-          // Check for duplicate error
-          const now = Date.now();
-          const errorMsg = "Failed to generate message";
-          if (now - lastErrorTime > 1000 || lastErrorMessage !== errorMsg) {
-            displayNotification(errorMsg, 'error');
-            lastErrorTime = now;
-            lastErrorMessage = errorMsg;
-          } else {
-            console.log("Suppressing duplicate error notification");
-          }
-        } else {
-          // Only show a success toast with the generated message
-          displayNotification(`Generated message: "${data.message}"`, 'success');
-        }
-        // Log the reason but don't show it
-        console.log(`Message not sent: ${data.error || 'Unknown reason'}`);
-      }
-    } else {
-      // Error generating message
-      const errorMsg = `Failed to generate message: ${data.message || 'Unknown error'}`;
-      // Check for duplicate error
-      const now = Date.now();
-      if (now - lastErrorTime > 1000 || lastErrorMessage !== errorMsg) {
-        displayNotification(errorMsg, 'error');
-        lastErrorTime = now;
-        lastErrorMessage = errorMsg;
-      } else {
-        console.log("Suppressing duplicate error notification");
-      }
-    }
-  })
-  .catch(error => {
-    console.error('Error sending message:', error);
-    const errorMsg = `Error sending message: ${error.message}`;
-    // Check for duplicate error
-    const now = Date.now();
-    if (now - lastErrorTime > 1000 || lastErrorMessage !== errorMsg) {
-      displayNotification(errorMsg, 'error');
-      lastErrorTime = now;
-      lastErrorMessage = errorMsg;
-    } else {
-      console.log("Suppressing duplicate error notification");
-    }
-  })
-  .finally(() => {
-    // Restore button state
-    if (button) {
-      button.disabled = false;
-      button.innerHTML = '<i class="fas fa-comment-dots me-1"></i>Generate & Send';
-    }
-  });
-}
-
-// Make the function available globally for use with the inline onclick handler
-window.sendMessageToChannel = sendMessageToChannel;
-
 // Make sure this function is called on page load
 document.addEventListener("DOMContentLoaded", function() {
   var channelSelect = document.getElementById("channelSelect");
   if (channelSelect) {
-    fetchChannels();
+    fetchChannels(); // This will be handled by ChannelManager.init() if available
+    // Ensure ChannelManager is initialized if it exists
+    if (window.ChannelManager && typeof window.ChannelManager.init === 'function' && !window.ChannelManager.lastUpdated) {
+        window.ChannelManager.init();
+    }
   }
   
   // Set up delete channel button if it exists
@@ -846,45 +754,74 @@ document.addEventListener("DOMContentLoaded", function() {
   // SINGLE EVENT HANDLER: Set up send message button programmatically
   var sendMessageBtn = document.getElementById("sendMessageBtn");
   if (sendMessageBtn) {
-    console.log("Adding event listener to Send Message button");
+    console.log("Adding event listener to Send Message button on settings page");
     
     // First, remove any existing event listeners by cloning the button
     const newSendMessageBtn = sendMessageBtn.cloneNode(true);
     sendMessageBtn.parentNode.replaceChild(newSendMessageBtn, sendMessageBtn);
-    sendMessageBtn = newSendMessageBtn;
+    sendMessageBtn = newSendMessageBtn; // Update reference to the new button
     
     // Then add our single event listener
     sendMessageBtn.addEventListener("click", function(event) {
-      // Prevent any other handlers from firing
       event.preventDefault();
       event.stopPropagation();
       
       const channelName = this.getAttribute("data-channel");
       console.log(`Send Message button clicked for channel: ${channelName}`);
       if (!channelName) {
-        console.error("No channel name found in data-channel attribute");
+        console.error("No channel name found in data-channel attribute for send message button");
+        displayNotification("Error: No channel selected to send message to.", "error");
         return;
       }
-      sendMessageToChannel(channelName);
+      // Use the MessageManager from markov.js
+      if (window.MessageManager && typeof window.MessageManager.generateMessage === 'function') {
+        window.MessageManager.generateMessage({
+            channel: channelName,
+            sendToTwitch: true,
+            button: this // Pass the button for UI updates
+        });
+      } else {
+        console.error("MessageManager is not available.");
+        displayNotification("Error: Message sending module not loaded.", "error");
+      }
     });
     
-    // Log to verify a single handler
-    console.log("Send Message button set up with single event handler");
+    console.log("Send Message button (settings page) set up with single event handler using MessageManager");
   }
   
   // Set up voice preset change handler if not already defined
+  // This should be handled by handle_voice.js, but as a fallback:
   if (typeof handleVoicePresetChange !== 'function') {
     window.handleVoicePresetChange = function() {
       const voicePresetSelect = document.getElementById("voicePreset");
       const customVoiceRow = document.getElementById("customVoiceRow");
       
+      if (!voicePresetSelect || !customVoiceRow) return;
+
       if (voicePresetSelect.value === "custom") {
-        customVoiceRow.style.display = "block";
-        loadCustomVoices();
+        customVoiceRow.style.display = "block"; // Changed from ""
+        if (typeof loadCustomVoices === 'function') {
+            loadCustomVoices();
+        } else if (typeof fetchAndShowCustomVoices === 'function') { // from handle_voice.js
+            fetchAndShowCustomVoices();
+        }
       } else {
         customVoiceRow.style.display = "none";
       }
     }
+    // Attach it if voicePreset element exists
+    const voicePresetElement = document.getElementById("voicePreset");
+    if (voicePresetElement) {
+        voicePresetElement.addEventListener('change', window.handleVoicePresetChange);
+        // Initial call to set visibility
+        window.handleVoicePresetChange();
+    }
+  } else {
+    // If handleVoicePresetChange is defined (likely from handle_voice.js), ensure it's called initially
+     const voicePresetElement = document.getElementById("voicePreset");
+     if (voicePresetElement) {
+        handleVoicePresetChange(); // Call it to set initial state
+     }
   }
 });
 
@@ -894,18 +831,17 @@ function validateChannelForm() {
   const timeBetween = document.getElementById('timeBetweenMessages');
   
   // Validate numeric inputs
-  if (linesBetween && isNaN(parseInt(linesBetween.value))) {
-    alert('Lines between messages must be a number');
+  if (linesBetween && (isNaN(parseInt(linesBetween.value)) || parseInt(linesBetween.value) < 0)) {
+    alert('Lines between messages must be a non-negative number.');
     linesBetween.focus();
     return false;
   }
   
-  if (timeBetween && isNaN(parseInt(timeBetween.value))) {
-    alert('Time between messages must be a number');
+  if (timeBetween && (isNaN(parseInt(timeBetween.value)) || parseInt(timeBetween.value) < 0)) {
+    alert('Time between messages must be a non-negative number.');
     timeBetween.focus();
     return false;
   }
   
   return true;
 }
-

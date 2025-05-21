@@ -210,7 +210,7 @@ window.refreshTable = function() {
     currentPage = 1;  // Reset to first page
     const tableBody = document.getElementById("ttsFilesBody");
     if (tableBody) {
-        tableBody.innerHTML = '<tr><td colspan="5" class="text-center">Loading messages...</td></tr>';
+        tableBody.innerHTML = '<tr><td colspan="6" class="text-center">Loading messages...</td></tr>'; // Updated colspan to 6
         loadMoreData(); // Load the initial set of data
         
         // Update last refreshed indicator
@@ -333,21 +333,25 @@ function loadMoreData() {
         
         // If fewer items than expected, we might be at the end
         const loadMoreBtn = document.getElementById("loadMore");
-        if (loadMoreBtn && data.items.length < 10) {
+        if (loadMoreBtn && data.items.length < 10) { // Assuming 10 items per page
           loadMoreBtn.disabled = true;
+          loadMoreBtn.textContent = "No more messages";
+        } else if (loadMoreBtn) {
+          loadMoreBtn.disabled = false; // Re-enable if more data might be available
         }
       } else {
         // No more data or an empty response
         const loadMoreBtn = document.getElementById("loadMore");
         if (loadMoreBtn) {
           loadMoreBtn.disabled = true;
+          loadMoreBtn.textContent = "No more messages";
         }
         
         // If empty on first page, show message
         if (currentPage === 1) {
           const tableBody = document.getElementById("ttsFilesBody");
           if (tableBody) {
-            tableBody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">No TTS messages found</td></tr>';
+            tableBody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No TTS messages found</td></tr>'; // Updated colspan
           }
         }
       }
@@ -358,12 +362,13 @@ function loadMoreData() {
       const loadMoreBtn = document.getElementById("loadMore");
       if (loadMoreBtn) {
         loadMoreBtn.disabled = true;
+        loadMoreBtn.textContent = "Error loading data";
       }
       
       // Show error in the table if it's empty
       const tableBody = document.getElementById("ttsFilesBody");
       if (tableBody && currentPage === 1) {
-        tableBody.innerHTML = `<tr><td colspan="5" class="text-center text-danger">Error loading TTS data: ${error.message}</td></tr>`;
+        tableBody.innerHTML = `<tr><td colspan="6" class="text-center text-danger">Error loading TTS data: ${error.message}</td></tr>`; // Updated colspan
       }
     });
 }
@@ -387,26 +392,24 @@ function loadLatestData() {
 
 // Function to populate the channel selector in Generate Message section
 function populateMessageChannels() {
-    fetch('/get-channels')
+    fetch('/api/channels') // Use the consistent /api/channels endpoint
         .then(response => response.json())
-        .then(channels => {
+        .then(channelsData => {
             const selector = document.getElementById('channelForMessage');
             if (selector) {
-                // Clear existing options
-                selector.innerHTML = '';
+                selector.innerHTML = ''; // Clear existing options
                 
-                // Add channels to dropdown
-                channels.forEach(channel => {
-                    const option = document.createElement('option');
-                    option.value = channel[0];
-                    option.textContent = channel[0];
-                    selector.appendChild(option);
-                });
-                
-                // If no channels, add a placeholder
-                if (channels.length === 0) {
+                if (channelsData && channelsData.length > 0) {
+                    channelsData.forEach(channel => {
+                        const option = document.createElement('option');
+                        option.value = channel.name; // API returns objects with 'name'
+                        option.textContent = channel.name;
+                        selector.appendChild(option);
+                    });
+                } else {
                     const option = document.createElement('option');
                     option.disabled = true;
+                    option.selected = true;
                     option.textContent = 'No channels available';
                     selector.appendChild(option);
                 }
@@ -423,67 +426,45 @@ function generateMessage() {
     const messageElement = document.getElementById('generatedMessage');
     const generateBtn = document.getElementById('generateMsgBtn');
     
-    // Element validation - prevent errors if elements don't exist
     if (!modelSelect || !messageContainer || !messageElement) {
         console.error("Required DOM elements for message generation not found");
+        if (window.MessageManager) {
+            window.MessageManager.showNotification("UI Error: Message generation elements missing.", "error");
+        }
         return;
     }
     
-    // IMPORTANT: We explicitly don't check bot status since generation should work
-    // even when the bot is not running
-    
-    // Disable button during request
-    if (generateBtn) {
-        generateBtn.disabled = true;
-        generateBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Generating...';
-    }
-    
-    // Show loading state
-    messageContainer.classList.remove('d-none');
-    messageElement.innerHTML = 'Generating message...';
-    
-    // Get selected values - provide defaults if elements not found
-    const model = modelSelect ? modelSelect.value : 'general_markov';
+    const model = modelSelect.value;
     const channel = channelSelect && channelSelect.value ? channelSelect.value : null;
     
-    console.log(`Generating message with model: ${model}, channel: ${channel || 'none'}`);
-    
-    fetch('/generate-message', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ model: model, channel: channel })
-    })
-    .then(response => {
-        if (!response.ok) {
-            return response.json().then(data => {
-                throw new Error(data.error || `Server returned ${response.status}`);
-            }).catch(e => {
-                // If we can't parse the JSON, throw a generic error
-                throw new Error(`Server returned ${response.status}`);
-            });
+    messageContainer.classList.remove('d-none'); // Show container immediately
+    messageElement.innerHTML = '<i>Generating message...</i>'; // Initial text
+
+    if (window.MessageManager && typeof window.MessageManager.generateMessage === 'function') {
+        window.MessageManager.generateMessage({
+            model: model,
+            channel: channel,
+            button: generateBtn, // Pass the button for MessageManager to handle its state
+            callback: function(generatedMessage, data) {
+                // This callback updates the UI once MessageManager is done
+                if (generatedMessage) {
+                    messageElement.textContent = generatedMessage;
+                } else {
+                    messageElement.textContent = data.error || 'Failed to generate message.';
+                }
+            }
+        }).catch(error => {
+            // Catch errors from MessageManager promise if any
+            messageElement.textContent = `Error: ${error.message || 'Failed to generate message'}`;
+        });
+    } else {
+        console.error("MessageManager is not available.");
+        messageElement.textContent = 'Error: Message generation module not loaded.';
+        if (generateBtn) { // Manually reset button if MessageManager is not there
+             generateBtn.disabled = false;
+             generateBtn.innerHTML = 'Generate Message';
         }
-        return response.json();
-    })
-    .then(data => {
-        if (data.message) {
-            messageElement.textContent = data.message;
-        } else {
-            messageElement.textContent = 'Failed to generate message.';
-        }
-    })
-    .catch(error => {
-        console.error('Error generating message:', error);
-        messageElement.textContent = `Error: ${error.message || 'Failed to generate message'}`;
-    })
-    .finally(() => {
-        // Re-enable button
-        if (generateBtn) {
-            generateBtn.disabled = false;
-            generateBtn.innerHTML = 'Generate Message';
-        }
-    });
+    }
 }
 
 // Function to check bot status and update UI
@@ -516,6 +497,33 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Then check every 10 seconds
     setInterval(checkBotStatus, 10000);
+
+    // Populate channels for message generation if the selector exists
+    if (document.getElementById('channelForMessage')) {
+        populateMessageChannels();
+    }
+    // Populate models for message generation if the selector exists
+    // This is now handled by MessageManager.init() in markov.js, which should be called
+    // if (document.getElementById('modelSelector') && typeof fetchAvailableModels === 'function') {
+    //     fetchAvailableModels();
+    // }
+
+    // Attach event listener to the generate message button if it exists
+    const generateMsgBtn = document.getElementById('generateMsgBtn');
+    if (generateMsgBtn) {
+        generateMsgBtn.addEventListener('click', generateMessage);
+    }
+
+    // Load initial TTS data if the table exists
+    if (document.getElementById("ttsFilesBody")) {
+        loadMoreData();
+    }
+
+    // Setup "Load More" button if it exists
+    const loadMoreBtn = document.getElementById("loadMore");
+    if (loadMoreBtn) {
+        loadMoreBtn.addEventListener("click", loadMoreData);
+    }
 });
 
 function showLoading() {
@@ -588,17 +596,16 @@ document.addEventListener('DOMContentLoaded', function() {
   setTimeout(setupStatsAutoRefresh, 1500);
 
   // Make key functions globally available
-  window.generateMessage = generateMessage;
-  console.log("data_handler.js: Made generateMessage available globally");
+  // window.generateMessage = generateMessage; // generateMessage is now specific to its button
+  console.log("data_handler.js: generateMessage is now locally scoped or uses MessageManager.");
   
   // Setup any available generate buttons
   setTimeout(function() {
     const generateBtn = document.getElementById('generateMsgBtn');
-    if (generateBtn) {
-      console.log("Found generate button, ensuring it's connected to handler");
+    if (generateBtn && !generateBtn.getAttribute('listener')) { // Check if listener already attached
+      console.log("Found generate button in data_handler.js, ensuring it's connected to handler");
       generateBtn.addEventListener('click', generateMessage);
+      generateBtn.setAttribute('listener', 'true');
     }
   }, 500);
 });
-
-
