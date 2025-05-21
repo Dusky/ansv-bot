@@ -413,24 +413,57 @@ def stop_bot_route():
 @app.route('/api/bot-status')
 def api_bot_status():
     bot_running = is_bot_actually_running()
+    is_connected = False  # Default to not connected
+    current_uptime_seconds = 0
+    bot_tts_status = False
+    current_joined_channels = []
+    bot_pid = None
+    heartbeat_data_available = False
+
+    if bot_running:
+        # If bot is running, try to get details from heartbeat
+        if os.path.exists("bot_heartbeat.json"):
+            try:
+                with open("bot_heartbeat.json", "r") as f:
+                    heartbeat = json.load(f)
+                heartbeat_data_available = True # Mark that we could read the file
+                    
+                # Check if heartbeat is recent enough to be considered valid for connection status
+                heartbeat_timestamp = heartbeat.get("timestamp", 0)
+                if time.time() - heartbeat_timestamp < 120: # Heartbeat within last 2 minutes
+                    current_joined_channels = heartbeat.get("channels", [])
+                    is_connected = bool(current_joined_channels) # Connected if in at least one channel
+                    bot_tts_status = heartbeat.get("tts_enabled", False)
+                    current_uptime_seconds = heartbeat.get("uptime", 0)
+                    bot_pid = heartbeat.get("pid")
+                else:
+                    app.logger.warning(f"Heartbeat file is stale (last beat: {datetime.fromtimestamp(heartbeat_timestamp).strftime('%Y-%m-%d %H:%M:%S')}), considering bot as running but not reliably connected.")
+                    # Bot is running (per is_bot_actually_running) but heartbeat is old.
+                    # is_connected remains False. Uptime/TTS might be stale.
+                    current_uptime_seconds = heartbeat.get("uptime", 0) # Report last known uptime
+                    bot_tts_status = heartbeat.get("tts_enabled", False) # Report last known TTS status
+                    bot_pid = heartbeat.get("pid")
+                    # is_connected is already False, which is appropriate for stale heartbeat
+
+            except (FileNotFoundError, json.JSONDecodeError) as e:
+                app.logger.warning(f"Could not read or parse bot_heartbeat.json for detailed status: {e}")
+                # Bot is running, but can't get details, so is_connected remains False.
+        else:
+            app.logger.warning("Bot is running but bot_heartbeat.json not found. Cannot confirm connection status or details.")
+            # Bot is running, but no heartbeat file, so is_connected remains False.
+
     status_details = {
         "running": bot_running,
-        "timestamp": datetime.now().isoformat()
+        "connected": is_connected,  # True if running, heartbeat recent, and joined_channels is not empty
+        "uptime": current_uptime_seconds,  # Expected by JS as 'uptime' (seconds)
+        "tts_enabled": bot_tts_status,  # Expected by JS as 'tts_enabled' (bot's actual TTS state)
+        "joined_channels": current_joined_channels,
+        "pid": bot_pid,
+        "timestamp": datetime.now().isoformat(),  # Timestamp of this API response
+        "heartbeat_available": heartbeat_data_available, # Info if heartbeat file was read
+        # "tts_enabled_webapp": _enable_tts_webapp # This is a webapp-specific setting, less critical for core bot status
     }
-    if bot_running and os.path.exists("bot_heartbeat.json"):
-        try:
-            with open("bot_heartbeat.json", "r") as f:
-                heartbeat = json.load(f)
-                status_details.update({
-                    "heartbeat_time": datetime.fromtimestamp(heartbeat.get("timestamp", 0)).isoformat(),
-                    "uptime_seconds": heartbeat.get("uptime", 0),
-                    "joined_channels": heartbeat.get("channels", []),
-                    "pid": heartbeat.get("pid"),
-                    "tts_enabled_bot": heartbeat.get("tts_enabled", False)
-                })
-        except (FileNotFoundError, json.JSONDecodeError) as e:
-            app.logger.warning(f"Could not read or parse bot_heartbeat.json for status: {e}")
-    status_details["tts_enabled_webapp"] = _enable_tts_webapp 
+    
     return jsonify(status_details)
 
 @app.route('/settings')
