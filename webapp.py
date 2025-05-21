@@ -8,6 +8,7 @@ import psutil
 import json
 import random
 import traceback
+import signal # Added import for signal
 from flask import Flask, render_template, request, jsonify, redirect, url_for, send_from_directory, make_response
 from flask_socketio import SocketIO # Import SocketIO
 from datetime import datetime, timedelta
