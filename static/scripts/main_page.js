@@ -362,11 +362,11 @@ function loadRecentTTS() {
                 playBtn.innerHTML = '<i class="fas fa-play"></i>';
                 playBtn.title = 'Play TTS';
                 playBtn.onclick = () => {
-                    // Ensure playTTS is defined globally or accessible here
-                    if (typeof playTTS === 'function') {
-                        playTTS(item.id, item.channel, item.timestamp);
+                    const audioSrc = `/static/${item.file_path}`;
+                    if (typeof window.playAudioIfExists === 'function') {
+                        window.playAudioIfExists(audioSrc);
                     } else {
-                        console.warn('playTTS function is not defined.');
+                        console.warn('playAudioIfExists function is not defined on window.');
                         alert('Playback functionality is not available.');
                     }
                 };
