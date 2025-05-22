@@ -313,6 +313,7 @@ def process_text_thread(input_text, channel_name, db_file='./messages.db', full_
         # Always restore original stdout and stderr
         sys.stdout = original_stdout
         sys.stderr = original_stderr
+        logging.info(f"[TTS THREAD] Released Bark TTS lock for message_id: {message_id}")
 
 def load_custom_voice(voice_preset):
     """Load a custom voice file if it exists"""
