@@ -129,10 +129,10 @@ def process_text_thread(input_text, channel_name, db_file='./messages.db', full_
             if 'AutoProcessor' not in globals():
                 initialize_tts()
             
-        import torch
-        import scipy.io.wavfile
-        from transformers import AutoProcessor, BarkModel
-        from nltk.tokenize import sent_tokenize
+            import torch
+            import scipy.io.wavfile
+            from transformers import AutoProcessor, BarkModel
+            from nltk.tokenize import sent_tokenize
         
         try:
             # Get channel-specific bark model if available
