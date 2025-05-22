@@ -127,7 +127,7 @@ def process_text_thread(input_text, channel_name, db_file='./messages.db', full_
         try:
             # Make sure we have the necessary TTS dependencies
             if 'AutoProcessor' not in globals():
-            initialize_tts()
+                initialize_tts()
             
         import torch
         import scipy.io.wavfile
