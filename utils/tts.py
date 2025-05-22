@@ -247,46 +247,47 @@ def process_text_thread(input_text, channel_name, db_file='./messages.db', full_
                     logging.warning(f"[TTS DB LOG] Warning: Original message timestamp (timestamp param) is None for message_id {message_id}. Using current time for TTS log.")
                     timestamp_for_log = datetime.now().strftime("%Y%m%d-%H%M%S")
 
+                db_conn_tts_log = None
                 try:
                     logging.info(f"[TTS DB LOG] Attempting to log to tts_logs: message_id={message_id}, channel={channel_name}, timestamp={timestamp_for_log}, voice={voice_preset}, path={db_file_path_relative}, text='{str(input_text)[:30]}...'")
-                    conn = sqlite3.connect(db_file)
-                    c = conn.cursor()
-                    # It's good practice to ensure message_id is not None if it's a key part of your log.
-                    # The earlier check for message_id being None should prevent this block from running if it's critical.
-                    c.execute('''INSERT INTO tts_logs 
+                    db_conn_tts_log = sqlite3.connect(db_file, timeout=10.0) # Added timeout
+                    c = db_conn_tts_log.cursor()
+                    
+                    c.execute('''INSERT OR IGNORE INTO tts_logs 
                                 (message_id, channel, timestamp, voice_preset, file_path, message)
-                                VALUES (?, ?, ?, ?, ?, ?)''',
+                                VALUES (?, ?, ?, ?, ?, ?)''', # Ensured INSERT OR IGNORE
                             (message_id, channel_name, timestamp_for_log, voice_preset, db_file_path_relative, input_text))
-                    conn.commit()
+                    db_conn_tts_log.commit()
                     
-                    # lastrowid gets the ROWID of the last inserted row.
-                    # If message_id is the primary key and not an alias for ROWID, lastrowid might not be message_id.
-                    # If tts_logs has its own auto-incrementing integer primary key (e.g., log_id INTEGER PRIMARY KEY AUTOINCREMENT),
-                    # then lastrowid will be that new log_id.
-                    logged_tts_table_id = c.lastrowid 
-                    
-                    # Verify the insert by trying to fetch the row using message_id.
-                    c.execute("SELECT COUNT(*) FROM tts_logs WHERE message_id = ?", (message_id,))
-                    count_for_message_id = c.fetchone()[0]
-                    
-                    conn.close()
-                    logging.info(f"[TTS DB LOG] Successfully logged. TTS Log Table ID (ROWID): {logged_tts_table_id}, Original Message ID: {message_id}. Count for this message_id in tts_logs: {count_for_message_id}.")
-                    # Since message_id is PRIMARY KEY, count_for_message_id should always be 1 after a successful insert.
-                    # If it were >1, it would imply message_id is not truly a PK or there's an issue.
-                    # However, an IntegrityError would prevent this state.
-
+                    if c.rowcount == 0:
+                        logging.warning(f"[TTS DB LOG] Insert to tts_logs IGNORED for message_id {message_id} (likely duplicate or other constraint).")
+                        # Attempt to fetch existing log_id if it was ignored due to duplicate
+                        c.execute("SELECT ROWID FROM tts_logs WHERE message_id = ?", (message_id,))
+                        existing_row = c.fetchone()
+                        if existing_row:
+                            logged_tts_table_id = existing_row[0]
+                            logging.info(f"[TTS DB LOG] Found existing tts_logs ROWID: {logged_tts_table_id} for message_id {message_id}.")
+                        else: # Should not happen if PK is message_id and it was a duplicate
+                            logged_tts_table_id = None 
+                    else:
+                        logged_tts_table_id = c.lastrowid 
+                        logging.info(f"[TTS DB LOG] Successfully logged. TTS Log Table ID (ROWID): {logged_tts_table_id}, Original Message ID: {message_id}.")
+                
                 except sqlite3.IntegrityError as integrity_err:
-                    # This will catch "UNIQUE constraint failed" if message_id is PK and a duplicate is inserted.
-                    logging.error(f"[TTS DB LOG] SQLite IntegrityError (likely duplicate message_id): {integrity_err}")
+                    # This block might be hit if "datatype mismatch" is the true issue, not handled by INSERT OR IGNORE.
+                    logging.error(f"[TTS DB LOG] SQLite IntegrityError (message_id: {message_id}): {integrity_err}. This might indicate a schema mismatch if not a duplicate.")
                     logging.error(f"[TTS DB LOG] Failed Data: message_id={message_id}, channel={channel_name}, timestamp={timestamp_for_log}, voice={voice_preset}, path={db_file_path_relative}, text='{str(input_text)[:30]}...'")
-                    logged_tts_table_id = None # Ensure it's None on error
-                except sqlite3.Error as db_err: # Catch other SQLite errors
-                    logging.error(f"[TTS DB LOG] Other SQLite error during tts_logs insert: {db_err}")
+                    logged_tts_table_id = None 
+                except sqlite3.Error as db_err: 
+                    logging.error(f"[TTS DB LOG] Other SQLite error during tts_logs insert (message_id: {message_id}): {db_err}")
                     logging.error(f"[TTS DB LOG] Data was: message_id={message_id}, channel={channel_name}, timestamp={timestamp_for_log}, voice={voice_preset}, path={db_file_path_relative}, text='{str(input_text)[:30]}...'")
-                    logged_tts_table_id = None # Ensure it's None on error
+                    logged_tts_table_id = None 
                 except Exception as general_db_err:
-                    logging.error(f"[TTS DB LOG] General error during tts_logs insert: {general_db_err}", exc_info=True)
-                    logged_tts_table_id = None # Ensure it's None on error
+                    logging.error(f"[TTS DB LOG] General error during tts_logs insert (message_id: {message_id}): {general_db_err}", exc_info=True)
+                    logged_tts_table_id = None
+                finally:
+                    if db_conn_tts_log:
+                        db_conn_tts_log.close()
 
             # Re-silence output if further Bark/TTS processing was needed (though it's done here)
             silence_output()
