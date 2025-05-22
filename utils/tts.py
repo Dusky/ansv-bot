@@ -21,8 +21,9 @@ db_file = 'messages.db'
 original_stdout = sys.stdout
 original_stderr = sys.stderr
 
-# Add lock to prevent concurrent TTS processing
-tts_lock = asyncio.Lock()
+# Add lock to prevent concurrent TTS processing for Bark model
+bark_tts_lock = threading.Lock() # For process_text_thread
+async_tts_lock = asyncio.Lock() # For async def process_text, renamed from tts_lock for clarity
 
 def fetch_latest_message():
     try:
@@ -76,14 +77,23 @@ def log_tts_file(message_id, channel_name, timestamp, file_path, voice_preset, i
     file_path = file_path.replace('static/', '', 1)
     if not voice_preset:
         voice_preset = 'v2/en_speaker_5'
+    conn = None
     try:
-        conn = sqlite3.connect(db_file)
+        conn = sqlite3.connect(db_file, timeout=10.0) # Added timeout
         c = conn.cursor()
-        c.execute("INSERT INTO tts_logs (message_id, channel, timestamp, file_path, voice_preset, message) VALUES (?, ?, ?, ?, ?, ?)",
+        # Using INSERT OR IGNORE to handle potential duplicate message_ids gracefully
+        c.execute("INSERT OR IGNORE INTO tts_logs (message_id, channel, timestamp, file_path, voice_preset, message) VALUES (?, ?, ?, ?, ?, ?)",
                 (message_id, channel_name, timestamp, file_path, voice_preset, input_text))
         conn.commit()
+        if c.rowcount == 0:
+            logging.warning(f"[log_tts_file] Insert to tts_logs IGNORED for message_id {message_id} (likely duplicate).")
+        else:
+            logging.info(f"[log_tts_file] Successfully inserted into tts_logs for message_id {message_id}.")
+    except sqlite3.Error as e:
+        logging.error(f"[log_tts_file] SQLite error for message_id {message_id}: {e}")
     finally:
-        conn.close()
+        if conn:
+            conn.close()
 
 def initialize_tts():
     global AutoProcessor, BarkModel, torch, scipy
@@ -97,7 +107,7 @@ def silence_output():
 
 def process_text_thread(input_text, channel_name, db_file='./messages.db', full_path=None, timestamp=None, message_id=None, voice_preset=None, bark_model=None):
     """Process TTS in a separate thread with silenced output"""
-    global original_stdout, original_stderr
+    global original_stdout, original_stderr, bark_tts_lock
     
     # Log parameters *before* silencing, for critical debugging
     logging.info(f"[TTS THREAD ENTRY] Params: input_text='{str(input_text)[:30]}...', channel='{channel_name}', db_file='{db_file}', full_path='{full_path}', timestamp='{timestamp}', message_id='{message_id}', voice_preset='{voice_preset}', bark_model='{bark_model}'")
@@ -109,11 +119,14 @@ def process_text_thread(input_text, channel_name, db_file='./messages.db', full_
         logging.warning("[TTS THREAD WARNING] Original message timestamp (timestamp param) is None at entry.")
 
 
-    silence_output() # Now silence output for Bark
+    # Acquire lock to ensure only one thread generates Bark audio at a time
+    with bark_tts_lock:
+        logging.info(f"[TTS THREAD] Acquired Bark TTS lock for message_id: {message_id}")
+        silence_output() # Silence output for Bark inside the lock
 
-    try:
-        # Make sure we have the necessary TTS dependencies
-        if 'AutoProcessor' not in globals():
+        try:
+            # Make sure we have the necessary TTS dependencies
+            if 'AutoProcessor' not in globals():
             initialize_tts()
             
         import torch
@@ -349,12 +362,13 @@ def ensure_nltk_resources():
             return False
     return True
 
-async def process_text(channel, text, model_type="bark"):
+async def process_text(channel, text, model_type="bark"): # This is for the !speak command path
     """Process text to speech with proper locking and error handling"""
     # Use locking to prevent concurrent TTS processing
-    async with tts_lock:
+    global async_tts_lock # Use the asyncio lock for this async function
+    async with async_tts_lock:
         try:
-            logging.info(f"Starting TTS for channel {channel}")
+            logging.info(f"Starting ASYNC TTS for channel {channel} (likely !speak command)")
             
             # Create output directory if it doesn't exist
             output_dir = f"static/outputs/{channel}"
