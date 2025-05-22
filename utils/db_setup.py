@@ -39,8 +39,9 @@ def ensure_db_setup(db_file):
                     )''')
 
         # Create 'tts_logs' table for TTS file logging
+        # message_id should be TEXT to store UUIDs
         c.execute('''CREATE TABLE IF NOT EXISTS tts_logs (
-                        message_id INTEGER PRIMARY KEY,
+                        message_id TEXT PRIMARY KEY, 
                         channel TEXT,
                         timestamp TEXT,
                         file_path TEXT,
