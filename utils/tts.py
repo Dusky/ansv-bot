@@ -133,6 +133,14 @@ def process_text_thread(input_text, channel_name, db_file='./messages.db', full_
             import scipy.io.wavfile
             from transformers import AutoProcessor, BarkModel
             from nltk.tokenize import sent_tokenize
+        except ImportError as import_err:
+            # Restore output for error logging if imports fail
+            sys.stdout = original_stdout
+            sys.stderr = original_stderr
+            logging.error(f"[TTS THREAD FATAL ERROR] Failed to import critical TTS dependencies: {import_err}", exc_info=True)
+            # Re-raise the error to be caught by the outer try-except in process_text_thread, which will restore stdout/stderr again
+            # and return None, None, preventing further execution in this thread.
+            raise
         
         try:
             # Get channel-specific bark model if available
