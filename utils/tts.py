@@ -342,7 +342,10 @@ async def process_text(channel, text, model_type="bark"):
                 
                 # Only write file AFTER successful generation
                 write_wav(output_file, SAMPLE_RATE, audio_array)
-                logging.info(f"TTS audio file generated: {output_file}")
+                logging.info(f"TTS audio file generated: {output_file}") # This log indicates successful file generation
+                
+                # Removed the broken internal database logging attempt from here.
+                # Logging is now handled by the caller (e.g., handle_speak_command in bot.py).
                 
                 return True, output_file
             elif model_type == "elevenlabs":
