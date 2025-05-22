@@ -303,6 +303,13 @@ def process_text_thread(input_text, channel_name, db_file='./messages.db', full_
 
 def load_custom_voice(voice_preset):
     """Load a custom voice file if it exists"""
+    # If no voice_preset is provided, it's not a custom voice.
+    if voice_preset is None:
+        # This print will be silenced if called from process_text_thread during normal operation,
+        # but visible if stdout/stderr are restored or if called directly.
+        print("No voice preset provided to load_custom_voice, assuming default will be used by caller.")
+        return None
+
     # Handle built-in presets
     if voice_preset.startswith('v2/'):
         # These are built-in to Bark, no file needed
