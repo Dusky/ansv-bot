@@ -1540,20 +1540,23 @@ class Bot(commands.Bot):
                 self.logger.error(f"Error calling or during TTS generation via process_text for !speak: {tts_error}", exc_info=True)
                 success, audio_file = False, None
             
-            self.logger.info(f"!speak TTS generation result: success={success}, audio_file='{audio_file}'")
+            self.logger.info(f"[HANDLE_SPEAK_COMMAND_TRACE] After process_text call. success: {success}, audio_file: '{audio_file}'")
 
             if success and audio_file:
+                self.logger.info(f"[HANDLE_SPEAK_COMMAND_TRACE] Condition (success and audio_file) is TRUE.")
                 # TTS was successful, log and notify
                 # The audio_file path from process_text should be like "static/outputs/channel/file.wav"
                 web_path = audio_file 
                 if not web_path.startswith('static/'): # Ensure it's a web path if not already
                     web_path = f"static/{web_path.lstrip('/')}"
                 
+                self.logger.info(f"[HANDLE_SPEAK_COMMAND_TRACE] Sending message to Twitch: Speaking: {message_to_speak[:50]}... (Audio: {web_path})")
                 await ctx.send(f"Speaking: {message_to_speak[:50]}... (Audio: {web_path})")
+                self.logger.info(f"[HANDLE_SPEAK_COMMAND_TRACE] Message sent to Twitch.")
                 
                 # Log the TTS usage in the database for tracking
                 try:
-                    self.logger.info(f"Attempting to log !speak TTS to DB. audio_file from process_text: {audio_file}")
+                    self.logger.info(f"[HANDLE_SPEAK_COMMAND_TRACE] Attempting to log !speak TTS to DB. audio_file from process_text: {audio_file}")
                     conn = sqlite3.connect(self.db_file)
                     c = conn.cursor()
                     # Get the message_id of the command message itself
@@ -1566,27 +1569,31 @@ class Bot(commands.Bot):
                     db_audio_file_path = None
                     if audio_file and audio_file.startswith('static/'):
                         db_audio_file_path = audio_file[len('static/'):]
+                        self.logger.info(f"[HANDLE_SPEAK_COMMAND_TRACE] Derived db_audio_file_path: '{db_audio_file_path}'")
                     elif audio_file: # If it doesn't start with static/ for some reason, log a warning but use it as is
                         self.logger.warning(f"Audio file path from process_text does not start with 'static/': {audio_file}")
                         db_audio_file_path = audio_file # Use as is, might be an issue later
+                        self.logger.info(f"[HANDLE_SPEAK_COMMAND_TRACE] Using audio_file as is for db_audio_file_path: '{db_audio_file_path}'")
+                    else:
+                        self.logger.error(f"[HANDLE_SPEAK_COMMAND_TRACE] audio_file is None or empty, cannot derive db_audio_file_path.")
+
 
                     # Get voice preset used. process_text uses "v2/en_speaker_0" by default if not specified.
-                    # If process_text were to use dynamic presets, it should return the one it used.
                     voice_preset_used = "v2/en_speaker_0" # Matching default in process_text
 
                     if db_audio_file_path:
-                        self.logger.info(f"Logging !speak TTS to DB: msg_id={command_message_id}, channel={channel}, timestamp={command_timestamp_str}, path='{db_audio_file_path}', voice='{voice_preset_used}'")
+                        self.logger.info(f"[HANDLE_SPEAK_COMMAND_TRACE] Logging !speak TTS to DB: msg_id={command_message_id}, channel={channel}, timestamp={command_timestamp_str}, path='{db_audio_file_path}', voice='{voice_preset_used}'")
                         c.execute("""
                             INSERT INTO tts_logs (message_id, channel, timestamp, file_path, voice_preset, message) 
                             VALUES (?, ?, ?, ?, ?, ?)
                         """, (command_message_id, channel, command_timestamp_str, db_audio_file_path, voice_preset_used, message_to_speak))
                         conn.commit()
-                        self.logger.info(f"!speak TTS logged to DB with message_id: {command_message_id}")
+                        self.logger.info(f"[HANDLE_SPEAK_COMMAND_TRACE] !speak TTS logged to DB with message_id: {command_message_id}")
                     else:
-                        self.logger.error(f"Could not log !speak TTS as db_audio_file_path was not determined from audio_file: {audio_file}")
+                        self.logger.error(f"[HANDLE_SPEAK_COMMAND_TRACE] Could not log !speak TTS as db_audio_file_path was not determined or was None. Original audio_file: {audio_file}")
                     conn.close()
                 except sqlite3.IntegrityError as ie:
-                    self.logger.error(f"SQLite IntegrityError logging !speak TTS (likely duplicate message_id {command_message_id}): {ie}")
+                    self.logger.error(f"[HANDLE_SPEAK_COMMAND_TRACE] SQLite IntegrityError logging !speak TTS (likely duplicate message_id {command_message_id}): {ie}")
                 except Exception as e:
                     self.logger.error(f"Error logging TTS usage: {e}")
             else:
