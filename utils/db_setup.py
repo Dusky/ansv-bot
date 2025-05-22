@@ -61,24 +61,50 @@ def ensure_db_setup(db_file):
         tts_logs_columns = {row[1]: row[2] for row in c.fetchall()}  # {column_name: data_type}
         
         if 'message_id' in tts_logs_columns and tts_logs_columns['message_id'].upper() == 'INTEGER':
-            print("Migrating tts_logs.message_id from INTEGER to TEXT...")
-            # Create new table with correct schema
-            c.execute('''CREATE TABLE tts_logs_new (
-                            message_id TEXT PRIMARY KEY, 
-                            channel TEXT,
-                            timestamp TEXT,
-                            file_path TEXT,
-                            voice_preset TEXT,
-                            message TEXT
-                        )''')
-            # Copy data, converting INTEGER message_id to TEXT
-            c.execute('''INSERT INTO tts_logs_new 
-                        SELECT CAST(message_id AS TEXT), channel, timestamp, file_path, voice_preset, message 
-                        FROM tts_logs''')
-            # Drop old table and rename new one
-            c.execute('DROP TABLE tts_logs')
-            c.execute('ALTER TABLE tts_logs_new RENAME TO tts_logs')
-            print("tts_logs table migrated successfully.")
+            print("Attempting to migrate tts_logs.message_id from INTEGER to TEXT...")
+            try:
+                # Start a transaction
+                conn.execute('BEGIN TRANSACTION')
+
+                # Drop the temporary table if it exists from a previous failed attempt
+                c.execute('DROP TABLE IF EXISTS tts_logs_new')
+                print("Dropped tts_logs_new if it existed.")
+
+                # Create new table with correct schema
+                c.execute('''CREATE TABLE tts_logs_new (
+                                message_id TEXT PRIMARY KEY, 
+                                channel TEXT,
+                                timestamp TEXT,
+                                file_path TEXT,
+                                voice_preset TEXT,
+                                message TEXT
+                            )''')
+                print("Created tts_logs_new table.")
+
+                # Copy data, converting INTEGER message_id to TEXT
+                c.execute('''INSERT INTO tts_logs_new 
+                            SELECT CAST(message_id AS TEXT), channel, timestamp, file_path, voice_preset, message 
+                            FROM tts_logs''')
+                print("Copied data from tts_logs to tts_logs_new.")
+
+                # Drop old table and rename new one
+                c.execute('DROP TABLE tts_logs')
+                print("Dropped old tts_logs table.")
+                c.execute('ALTER TABLE tts_logs_new RENAME TO tts_logs')
+                print("Renamed tts_logs_new to tts_logs.")
+
+                # Commit the transaction
+                conn.commit()
+                print("tts_logs table migrated successfully.")
+            except sqlite3.Error as migration_error:
+                print(f"Error during tts_logs migration: {migration_error}. Rolling back.")
+                conn.rollback() # Rollback on error
+                # It's possible the error is "table tts_logs_new already exists" if BEGIN TRANSACTION isn't fully effective for DDL.
+                # The DROP TABLE IF EXISTS should handle this, but if not, manual DB intervention might be needed.
+            except Exception as general_migration_exc:
+                print(f"A non-SQLite error occurred during tts_logs migration: {general_migration_exc}. Rolling back.")
+                conn.rollback()
+
 
         # Check and add missing columns in 'channel_configs'
         c.execute("PRAGMA table_info(channel_configs)")
