@@ -91,8 +91,15 @@ def is_bot_actually_running():
     global last_status_check, channel_join_status
     current_time = time.time()
     
+    # Read verbose_heartbeat_log setting from config
+    try:
+        verbose_logging = config.getboolean('settings', 'verbose_heartbeat_log')
+    except (configparser.NoSectionError, configparser.NoOptionError):
+        verbose_logging = False # Default to False if not found
+
     if current_time - last_status_check < 5: # Check every 5 seconds
-        app.logger.debug("Using cached bot status")
+        if verbose_logging: # Use the new config setting
+            app.logger.debug("Using cached bot status")
         return bool(channel_join_status.get('running', False))
     
     last_status_check = current_time
@@ -108,16 +115,20 @@ def is_bot_actually_running():
                     if psutil.pid_exists(pid):
                         process = psutil.Process(pid)
                         if "python" in process.name().lower() or "ansv.py" in " ".join(process.cmdline()).lower():
-                            app.logger.info(f"Bot process (PID {pid}) verified via PID file.")
+                            if verbose_logging: # Use the new config setting
+                                app.logger.info(f"Bot process (PID {pid}) verified via PID file.")
                             bot_running = True
                         else:
-                            app.logger.warning(f"PID {pid} exists but is not the bot process.")
+                            if verbose_logging: # Use the new config setting
+                                app.logger.warning(f"PID {pid} exists but is not the bot process.")
                     else:
-                        app.logger.warning(f"PID {pid} from bot.pid does not exist.")
+                        if verbose_logging: # Use the new config setting
+                            app.logger.warning(f"PID {pid} from bot.pid does not exist.")
                 else:
-                    app.logger.warning("bot.pid file is empty.")
+                    if verbose_logging: # Use the new config setting
+                        app.logger.warning("bot.pid file is empty.")
     except (ValueError, FileNotFoundError, psutil.NoSuchProcess, psutil.AccessDenied) as e:
-        app.logger.error(f"Error checking PID file: {e}")
+        app.logger.error(f"Error checking PID file: {e}") # Keep errors always visible
     
     # METHOD 2: Check the heartbeat file (if bot not confirmed by PID)
     if not bot_running:
@@ -127,14 +138,16 @@ def is_bot_actually_running():
                     heartbeat_data = json.load(f)
                     timestamp = heartbeat_data.get("timestamp", 0)
                     if current_time - timestamp < 120: # Heartbeat within last 2 minutes
-                        app.logger.info(f"Bot verified via recent heartbeat file (last beat: {datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')}).")
+                        if verbose_logging: # Use the new config setting
+                            app.logger.info(f"Bot verified via recent heartbeat file (last beat: {datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')}).")
                         bot_running = True
                         channel_join_status.update(heartbeat_data) # Update cache with heartbeat data
                         channel_join_status['running'] = True
                     else:
-                        app.logger.warning(f"Heartbeat file is stale (last beat: {datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')}).")
+                        if verbose_logging: # Use the new config setting
+                            app.logger.warning(f"Heartbeat file is stale (last beat: {datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')}).")
         except (FileNotFoundError, json.JSONDecodeError, Exception) as e:
-            app.logger.error(f"Error checking heartbeat file: {e}")
+            app.logger.error(f"Error checking heartbeat file: {e}") # Keep errors always visible
 
     # METHOD 3: Check the database heartbeat (if bot still not confirmed)
     if not bot_running:
@@ -147,12 +160,14 @@ def is_bot_actually_running():
             if result:
                 last_heartbeat_dt = datetime.strptime(result[0], '%Y-%m-%d %H:%M:%S')
                 if (datetime.now() - last_heartbeat_dt).total_seconds() < 120: # DB heartbeat within last 2 minutes
-                    app.logger.info(f"Bot verified via recent database heartbeat (last beat: {last_heartbeat_dt}).")
+                    if verbose_logging: # Use the new config setting
+                        app.logger.info(f"Bot verified via recent database heartbeat (last beat: {last_heartbeat_dt}).")
                     bot_running = True
                 else:
-                    app.logger.warning(f"Database heartbeat is stale (last beat: {last_heartbeat_dt}).")
+                    if verbose_logging: # Use the new config setting
+                        app.logger.warning(f"Database heartbeat is stale (last beat: {last_heartbeat_dt}).")
         except (sqlite3.Error, ValueError, Exception) as e:
-            app.logger.error(f"Error checking database heartbeat: {e}")
+            app.logger.error(f"Error checking database heartbeat: {e}") # Keep errors always visible
     
     channel_join_status['running'] = bot_running
     return bot_running
@@ -419,6 +434,12 @@ def api_bot_status():
     current_joined_channels = []
     bot_pid = None
     heartbeat_data_available = False
+    
+    # Read verbose_heartbeat_log setting from config
+    try:
+        verbose_logging = config.getboolean('settings', 'verbose_heartbeat_log')
+    except (configparser.NoSectionError, configparser.NoOptionError):
+        verbose_logging = False # Default to False if not found
 
     if bot_running:
         # If bot is running, try to get details from heartbeat
@@ -437,7 +458,8 @@ def api_bot_status():
                     current_uptime_seconds = heartbeat.get("uptime", 0)
                     bot_pid = heartbeat.get("pid")
                 else:
-                    app.logger.warning(f"Heartbeat file is stale (last beat: {datetime.fromtimestamp(heartbeat_timestamp).strftime('%Y-%m-%d %H:%M:%S')}), considering bot as running but not reliably connected.")
+                    if verbose_logging: # Use the new config setting
+                        app.logger.warning(f"Heartbeat file is stale (last beat: {datetime.fromtimestamp(heartbeat_timestamp).strftime('%Y-%m-%d %H:%M:%S')}), considering bot as running but not reliably connected.")
                     # Bot is running (per is_bot_actually_running) but heartbeat is old.
                     # is_connected remains False. Uptime/TTS might be stale.
                     current_uptime_seconds = heartbeat.get("uptime", 0) # Report last known uptime
@@ -446,10 +468,12 @@ def api_bot_status():
                     # is_connected is already False, which is appropriate for stale heartbeat
 
             except (FileNotFoundError, json.JSONDecodeError) as e:
-                app.logger.warning(f"Could not read or parse bot_heartbeat.json for detailed status: {e}")
+                if verbose_logging: # Use the new config setting
+                    app.logger.warning(f"Could not read or parse bot_heartbeat.json for detailed status: {e}")
                 # Bot is running, but can't get details, so is_connected remains False.
         else:
-            app.logger.warning("Bot is running but bot_heartbeat.json not found. Cannot confirm connection status or details.")
+            if verbose_logging: # Use the new config setting
+                app.logger.warning("Bot is running but bot_heartbeat.json not found. Cannot confirm connection status or details.")
             # Bot is running, but no heartbeat file, so is_connected remains False.
 
     status_details = {

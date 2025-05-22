@@ -119,6 +119,13 @@ class Bot(commands.Bot):
             from utils import tts
             tts.initialize_tts()
         
+        # Read verbose_heartbeat_log setting
+        try:
+            self.verbose_heartbeat_log = config.getboolean('settings', 'verbose_heartbeat_log')
+        except (configparser.NoSectionError, configparser.NoOptionError):
+            self.verbose_heartbeat_log = False # Default to False if not found
+            print(f"{YELLOW}Warning: 'verbose_heartbeat_log' not found in settings.conf, defaulting to False.{RESET}")
+
         self._joined_channels = set()
         
         self.start_time = time.time()
@@ -1234,10 +1241,10 @@ class Bot(commands.Bot):
         """Write current bot status to heartbeat file and database."""
         try:
             import json
-            from utils.web_utils import get_verbose_logs_setting
+            # from utils.web_utils import get_verbose_logs_setting # No longer needed from web_utils
             
-            # Check for verbose logs setting
-            verbose_logs = get_verbose_logs_setting()
+            # Check for verbose logs setting (now from self.verbose_heartbeat_log)
+            # verbose_logs = get_verbose_logs_setting() # Replaced by self.verbose_heartbeat_log
             
             # Get current joined channels - strip # for consistent matching
             # We use a list comprehension to get only the channel names from _joined_channels
@@ -1268,8 +1275,8 @@ class Bot(commands.Bot):
             with open("bot.pid", "w") as f:
                 f.write(str(os.getpid()))
                 
-            if verbose_logs:
-                print(f"{YELLOW}Raw channels from heartbeat: {channels_list}{RESET}")
+            if self.verbose_heartbeat_log: # Use the new config setting
+                print(f"{YELLOW}Heartbeat: Raw channels from _joined_channels: {channels_list}{RESET}")
             
             # Update the database for web UI connection status
             try:
@@ -1311,18 +1318,18 @@ class Bot(commands.Bot):
                 # Commit the changes
                 conn.commit()
                 
-                if verbose_logs:
-                    self.my_logger.log_info(f"Updated database heartbeat at {formatted_time}")
-                    print(f"{YELLOW}Processed connected channels: {channels_list}{RESET}")
+                if self.verbose_heartbeat_log: # Use the new config setting
+                    self.my_logger.log_info(f"Heartbeat: Updated database heartbeat at {formatted_time}")
+                    print(f"{YELLOW}Heartbeat: Processed connected channels for DB: {channels_list}{RESET}")
                 
             except Exception as db_error:
-                self.my_logger.error(f"Error updating database heartbeat: {db_error}")
+                self.my_logger.error(f"Heartbeat: Error updating database heartbeat: {db_error}")
             finally:
                 if conn:
                     conn.close()
                 
         except Exception as e:
-            self.my_logger.error(f"Error updating heartbeat file: {e}")
+            self.my_logger.error(f"Heartbeat: Error updating heartbeat file: {e}")
 
     async def check_message_requests(self):
         """Check for message requests from the web interface"""
