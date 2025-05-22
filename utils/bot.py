@@ -1561,25 +1561,32 @@ class Bot(commands.Bot):
                     # Use the timestamp of the command message
                     command_timestamp_str = ctx.message.timestamp.strftime("%Y%m%d-%H%M%S") if isinstance(ctx.message.timestamp, datetime) else str(ctx.message.timestamp)
                     
-                    # Assuming file_path from process_text is relative to static/ e.g., "outputs/channel/file.wav"
-                    # If audio_file is absolute, make it relative.
-                    db_audio_file_path = audio_file.replace(os.path.join(os.getcwd(), 'static/'), '', 1) if audio_file else None
+                    # audio_file from process_text is "static/outputs/channel/file.wav"
+                    # For the database, we want "outputs/channel/file.wav"
+                    db_audio_file_path = None
+                    if audio_file and audio_file.startswith('static/'):
+                        db_audio_file_path = audio_file[len('static/'):]
+                    elif audio_file: # If it doesn't start with static/ for some reason, log a warning but use it as is
+                        self.logger.warning(f"Audio file path from process_text does not start with 'static/': {audio_file}")
+                        db_audio_file_path = audio_file # Use as is, might be an issue later
 
-                    # Get voice preset used (process_text might need to return this, or we fetch it)
-                    # For now, let's assume a default or fetch it if possible.
-                    # voice_preset_used = self.get_channel_voice_preset(channel) # If you have such a method
-                    voice_preset_used = "v2/en_speaker_0" # Placeholder, as process_text uses this default
+                    # Get voice preset used. process_text uses "v2/en_speaker_0" by default if not specified.
+                    # If process_text were to use dynamic presets, it should return the one it used.
+                    voice_preset_used = "v2/en_speaker_0" # Matching default in process_text
 
                     if db_audio_file_path:
-                        self.logger.info(f"Logging !speak TTS to DB: msg_id={command_message_id}, channel={channel}, timestamp={command_timestamp_str}, path={db_audio_file_path}, voice={voice_preset_used}")
+                        self.logger.info(f"Logging !speak TTS to DB: msg_id={command_message_id}, channel={channel}, timestamp={command_timestamp_str}, path='{db_audio_file_path}', voice='{voice_preset_used}'")
                         c.execute("""
                             INSERT INTO tts_logs (message_id, channel, timestamp, file_path, voice_preset, message) 
                             VALUES (?, ?, ?, ?, ?, ?)
                         """, (command_message_id, channel, command_timestamp_str, db_audio_file_path, voice_preset_used, message_to_speak))
                         conn.commit()
+                        self.logger.info(f"!speak TTS logged to DB with message_id: {command_message_id}")
                     else:
-                        self.logger.error(f"Could not log !speak TTS as audio_file path was not determined: {audio_file}")
+                        self.logger.error(f"Could not log !speak TTS as db_audio_file_path was not determined from audio_file: {audio_file}")
                     conn.close()
+                except sqlite3.IntegrityError as ie:
+                    self.logger.error(f"SQLite IntegrityError logging !speak TTS (likely duplicate message_id {command_message_id}): {ie}")
                 except Exception as e:
                     self.logger.error(f"Error logging TTS usage: {e}")
             else:
