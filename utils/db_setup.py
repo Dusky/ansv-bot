@@ -56,6 +56,30 @@ def ensure_db_setup(db_file):
                         timestamp TEXT
                     )''')
 
+        # Check and migrate tts_logs table if needed
+        c.execute("PRAGMA table_info(tts_logs)")
+        tts_logs_columns = {row[1]: row[2] for row in c.fetchall()}  # {column_name: data_type}
+        
+        if 'message_id' in tts_logs_columns and tts_logs_columns['message_id'].upper() == 'INTEGER':
+            print("Migrating tts_logs.message_id from INTEGER to TEXT...")
+            # Create new table with correct schema
+            c.execute('''CREATE TABLE tts_logs_new (
+                            message_id TEXT PRIMARY KEY, 
+                            channel TEXT,
+                            timestamp TEXT,
+                            file_path TEXT,
+                            voice_preset TEXT,
+                            message TEXT
+                        )''')
+            # Copy data, converting INTEGER message_id to TEXT
+            c.execute('''INSERT INTO tts_logs_new 
+                        SELECT CAST(message_id AS TEXT), channel, timestamp, file_path, voice_preset, message 
+                        FROM tts_logs''')
+            # Drop old table and rename new one
+            c.execute('DROP TABLE tts_logs')
+            c.execute('ALTER TABLE tts_logs_new RENAME TO tts_logs')
+            print("tts_logs table migrated successfully.")
+
         # Check and add missing columns in 'channel_configs'
         c.execute("PRAGMA table_info(channel_configs)")
         channel_config_columns = [row[1] for row in c.fetchall()]
