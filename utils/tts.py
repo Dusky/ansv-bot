@@ -134,13 +134,51 @@ def process_text_thread(input_text, channel_name, db_file='./messages.db', full_
             model_path = f"suno/{bark_model}"
             
             # Initialize TTS model
-            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-            processor = AutoProcessor.from_pretrained(model_path)
-            model = BarkModel.from_pretrained(model_path).to(device)
+            device_type_str = "cuda" if torch.cuda.is_available() else "cpu"
+            device = torch.device(device_type_str)
+            
+            # This log will be silenced by silence_output() if logging to console, 
+            # but visible if logger is configured for files.
+            logging.info(f"TTS: Attempting to use device: {device_type_str}")
 
-            if torch.cuda.is_available():
-                model.to_bettertransformer()
-                model.enable_cpu_offload()
+            processor = AutoProcessor.from_pretrained(model_path)
+            
+            # The error "module 'torch' has no attribute 'get_default_device'" typically occurs
+            # if the PyTorch version is older than 1.9, as this function was introduced then.
+            # The 'transformers' library's from_pretrained method seems to internally call this.
+            # The best fix is to ensure PyTorch is v1.9+ and transformers is compatible.
+            # The following code attempts to load the model, but may still hit the error if versions are mismatched.
+
+            try:
+                # Load model to CPU first by default with from_pretrained, then move to target device
+                model = BarkModel.from_pretrained(model_path)
+                model = model.to(device) 
+
+                if device_type_str == "cuda":
+                    logging.info("TTS: Applying CUDA specific optimizations (to_bettertransformer, enable_cpu_offload).")
+                    # These operations are for CUDA and require appropriate library versions.
+                    model.to_bettertransformer()
+                    model.enable_cpu_offload() # Requires 'accelerate' library
+            except AttributeError as ae:
+                if 'get_default_device' in str(ae):
+                    # Restore stdout/stderr to ensure this critical message is visible via standard print/logging
+                    sys.stdout = original_stdout
+                    sys.stderr = original_stderr
+                    logging.error(f"[TTS FATAL ERROR] AttributeError: {ae}. This strongly suggests your PyTorch version is too old (e.g., < 1.9) for the installed 'transformers' version.")
+                    logging.error("[TTS FATAL ERROR] Please upgrade PyTorch to 1.9+ or align your 'transformers' library version with your PyTorch version.")
+                    raise # Re-raise the error to be caught by the outer try-except in process_text_thread
+                else:
+                    # Restore stdout/stderr for other AttributeErrors too
+                    sys.stdout = original_stdout
+                    sys.stderr = original_stderr
+                    logging.error(f"[TTS FATAL ERROR] AttributeError during model loading: {ae}")
+                    raise # Re-raise other AttributeErrors
+            except Exception as model_load_exc:
+                # Restore stdout/stderr for general exceptions during model loading
+                sys.stdout = original_stdout
+                sys.stderr = original_stderr
+                logging.error(f"[TTS FATAL ERROR] Failed to load or prepare BarkModel: {model_load_exc}", exc_info=True)
+                raise # Re-raise the error
             
             # Handle voice preset (built-in vs custom)
             if voice_preset and voice_preset.startswith('v2/'):
