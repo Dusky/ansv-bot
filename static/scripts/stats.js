@@ -1,3 +1,13 @@
+// Helper function to format bytes into a human-readable string
+function formatBytes(bytes, decimals = 2) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const dm = decimals < 0 ? 0 : decimals;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+}
+
 function loadStatistics() {
   // Only log in development environment
   const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
@@ -96,7 +106,7 @@ function loadStatistics() {
             }
             const logFileCell = `<td>${logFileCellContent}</td>`;
             
-            const cacheSizeCell = `<td>${channel.cache_size || '0 KB'}</td>`;
+            const cacheSizeCell = `<td>${channel.cache_size_str || '0 B'}</td>`; // Use cache_size_str
             const lineCountCell = `<td>${lineCount || '0'}</td>`;
             const progressCell = `<td>${progressBarHtml}</td>`;
             
@@ -223,7 +233,7 @@ function updateStatsSummary(data) {
   }
   
   let totalLines = 0;
-  let totalCacheSize = 0;
+  let totalCacheSizeBytes = 0; // Use this for summing raw bytes
   
   // Count all real channels - excluding only the general model
   const channelModels = data.filter(channel => 
@@ -264,24 +274,9 @@ function updateStatsSummary(data) {
       }
     }
     
-    // Extract numeric value from cache size string (e.g., "1.23 MB" -> 1.23)
-    if (channel.cache_size) {
-      const matches = channel.cache_size.match(/^([\d.]+)/);
-      if (matches && matches[1]) {
-        const size = parseFloat(matches[1]);
-        const unit = channel.cache_size.split(' ')[1];
-        
-        // Convert to a common unit (KB) for summation
-        let sizeInKB = 0;
-        switch (unit) {
-          case 'B': sizeInKB = size / 1024; break;
-          case 'KB': sizeInKB = size; break;
-          case 'MB': sizeInKB = size * 1024; break;
-          case 'GB': sizeInKB = size * 1024 * 1024; break;
-        }
-        
-        totalCacheSize += sizeInKB;
-      }
+    // Sum raw cache_size_bytes
+    if (typeof channel.cache_size_bytes === 'number') {
+        totalCacheSizeBytes += channel.cache_size_bytes;
     }
   });
   
@@ -303,22 +298,14 @@ function updateStatsSummary(data) {
     channelsProgressElement.style.width = `${channelsPercent}%`;
   }
   
-  // Convert total cache size back to appropriate unit
+  // Format and display total cache size using the new helper
   if (totalCacheSizeElement) {
-    let formattedSize = '';
-    if (totalCacheSize < 1024) {
-      formattedSize = totalCacheSize.toFixed(2) + ' KB';
-    } else if (totalCacheSize < 1024 * 1024) {
-      formattedSize = (totalCacheSize / 1024).toFixed(2) + ' MB';
-    } else {
-      formattedSize = (totalCacheSize / (1024 * 1024)).toFixed(2) + ' GB';
-    }
-    
-    totalCacheSizeElement.textContent = formattedSize;
+    totalCacheSizeElement.textContent = formatBytes(totalCacheSizeBytes);
     
     if (cacheSizeProgressElement) {
-      // 10MB is considered "full" for visualization
-      const cacheSizePercent = Math.min(100, (totalCacheSize / (10 * 1024)) * 100);
+      // 10MB (10 * 1024 * 1024 bytes) is considered "full" for visualization
+      const maxBytesForProgress = 10 * 1024 * 1024; 
+      const cacheSizePercent = Math.min(100, (totalCacheSizeBytes / maxBytesForProgress) * 100);
       cacheSizeProgressElement.style.width = `${cacheSizePercent}%`;
     }
   }
