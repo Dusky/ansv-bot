@@ -50,9 +50,13 @@ window.ThemeManager = {
         }
         
         // Set up visual theme cards
-        this.setupThemeCards();
+        if (document.getElementById('themeCardContainer')) { // Check if we are on settings page
+            this.populateThemeCards(); // Populate cards first
+            this.setupThemeCards();    // Then attach listeners
+            this.updateActiveThemeCard(this.currentTheme); // Then update active state
+        }
     },
-    
+        
     // Get theme from cookie
     getThemeFromCookie: function() {
         return document.cookie
@@ -131,13 +135,13 @@ window.ThemeManager = {
         // Update the current theme
         this.currentTheme = themeName;
         
-        // First remove any existing theme class
-        document.body.classList.remove('theme-ansv');
+        // First remove any existing theme class from html element
+        document.documentElement.classList.remove('theme-ansv');
         document.documentElement.removeAttribute('data-theme');
         
         if (themeName === 'ansv') {
-            // Apply custom ANSV theme
-            document.body.classList.add('theme-ansv');
+            // Apply custom ANSV theme to html element
+            document.documentElement.classList.add('theme-ansv');
             document.documentElement.setAttribute('data-theme', 'ansv');
             document.documentElement.setAttribute('data-bs-theme', 'dark');
         } else {
@@ -226,6 +230,7 @@ window.ThemeManager = {
         // Remove active class from all cards
         themeCards.forEach(card => {
             card.classList.remove('active');
+            card.classList.remove('border-primary', 'shadow-sm'); // Remove visual cues
         });
         
         // Add active class to selected card
@@ -233,14 +238,92 @@ window.ThemeManager = {
             const cardTheme = card.getAttribute('data-theme');
             if (cardTheme === themeName) {
                 card.classList.add('active');
+                card.classList.add('border-primary', 'shadow-sm'); // Add visual cues
             } else {
                 // Try to extract from onClick attribute as fallback
                 const onClickAttr = card.getAttribute('onClick');
                 if (onClickAttr && onClickAttr.includes(`"${themeName}"`) || onClickAttr.includes(`'${themeName}'`)) {
                     card.classList.add('active');
+                    card.classList.add('border-primary', 'shadow-sm'); // Add visual cues
                 }
             }
         });
+    },
+
+    populateThemeCards: function() {
+        const container = document.getElementById('themeCardContainer');
+        if (!container) {
+            console.warn("Theme card container 'themeCardContainer' not found on this page.");
+            return;
+        }
+
+        container.innerHTML = ''; // Clear existing cards
+
+        const allThemes = [...new Set([...this.lightThemes, ...this.darkThemes])];
+
+        allThemes.forEach(themeName => {
+            const colDiv = document.createElement('div');
+            // Use Bootstrap's responsive column classes for better layout
+            colDiv.className = 'col-6 col-md-4 col-lg-3 mb-3'; 
+
+            const cardDiv = document.createElement('div');
+            cardDiv.className = 'card theme-card h-100 text-center'; // Ensure consistent height and center text
+            cardDiv.setAttribute('data-theme', themeName);
+            cardDiv.style.cursor = 'pointer';
+            cardDiv.setAttribute('role', 'button');
+            cardDiv.setAttribute('tabindex', '0'); // Make it focusable
+            cardDiv.setAttribute('aria-label', `Select ${themeName} theme`);
+
+            // Visual preview block
+            const previewBlock = document.createElement('div');
+            previewBlock.className = 'theme-preview-block p-3'; // Added padding
+            
+            // Simulate card header
+            const previewHeader = document.createElement('div');
+            previewHeader.style.height = '20px';
+            previewHeader.style.marginBottom = '5px';
+            previewHeader.style.borderRadius = '0.2rem';
+            
+            // Simulate card body
+            const previewBody = document.createElement('div');
+            previewBody.style.height = '30px';
+            previewBody.style.borderRadius = '0.2rem';
+
+            // Basic color assignment for preview elements
+            if (themeName === 'ansv') {
+                previewHeader.style.backgroundColor = 'var(--ansv-primary, #4d37bf)';
+                previewBody.style.backgroundColor = 'var(--ansv-card-bg, #242424)';
+            } else if (this.darkThemes.includes(themeName)) {
+                previewHeader.style.backgroundColor = '#375a7f'; // Example dark theme header
+                previewBody.style.backgroundColor = '#22252a';   // Example dark theme body
+            } else {
+                previewHeader.style.backgroundColor = '#0d6efd'; // Example light theme header (Bootstrap primary)
+                previewBody.style.backgroundColor = '#f8f9fa';   // Example light theme body
+            }
+            previewBlock.appendChild(previewHeader);
+            previewBlock.appendChild(previewBody);
+
+            const cardBodyDiv = document.createElement('div');
+            cardBodyDiv.className = 'card-body p-2'; // Reduced padding for card body
+
+            const titleH6 = document.createElement('h6');
+            titleH6.className = 'card-title mb-0 theme-name-display text-capitalize small'; // Smaller text
+            titleH6.textContent = themeName;
+            
+            cardDiv.appendChild(previewBlock);
+            cardBodyDiv.appendChild(titleH6);
+            cardDiv.appendChild(cardBodyDiv);
+            colDiv.appendChild(cardDiv);
+            container.appendChild(colDiv);
+
+            // Add keypress event for accessibility (Enter key to select)
+            cardDiv.addEventListener('keypress', function(event) {
+                if (event.key === 'Enter' || event.keyCode === 13) {
+                    this.click(); // Trigger the click event attached in setupThemeCards
+                }
+            });
+        });
+        console.log(`Populated ${allThemes.length} theme cards.`);
     }
 };
 
@@ -338,14 +421,27 @@ function isAnsvTheme() {
 
 // Initialize the theme on page load
 document.addEventListener('DOMContentLoaded', function() {
-    // Check if using ANSV theme
+    // Check if using ANSV theme and apply if necessary (redundant if ThemeManager.init runs, but safe)
     if (isAnsvTheme()) {
-        document.body.classList.add('theme-ansv');
+        // Ensure this matches how ThemeManager.applyTheme does it
+        document.documentElement.classList.add('theme-ansv');
         document.documentElement.setAttribute('data-theme', 'ansv');
+        document.documentElement.setAttribute('data-bs-theme', 'dark'); // ANSV is a dark theme
     }
     
     // UI Preferences initialization
     initUIPreferences();
+
+    // Initialize ThemeManager if it's present on the page (i.e., we are on settings.html or similar)
+    if (window.ThemeManager && typeof window.ThemeManager.init === 'function') {
+        // Only fully initialize (which includes populating cards) if the card container exists.
+        // ThemeManager.applyTheme and toggle setup should run on all pages if ThemeManager is global.
+        // However, settings.js is typically only loaded on settings.html.
+        console.log("DOMContentLoaded: Initializing ThemeManager from settings.js");
+        window.ThemeManager.init();
+    } else {
+        console.error("ThemeManager not found or init method is missing.");
+    }
 });
 
 // Function to select theme from visual previews - making global

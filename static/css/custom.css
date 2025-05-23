@@ -499,15 +499,10 @@ button[data-bot-disabled="true"]::after {
     box-shadow: 0 4px 10px rgba(0,0,0,0.15);
 }
 
-/* Active card styling for light & dark themes */
-html:not([data-bs-theme="dark"]) .theme-card.active {
-    border-color: var(--bs-primary);
-    box-shadow: 0 0 0 1px var(--bs-primary), 0 4px 10px rgba(0,0,0,0.15);
-}
-
-html[data-bs-theme="dark"] .theme-card.active {
-    border-color: var(--bs-primary);
-    box-shadow: 0 0 0 1px var(--bs-primary), 0 4px 10px rgba(0,0,0,0.5);
+/* Active card styling - uses CSS variables for theme-awareness */
+.theme-card.active {
+    border-color: var(--bs-primary) !important; /* Use !important to override potential specificity issues */
+    box-shadow: 0 0 0 2px var(--bs-primary), 0 6px 12px rgba(0,0,0,0.2) !important;
 }
 
 .theme-card .theme-color {
