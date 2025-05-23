@@ -22,6 +22,7 @@
       // Get the current theme from template variable
       const savedTheme = "{{ theme }}"; // This will be injected by the context processor
       console.log(`Base template loading theme: ${savedTheme}`);
+      document.documentElement.setAttribute('data-current-theme-name', savedTheme); // Store the actual theme name
       
       // Set data-bs-theme attribute for bootstrap dark mode
       const darkThemes = ['darkly', 'cyborg', 'slate', 'solar', 'superhero', 'vapor', 'ansv'];
