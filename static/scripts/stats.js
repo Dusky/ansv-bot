@@ -10,7 +10,7 @@ function formatBytes(bytes, decimals = 2) {
 
 function loadStatistics() {
   // Only log in development environment
-  const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+  const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'; // Keep this for dev-specific behavior
   
   const statsContainer = document.getElementById('statsContainer');
   const loadingIndicator = document.getElementById('loadingIndicator');
@@ -31,7 +31,7 @@ function loadStatistics() {
       return response.json();
     })
     .then(data => {
-      if (isDev) console.log("Stats data:", data);
+      if (isDev && window.DEBUG_MODE) console.log("Stats data:", data); // Add DEBUG_MODE check
       
       // Update summary metrics
       updateStatsSummary(data);
@@ -51,7 +51,7 @@ function loadStatistics() {
           }
         });
         
-        if (isDev) console.log(`Max line count: ${maxLineCount}, Total line count: ${totalLineCount}`);
+        if (isDev && window.DEBUG_MODE) console.log(`Max line count: ${maxLineCount}, Total line count: ${totalLineCount}`); // Add DEBUG_MODE check
         
         if (data.length === 0) {
           const emptyRow = document.createElement('tr');
@@ -144,11 +144,11 @@ function loadStatistics() {
       try {
         loadBuildTimes();
       } catch (e) {
-        if (isDev) console.error('Error loading build times:', e);
+        if (isDev) console.error('Error loading build times:', e); // Keep console.error for actual errors
       }
     })
     .catch(error => {
-      if (isDev) console.error('Error loading stats:', error.message); // Log the more detailed error message
+      if (isDev) console.error('Error loading stats:', error.message); // Keep console.error for actual errors
       if (statsContainer) {
         // Display the more detailed error message in the table
         statsContainer.innerHTML = `<tr><td colspan="7" class="text-center text-danger">${error.message}</td></tr>`;
@@ -167,7 +167,7 @@ function initializeDynamicElements() {
             tooltipTriggerList.forEach(el => new bootstrap.Tooltip(el));
         }
     } catch (e) {
-        console.warn('Could not initialize tooltips:', e);
+        if (window.DEBUG_MODE) console.warn('Could not initialize tooltips:', e);
     }
 
     // Attach event listeners for rebuild buttons
@@ -183,7 +183,7 @@ function initializeDynamicElements() {
             } else if (typeof window.rebuildCacheForChannelGlobal === 'function') { // Fallback
                 window.rebuildCacheForChannelGlobal(channelName);
             } else {
-                console.error('Rebuild function not found for channel:', channelName);
+                console.error('Rebuild function not found for channel:', channelName); // Keep console.error for actual errors
                 safeShowToast('Error: Rebuild functionality not available.', 'error');
             }
         });
@@ -200,7 +200,7 @@ function initializeDynamicElements() {
             if (window.markovModule && typeof window.markovModule.sendMarkovMessage === 'function') {
                 window.markovModule.sendMarkovMessage(channelName, this); // Pass button for UI updates
             } else {
-                console.error('Send message function not found for channel:', channelName);
+                console.error('Send message function not found for channel:', channelName); // Keep console.error for actual errors
                 safeShowToast('Error: Send message functionality not available.', 'error');
             }
         });
@@ -368,8 +368,8 @@ window.loadBuildTimes = loadBuildTimes;
 
 // Function to load and display cache build performance data
 function loadBuildTimes() {
-  const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-  if (isDev) console.log("Loading build times data...");
+  const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'; // Keep this for dev-specific behavior
+  if (isDev && window.DEBUG_MODE) console.log("Loading build times data..."); // Add DEBUG_MODE check
   
   const buildTimesContainer = document.getElementById('buildTimesContainer');
   const lastRebuildElement = document.getElementById('lastRebuild'); // For summary
@@ -377,14 +377,14 @@ function loadBuildTimes() {
   const healthStatusElement = document.getElementById('healthStatus'); // For summary health update
 
   if (!buildTimesContainer && !lastRebuildElement) {
-    if (isDev) console.warn("Build times UI elements not found in the DOM");
+    if (isDev && window.DEBUG_MODE) console.warn("Build times UI elements not found in the DOM"); // Add DEBUG_MODE check
     return;
   }
   
   fetch('/api/cache-build-performance')
     .then(response => {
       if (!response.ok) {
-        if (isDev) console.log("Preferred build times endpoint failed, trying fallback...");
+        if (isDev && window.DEBUG_MODE) console.log("Preferred build times endpoint failed, trying fallback..."); // Add DEBUG_MODE check
         return fetch('/api/build-times'); // Fallback
       }
       return response;
@@ -396,7 +396,7 @@ function loadBuildTimes() {
       return response.json();
     })
     .then(data => {
-      if (isDev) console.log("Received build times data:", data);
+      if (isDev && window.DEBUG_MODE) console.log("Received build times data:", data); // Add DEBUG_MODE check
       if (!data || data.length === 0) {
         if(buildTimesContainer) buildTimesContainer.innerHTML = '<tr><td colspan="4" class="text-center py-3">No build data available</td></tr>';
         if(lastRebuildElement) lastRebuildElement.textContent = "Never";
@@ -456,7 +456,7 @@ function loadBuildTimes() {
 
     })
     .catch(error => {
-      if (isDev) console.error('Error loading build times:', error);
+      if (isDev) console.error('Error loading build times:', error); // Keep console.error for actual errors
       if (buildTimesContainer) buildTimesContainer.innerHTML = '<tr><td colspan="4" class="text-center text-danger">Error loading build data</td></tr>';
       if (lastRebuildElement) lastRebuildElement.textContent = "Error";
       if (timeSinceRebuildElement) timeSinceRebuildElement.textContent = "Error";
@@ -471,13 +471,13 @@ function safeShowToast(message, type = 'info') {
     } else if (typeof window.showToast === 'function') {
       window.showToast(message, type);
     } else {
-      console.log(`Toast (${type}): ${message}`);
+      if (window.DEBUG_MODE) console.log(`Toast (${type}): ${message}`);
       if (type === 'error') {
-        alert(message);
+        alert(message); // Keep alert for errors if no toast system
       }
     }
   } catch (e) {
-    console.error("Error showing toast:", e);
+    console.error("Error showing toast:", e); // Keep console.error for actual errors
   }
 }
 
@@ -485,22 +485,22 @@ function safeShowToast(message, type = 'info') {
 document.addEventListener('DOMContentLoaded', function() {
   // Check if we are on the stats page before doing anything
   if (!document.getElementById('statsContainer')) { // 'statsContainer' is unique to stats.html
-    console.log("Not on stats page, stats.js will not initialize its main functions.");
+    if (window.DEBUG_MODE) console.log("Not on stats page, stats.js will not initialize its main functions.");
     return; 
   }
 
-  const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-  if (isDev) console.log("Stats.js loaded and initializing on stats page...");
+  const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'; // Keep this for dev-specific behavior
+  if (isDev && window.DEBUG_MODE) console.log("Stats.js loaded and initializing on stats page..."); // Add DEBUG_MODE check
   
   // Initialize search and sort functionality for the channel table
   initSearch(); // Call the function to set up search/sort
 
   setTimeout(function() {
     if (typeof window.loadStatistics === 'function') {
-      if (isDev) console.log("Loading statistics from stats.js...");
+      if (isDev && window.DEBUG_MODE) console.log("Loading statistics from stats.js..."); // Add DEBUG_MODE check
       window.loadStatistics(); // This will also call loadBuildTimes
     } else {
-      console.error("loadStatistics is not available as a function");
+      console.error("loadStatistics is not available as a function"); // Keep console.error for actual errors
     }
     
     const refreshStatsBtn = document.getElementById('refreshStatsBtn');
@@ -546,7 +546,7 @@ function initSearch() {
     const sortSelector = document.getElementById('sortSelector');
     
     if (!searchInput || !clearBtn) {
-        // console.warn("Stats page search or clear button not found.");
+        // if (window.DEBUG_MODE) console.warn("Stats page search or clear button not found.");
         return;
     }
     
@@ -565,7 +565,7 @@ function initSearch() {
             sortChannelTable(this.value);
         });
     } else {
-        // console.warn("Stats page sort selector not found.");
+        // if (window.DEBUG_MODE) console.warn("Stats page sort selector not found.");
     }
 }
 
