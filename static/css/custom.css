@@ -267,7 +267,11 @@ html.theme-ansv .card-footer {
 
 /* Settings page improvements */
 #settingsContent {
-    background-color: rgba(0, 0, 0, 0.05);
+    background-color: rgba(0, 0, 0, 0.05); /* Default for light themes */
+}
+
+[data-bs-theme="dark"] #settingsContent {
+    background-color: var(--bs-secondary-bg); /* For standard dark themes */
 }
 
 #settingsContent h2 {
