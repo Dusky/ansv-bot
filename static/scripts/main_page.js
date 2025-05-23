@@ -606,4 +606,80 @@ function stopBot() {
         // Re-check status which will properly handle button states
         checkBotStatus();
     });
-} 
+}
+
+// Channels dropdown functionality
+function loadChannelsDropdown() {
+    const dropdown = document.getElementById('channelsDropdownMenu');
+    if (!dropdown) return;
+    
+    // Show loading state
+    dropdown.innerHTML = '<li><a class="dropdown-item" href="#"><i class="fas fa-spinner fa-spin me-2"></i>Loading channels...</a></li>';
+    
+    fetch('/api/channels')
+        .then(response => response.json())
+        .then(data => {
+            if (data && Array.isArray(data) && data.length > 0) {
+                // Build dropdown items
+                const items = data.map(channel => {
+                    const channelName = channel.name || channel.channel_name;
+                    const isConnected = channel.currently_connected;
+                    const statusIcon = isConnected ? 
+                        '<i class="fas fa-circle text-success me-2" style="font-size: 0.7rem;"></i>' : 
+                        '<i class="fas fa-circle text-secondary me-2" style="font-size: 0.7rem;"></i>';
+                    
+                    return `
+                        <li>
+                            <a class="dropdown-item d-flex align-items-center" href="/channel/${channelName}">
+                                ${statusIcon}
+                                <span class="me-2">#${channelName}</span>
+                                <small class="text-muted ms-auto">${isConnected ? 'Online' : 'Offline'}</small>
+                            </a>
+                        </li>
+                    `;
+                }).join('');
+                
+                dropdown.innerHTML = `
+                    ${items}
+                    <li><hr class="dropdown-divider"></li>
+                    <li><a class="dropdown-item text-muted" href="/settings"><i class="fas fa-cog me-2"></i>Manage Channels</a></li>
+                `;
+            } else {
+                dropdown.innerHTML = `
+                    <li><a class="dropdown-item text-muted" href="#"><i class="fas fa-exclamation-circle me-2"></i>No channels configured</a></li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li><a class="dropdown-item" href="/settings"><i class="fas fa-plus me-2"></i>Add Channel</a></li>
+                `;
+            }
+        })
+        .catch(error => {
+            console.error('Error loading channels:', error);
+            dropdown.innerHTML = `
+                <li><a class="dropdown-item text-danger" href="#"><i class="fas fa-exclamation-triangle me-2"></i>Error loading channels</a></li>
+                <li><hr class="dropdown-divider"></li>
+                <li><a class="dropdown-item" href="#" onclick="loadChannelsDropdown()"><i class="fas fa-sync-alt me-2"></i>Retry</a></li>
+            `;
+        });
+}
+
+// Initialize channels dropdown when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    // Load channels dropdown after a short delay to ensure other systems are ready
+    setTimeout(() => {
+        loadChannelsDropdown();
+    }, 1000);
+    
+    // Refresh channels dropdown when it's opened
+    const channelsDropdown = document.getElementById('channelsDropdown');
+    if (channelsDropdown) {
+        channelsDropdown.addEventListener('click', function() {
+            // Refresh channels when dropdown is clicked
+            setTimeout(() => {
+                loadChannelsDropdown();
+            }, 100);
+        });
+    }
+});
+
+// Expose function for manual refresh
+window.loadChannelsDropdown = loadChannelsDropdown;

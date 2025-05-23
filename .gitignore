@@ -80,3 +80,4 @@ cache/general_markov_model.json
 cache/imyt_model.json
 CHANNEL_STATUS_FIX_PLAN.md
 .aider*
+logs/firestarman.txt
