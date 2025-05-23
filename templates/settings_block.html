@@ -7,117 +7,21 @@
     <!-- Modern Theme Selector -->
     <div class="mb-4">
       <h6 class="fw-bold mb-3">Select a Theme</h6>
-      
-      <!-- Featured themes -->
-      <div class="featured-themes">
-        <div class="theme-grid">
-          <!-- ANSV Custom Theme -->
-          <div class="theme-card ansv {% if current_theme == 'ansv' %}active{% endif %}" onclick="selectAndApplyTheme('ansv')">
-            <div class="theme-color">
-              <i class="fas fa-robot"></i>
-            </div>
-            <div class="theme-name">ANSV Custom</div>
-            <span class="theme-type">Dark</span>
-          </div>
-          
-          <!-- Darkly Theme -->
-          <div class="theme-card darkly {% if current_theme == 'darkly' %}active{% endif %}" onclick="selectAndApplyTheme('darkly')">
-            <div class="theme-color">
-              <i class="fas fa-moon"></i>
-            </div>
-            <div class="theme-name">Darkly</div>
-            <span class="theme-type">Dark</span>
-          </div>
-          
-          <!-- Flatly Theme -->
-          <div class="theme-card flatly {% if current_theme == 'flatly' %}active{% endif %}" onclick="selectAndApplyTheme('flatly')">
-            <div class="theme-color">
-              <i class="fas fa-sun"></i>
-            </div>
-            <div class="theme-name">Flatly</div>
-            <span class="theme-type">Light</span>
-          </div>
-          
-          <!-- Cyborg Theme -->
-          <div class="theme-card {% if current_theme == 'cyborg' %}active{% endif %}" onclick="selectAndApplyTheme('cyborg')" style="background-color: #060606; color: #fff;">
-            <div class="theme-color" style="background-color: #222;">
-              <i class="fas fa-microchip"></i>
-            </div>
-            <div class="theme-name" style="background-color: #181818; color: #fff;">Cyborg</div>
-            <span class="theme-type">Dark</span>
+      <div id="themeCardContainer" class="row row-cols-2 row-cols-sm-3 row-cols-lg-4 g-3">
+        <!-- Theme cards will be populated here by static/scripts/settings.js -->
+        <!-- Example of how it might look (for illustration, actual content is dynamic):
+        <div class="col">
+          <div class="card theme-card">
+            <div class="theme-preview-block">...</div>
+            <div class="card-body"><h6 class="card-title">Theme Name</h6></div>
           </div>
         </div>
+        -->
       </div>
-      
-      <!-- Hidden theme selector for JS operations -->
+      <!-- Hidden theme select, kept for compatibility if ThemeManager needs it, but primarily for dynamic cards now -->
       <select id="themeSelect" class="form-select d-none">
-        <option value="ansv" {% if current_theme == 'ansv' %}selected{% endif %}>ANSV Custom</option>
-        <option value="cerulean" {% if current_theme == 'cerulean' %}selected{% endif %}>Cerulean</option>
-        <option value="cosmo" {% if current_theme == 'cosmo' %}selected{% endif %}>Cosmo</option>
-        <option value="cyborg" {% if current_theme == 'cyborg' %}selected{% endif %}>Cyborg</option>
-        <option value="darkly" {% if current_theme == 'darkly' %}selected{% endif %}>Darkly</option>
-        <option value="flatly" {% if current_theme == 'flatly' %}selected{% endif %}>Flatly</option>
-        <option value="journal" {% if current_theme == 'journal' %}selected{% endif %}>Journal</option>
-        <option value="litera" {% if current_theme == 'litera' %}selected{% endif %}>Litera</option>
-        <option value="lumen" {% if current_theme == 'lumen' %}selected{% endif %}>Lumen</option>
-        <option value="lux" {% if current_theme == 'lux' %}selected{% endif %}>Lux</option>
-        <option value="materia" {% if current_theme == 'materia' %}selected{% endif %}>Materia</option>
-        <option value="minty" {% if current_theme == 'minty' %}selected{% endif %}>Minty</option>
-        <option value="morph" {% if current_theme == 'morph' %}selected{% endif %}>Morph</option>
-        <option value="pulse" {% if current_theme == 'pulse' %}selected{% endif %}>Pulse</option>
-        <option value="quartz" {% if current_theme == 'quartz' %}selected{% endif %}>Quartz</option>
-        <option value="sandstone" {% if current_theme == 'sandstone' %}selected{% endif %}>Sandstone</option>
-        <option value="simplex" {% if current_theme == 'simplex' %}selected{% endif %}>Simplex</option>
-        <option value="sketchy" {% if current_theme == 'sketchy' %}selected{% endif %}>Sketchy</option>
-        <option value="slate" {% if current_theme == 'slate' %}selected{% endif %}>Slate</option>
-        <option value="solar" {% if current_theme == 'solar' %}selected{% endif %}>Solar</option>
-        <option value="spacelab" {% if current_theme == 'spacelab' %}selected{% endif %}>Spacelab</option>
-        <option value="superhero" {% if current_theme == 'superhero' %}selected{% endif %}>Superhero</option>
-        <option value="united" {% if current_theme == 'united' %}selected{% endif %}>United</option>
-        <option value="vapor" {% if current_theme == 'vapor' %}selected{% endif %}>Vapor</option>
-        <option value="yeti" {% if current_theme == 'yeti' %}selected{% endif %}>Yeti</option>
-        <option value="zephyr" {% if current_theme == 'zephyr' %}selected{% endif %}>Zephyr</option>
+        <!-- Options will be managed by ThemeManager or can be pre-filled if necessary -->
       </select>
-      
-      <!-- More themes toggle -->
-      <div class="theme-categories">
-        <div class="d-flex justify-content-between">
-          <h6 class="mb-3">More Themes</h6>
-          <button type="button" class="btn btn-sm btn-link" data-bs-toggle="collapse" data-bs-target="#moreThemes" aria-expanded="false">
-            <i class="fas fa-chevron-down"></i>
-          </button>
-        </div>
-        
-        <div id="moreThemes" class="collapse">
-          <div class="row">
-            <div class="col-md-6">
-              <h6 class="text-muted mb-2">Light Themes</h6>
-              <div class="list-group">
-                <button type="button" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center" onclick="selectAndApplyTheme('cerulean')">
-                  Cerulean 
-                  <span class="badge rounded-pill bg-primary">Blue</span>
-                </button>
-                <button type="button" class="list-group-item list-group-item-action" onclick="selectAndApplyTheme('journal')">Journal</button>
-                <button type="button" class="list-group-item list-group-item-action" onclick="selectAndApplyTheme('litera')">Litera</button>
-                <button type="button" class="list-group-item list-group-item-action" onclick="selectAndApplyTheme('lumen')">Lumen</button>
-                <button type="button" class="list-group-item list-group-item-action" onclick="selectAndApplyTheme('minty')">Minty</button>
-                <button type="button" class="list-group-item list-group-item-action" onclick="selectAndApplyTheme('yeti')">Yeti</button>
-              </div>
-            </div>
-            <div class="col-md-6">
-              <h6 class="text-muted mb-2">Dark Themes</h6>
-              <div class="list-group">
-                <button type="button" class="list-group-item list-group-item-action" onclick="selectAndApplyTheme('slate')">Slate</button>
-                <button type="button" class="list-group-item list-group-item-action" onclick="selectAndApplyTheme('solar')">Solar</button>
-                <button type="button" class="list-group-item list-group-item-action" onclick="selectAndApplyTheme('superhero')">Superhero</button>
-                <button type="button" class="list-group-item list-group-item-action" onclick="selectAndApplyTheme('vapor')">Vapor</button>
-                <button type="button" class="list-group-item list-group-item-action" onclick="selectAndApplyTheme('quartz')">Quartz</button>
-                <button type="button" class="list-group-item list-group-item-action" onclick="selectAndApplyTheme('morph')">Morph</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
     
     <!-- UI Preferences -->
