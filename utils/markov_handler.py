@@ -472,47 +472,26 @@ class MarkovHandler:
             duration (float): Duration in seconds
             success (bool): Whether the build was successful
         """
+        db_path = 'messages.db' # Assuming this is your main database file
+        conn = None
         try:
-            # Cache file path
-            cache_file_path = os.path.join(self.cache_directory, 'cache_build_times.json')
+            conn = sqlite3.connect(db_path)
+            c = conn.cursor()
             
-            # Create structured record
-            record = {
-                "channel": channel,
-                "timestamp": timestamp,
-                "duration": duration,
-                "success": success
-            }
+            message = "Build successful" if success else "Build failed" # Basic message
             
-            # Load existing records if file exists
-            build_times = []
-            if os.path.exists(cache_file_path):
-                try:
-                    with open(cache_file_path, 'r') as f:
-                        content = f.read().strip()
-                        if content:
-                            build_times = json.loads(content)
-                        if not isinstance(build_times, list):
-                            # Convert old format to new format if needed
-                            build_times = [{"channel": k, "timestamp": v, "duration": 0, "success": True} 
-                                          for k, v in build_times.items()]
-                except Exception as e:
-                    self.logger.warning(f"Error loading existing build times, creating new file: {e}")
-                    # Start with empty list if file was corrupted
-                    build_times = []
+            c.execute('''
+                INSERT INTO cache_build_log (channel_name, timestamp, duration, success, message)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (channel, timestamp, duration, success, message))
             
-            # Add new record
-            build_times.append(record)
+            conn.commit()
+            self.logger.info(f"Recorded build time to DB for {channel}: {duration:.2f}s, Success: {success}")
             
-            # Keep only last 100 records to prevent file from growing too large
-            if len(build_times) > 100:
-                build_times = build_times[-100:]
-            
-            # Save updated records
-            with open(cache_file_path, 'w') as f:
-                json.dump(build_times, f)
-                
-            self.logger.info(f"Recorded build time for {channel}: {duration:.2f}s")
-            
+        except sqlite3.Error as e:
+            self.logger.error(f"SQLite error recording build time for {channel} to DB: {e}")
         except Exception as e:
-            self.logger.error(f"Error recording build time: {e}")
+            self.logger.error(f"General error recording build time for {channel} to DB: {e}")
+        finally:
+            if conn:
+                conn.close()
