@@ -12,8 +12,45 @@ document.addEventListener('DOMContentLoaded', function() {
     const prevPageContainer = document.getElementById('prevPageContainer');
     const nextPageContainer = document.getElementById('nextPageContainer');
 
+    // New UI elements for filtering and sorting
+    const channelFilterSelect = document.getElementById('ttsChannelFilter');
+    const messageFilterInput = document.getElementById('ttsMessageFilter');
+    const sortBySelect = document.getElementById('ttsSortBy');
+    const sortOrderBtn = document.getElementById('ttsSortOrderBtn');
+    const sortOrderIcon = sortOrderBtn ? sortOrderBtn.querySelector('i') : null;
+
     let currentPage = 1;
     const perPage = 15; // Or make this configurable
+    let currentSortOrder = 'desc'; // Default sort order
+
+    function fetchChannelsForTTSFilter() {
+        if (!channelFilterSelect) return;
+
+        fetch('/api/channels') // Assuming this endpoint returns a list of channel objects or names
+            .then(response => response.json())
+            .then(data => {
+                // Clear existing options except "All Channels"
+                while (channelFilterSelect.options.length > 1) {
+                    channelFilterSelect.remove(1);
+                }
+                if (data && Array.isArray(data)) {
+                    data.forEach(channel => {
+                        const option = document.createElement('option');
+                        // Assuming channel objects have a 'name' property
+                        option.value = channel.name || channel; 
+                        option.textContent = channel.name || channel;
+                        channelFilterSelect.appendChild(option);
+                    });
+                }
+            })
+            .catch(error => {
+                console.error('Error fetching channels for TTS filter:', error);
+                if (window.notificationSystem && window.notificationSystem.showToast) {
+                    window.notificationSystem.showToast('Error loading channel filter for TTS.', 'error');
+                }
+            });
+    }
+
 
     function loadTTSHistory(page = 1) {
         if (!ttsTableBody || !ttsTableContainer || !noTTSDataMessage || !spinner) {
@@ -25,7 +62,26 @@ document.addEventListener('DOMContentLoaded', function() {
         ttsTableContainer.style.display = 'none';
         noTTSDataMessage.style.display = 'none';
 
-        fetch(`/api/tts-logs?page=${page}&per_page=${perPage}`, { cache: 'no-store' })
+        const channelFilter = channelFilterSelect ? channelFilterSelect.value : '';
+        const messageFilter = messageFilterInput ? messageFilterInput.value : '';
+        const sortBy = sortBySelect ? sortBySelect.value : 'timestamp';
+        // sortOrder is managed by currentSortOrder variable
+
+        const params = new URLSearchParams({
+            page: page,
+            per_page: perPage,
+            sort_by: sortBy,
+            sort_order: currentSortOrder
+        });
+
+        if (channelFilter) {
+            params.append('channel_filter', channelFilter);
+        }
+        if (messageFilter) {
+            params.append('message_filter', messageFilter);
+        }
+
+        fetch(`/api/tts-logs?${params.toString()}`, { cache: 'no-store' })
             .then(response => {
                 if (!response.ok) {
                     throw new Error(`Server responded with ${response.status}`);
@@ -128,6 +184,33 @@ document.addEventListener('DOMContentLoaded', function() {
         refreshBtn.addEventListener('click', () => loadTTSHistory(currentPage));
     }
 
+    // Event listeners for new filter/sort controls
+    if (channelFilterSelect) {
+        channelFilterSelect.addEventListener('change', () => loadTTSHistory(1)); // Reset to page 1 on filter change
+    }
+    if (messageFilterInput) {
+        // Use 'input' for instant filtering or 'change' for on blur
+        let messageFilterTimeout;
+        messageFilterInput.addEventListener('input', () => {
+            clearTimeout(messageFilterTimeout);
+            messageFilterTimeout = setTimeout(() => {
+                loadTTSHistory(1); // Reset to page 1
+            }, 500); // Debounce input
+        });
+    }
+    if (sortBySelect) {
+        sortBySelect.addEventListener('change', () => loadTTSHistory(1)); // Reset to page 1
+    }
+    if (sortOrderBtn && sortOrderIcon) {
+        sortOrderBtn.addEventListener('click', () => {
+            currentSortOrder = currentSortOrder === 'desc' ? 'asc' : 'desc';
+            sortOrderIcon.className = `fas fa-sort-amount-${currentSortOrder === 'desc' ? 'down' : 'up'}`;
+            sortOrderBtn.title = `Toggle Sort Order (${currentSortOrder === 'desc' ? 'Descending' : 'Ascending'})`;
+            loadTTSHistory(1); // Reset to page 1
+        });
+    }
+
+
     if (prevPageBtn) {
         prevPageBtn.addEventListener('click', (e) => {
             e.preventDefault();
@@ -149,6 +232,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // Initial load
+    fetchChannelsForTTSFilter(); // Populate channel filter
     loadTTSHistory(1);
 
     // Listen for EventBus notifications for new TTS entries
