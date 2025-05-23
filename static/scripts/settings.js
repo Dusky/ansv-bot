@@ -12,6 +12,35 @@ window.ThemeManager = {
     darkThemes: ['darkly', 'cyborg', 'slate', 'solar', 'superhero', 'vapor', 'ansv'],
     lightThemes: ['flatly', 'cerulean', 'cosmo', 'journal', 'litera', 'lumen', 'minty', 'pulse', 'sandstone', 'simplex', 'sketchy', 'spacelab', 'united', 'yeti', 'zephyr'],
     
+    // Predefined preview colors for themes
+    themePreviewColors: {
+        // Dark Themes
+        'darkly': { header: '#375a7f', body: '#22252a' }, // Default Darkly
+        'cyborg': { header: '#2A9FD6', body: '#060606' }, // Cyborg Primary Blue, Dark Background
+        'slate': { header: '#7A8288', body: '#272B30' },  // Slate Primary Gray, Dark Background
+        'solar': { header: '#B58900', body: '#002B36' },  // Solar Primary Yellow, Dark Background
+        'superhero': { header: '#DF691A', body: '#2B3E50' },// Superhero Primary Orange, Dark Background
+        'vapor': { header: '#AE4FD5', body: '#1A1A2E' },  // Vapor Primary Pink/Purple, Dark Background
+        'ansv': { header: 'var(--ansv-primary, #4d37bf)', body: 'var(--ansv-card-bg, #242424)' }, // ANSV specific
+
+        // Light Themes
+        'flatly': { header: '#2C3E50', body: '#ECF0F1' }, // Flatly Primary Dark Blue/Gray, Light Background
+        'cerulean': { header: '#2FA4E7', body: '#FFFFFF' },// Cerulean Primary Blue, White Background
+        'cosmo': { header: '#2780E3', body: '#FFFFFF' },   // Cosmo Primary Blue, White Background
+        'journal': { header: '#EB6864', body: '#FFFFFF' }, // Journal Primary Red, White Background
+        'litera': { header: '#378B29', body: '#FFFFFF' },  // Litera Primary Green, White Background
+        'lumen': { header: '#158CBA', body: '#FFFFFF' },   // Lumen Primary Blue, White Background
+        'minty': { header: '#78C2AD', body: '#F8F9FA' },  // Minty Primary Teal, Light Gray Background
+        'pulse': { header: '#FF758C', body: '#F8F9FA' },   // Pulse Primary Pink, Light Gray Background
+        'sandstone': { header: '#93C54B', body: '#F8F5F0' },// Sandstone Primary Green, Off-White Background
+        'simplex': { header: '#D9230F', body: '#FFFFFF' }, // Simplex Primary Red, White Background
+        'sketchy': { header: '#333333', body: '#FFFFFF' }, // Sketchy Primary Black, White Background (border is key)
+        'spacelab': { header: '#446E9B', body: '#EEEEEE' },// Spacelab Primary Blue/Gray, Light Gray Background
+        'united': { header: '#E95420', body: '#FFFFFF' },  // United Primary Orange, White Background
+        'yeti': { header: '#008CBA', body: '#FFFFFF' },    // Yeti Primary Blue, White Background
+        'zephyr': { header: '#F4A460', body: '#FFFFFF' }   // Zephyr Primary Sandy Brown, White Background
+    },
+    
     // Initialize theme system
     init: function() {
         console.log("ThemeManager initializing");
@@ -284,17 +313,32 @@ window.ThemeManager = {
             previewBody.style.height = '30px';
             previewBody.style.borderRadius = '0.2rem';
 
-            // Basic color assignment for preview elements
-            if (themeName === 'ansv') {
-                previewHeader.style.backgroundColor = 'var(--ansv-primary, #4d37bf)';
-                previewBody.style.backgroundColor = 'var(--ansv-card-bg, #242424)';
-            } else if (this.darkThemes.includes(themeName)) {
-                previewHeader.style.backgroundColor = '#375a7f'; // Example dark theme header
-                previewBody.style.backgroundColor = '#22252a';   // Example dark theme body
+            // Color assignment for preview elements using the new themePreviewColors map
+            const previewColors = this.themePreviewColors[themeName];
+            if (previewColors) {
+                previewHeader.style.backgroundColor = previewColors.header;
+                previewBody.style.backgroundColor = previewColors.body;
             } else {
-                previewHeader.style.backgroundColor = '#0d6efd'; // Example light theme header (Bootstrap primary)
-                previewBody.style.backgroundColor = '#f8f9fa';   // Example light theme body
+                // Fallback for themes not in the map (should ideally not happen if map is complete)
+                if (this.darkThemes.includes(themeName)) {
+                    previewHeader.style.backgroundColor = '#343a40'; // Generic dark header
+                    previewBody.style.backgroundColor = '#212529';   // Generic dark body
+                } else {
+                    previewHeader.style.backgroundColor = '#0d6efd'; // Generic light header (Bootstrap primary)
+                    previewBody.style.backgroundColor = '#f8f9fa';   // Generic light body
+                }
             }
+            
+            // Special handling for Sketchy theme's border
+            if (themeName === 'sketchy') {
+                cardDiv.style.borderStyle = 'solid';
+                cardDiv.style.borderWidth = '2px';
+                cardDiv.style.borderColor = '#333333'; // Match its primary color
+                previewBlock.style.border = '1px dashed #333'; // Inner preview border
+            } else {
+                cardDiv.style.border = ''; // Reset for other themes
+            }
+
             previewBlock.appendChild(previewHeader);
             previewBlock.appendChild(previewBody);
 
