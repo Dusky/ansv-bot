@@ -1,5 +1,6 @@
 import sqlite3
 import configparser
+import logging
 
 def ensure_db_setup(db_file):
     try:
@@ -35,7 +36,10 @@ def ensure_db_setup(db_file):
         # Add new columns to messages table if they don't exist (for migration)
         messages_columns = [row[1] for row in c.execute("PRAGMA table_info(messages)").fetchall()]
         if 'twitch_message_id' not in messages_columns:
-            c.execute('ALTER TABLE messages ADD COLUMN twitch_message_id TEXT UNIQUE')
+            # Removed UNIQUE constraint here for ALTER TABLE as SQLite cannot add it directly
+            # if there's existing data that might violate it.
+            # The CREATE TABLE statement handles UNIQUE for new tables.
+            c.execute('ALTER TABLE messages ADD COLUMN twitch_message_id TEXT')
             logging.info("Column 'twitch_message_id' added to 'messages'.")
         if 'author_name' not in messages_columns:
             # Add with a default for existing rows, then make NOT NULL if desired,
