@@ -1149,7 +1149,7 @@ def api_chat_logs():
         channel_filter = request.args.get('channel', None, type=str)
         offset = (page - 1) * per_page
 
-        conn = sqlite3.connect(db_file)
+        # conn = sqlite3.connect(db_file) # This line is removed/commented as it's not used by dummy data and could hang.
         # --- TEMPORARY DUMMY DATA FOR TESTING ---
         app.logger.info(f"[/api/chat-logs] Returning DUMMY data for page {page}")
         dummy_logs = []
