@@ -73,14 +73,14 @@ def ensure_db_setup(db_file):
         tts_logs_columns = {row[1]: row[2] for row in c.fetchall()}  # {column_name: data_type}
         
         if 'message_id' in tts_logs_columns and tts_logs_columns['message_id'].upper() == 'INTEGER':
-            print("Attempting to migrate tts_logs.message_id from INTEGER to TEXT...")
+            logging.info("Attempting to migrate tts_logs.message_id from INTEGER to TEXT...")
             try:
                 # Start a transaction
                 conn.execute('BEGIN TRANSACTION')
 
                 # Drop the temporary table if it exists from a previous failed attempt
                 c.execute('DROP TABLE IF EXISTS tts_logs_new')
-                print("Dropped tts_logs_new if it existed.")
+                logging.debug("Dropped tts_logs_new if it existed.")
 
                 # Create new table with correct schema
                 c.execute('''CREATE TABLE tts_logs_new (
@@ -91,30 +91,30 @@ def ensure_db_setup(db_file):
                                 voice_preset TEXT,
                                 message TEXT
                             )''')
-                print("Created tts_logs_new table.")
+                logging.debug("Created tts_logs_new table.")
 
                 # Copy data, converting INTEGER message_id to TEXT
                 c.execute('''INSERT INTO tts_logs_new 
                             SELECT CAST(message_id AS TEXT), channel, timestamp, file_path, voice_preset, message 
                             FROM tts_logs''')
-                print("Copied data from tts_logs to tts_logs_new.")
+                logging.debug("Copied data from tts_logs to tts_logs_new.")
 
                 # Drop old table and rename new one
                 c.execute('DROP TABLE tts_logs')
-                print("Dropped old tts_logs table.")
+                logging.debug("Dropped old tts_logs table.")
                 c.execute('ALTER TABLE tts_logs_new RENAME TO tts_logs')
-                print("Renamed tts_logs_new to tts_logs.")
+                logging.debug("Renamed tts_logs_new to tts_logs.")
 
                 # Commit the transaction
                 conn.commit()
-                print("tts_logs table migrated successfully.")
+                logging.info("tts_logs table migrated successfully.")
             except sqlite3.Error as migration_error:
-                print(f"Error during tts_logs migration: {migration_error}. Rolling back.")
+                logging.error(f"Error during tts_logs migration: {migration_error}. Rolling back.")
                 conn.rollback() # Rollback on error
                 # It's possible the error is "table tts_logs_new already exists" if BEGIN TRANSACTION isn't fully effective for DDL.
                 # The DROP TABLE IF EXISTS should handle this, but if not, manual DB intervention might be needed.
             except Exception as general_migration_exc:
-                print(f"A non-SQLite error occurred during tts_logs migration: {general_migration_exc}. Rolling back.")
+                logging.error(f"A non-SQLite error occurred during tts_logs migration: {general_migration_exc}. Rolling back.")
                 conn.rollback()
 
 
@@ -123,20 +123,21 @@ def ensure_db_setup(db_file):
         channel_config_columns = [row[1] for row in c.fetchall()]
         if 'lines_between_messages' not in channel_config_columns:
             c.execute('ALTER TABLE channel_configs ADD COLUMN lines_between_messages INTEGER DEFAULT 100')
-            print("Column 'lines_between_messages' added to 'channel_configs'.")
+            logging.info("Column 'lines_between_messages' added to 'channel_configs'.")
         if 'time_between_messages' not in channel_config_columns:
             c.execute('ALTER TABLE channel_configs ADD COLUMN time_between_messages INTEGER DEFAULT 0')
-            print("Column 'time_between_messages' added to 'channel_configs'.")
+            logging.info("Column 'time_between_messages' added to 'channel_configs'.")
         if 'voice_preset' not in channel_config_columns:
             c.execute('ALTER TABLE channel_configs ADD COLUMN voice_preset TEXT DEFAULT \'v2/en_speaker_5\'')
-            print("Column 'voice_preset' added to 'channel_configs'.")
+            logging.info("Column 'voice_preset' added to 'channel_configs'.")
         if 'bark_model' not in channel_config_columns:
             c.execute('ALTER TABLE channel_configs ADD COLUMN bark_model TEXT DEFAULT \'regular\'')
-            print("Column 'bark_model' added to 'channel_configs'.")
+            logging.info("Column 'bark_model' added to 'channel_configs'.")
 
         # Further code for initializing channels and handling settings...
 
     except sqlite3.Error as e:
-        print(f"Database error: {e}")
+        logging.error(f"Database error during setup: {e}") # Use logging.error
     finally:
-        conn.close()
+        if conn: # Ensure conn exists before closing
+            conn.close()
