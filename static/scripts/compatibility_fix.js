@@ -70,7 +70,11 @@ document.addEventListener('DOMContentLoaded', function() {
         // Normalize endpoint naming conventions
         if (url === '/start-bot') url = '/start_bot';
         if (url === '/stop-bot') url = '/stop_bot';
-        if (url === '/get-channels') url = '/api/channels';  // Redirect to the better endpoint
+        
+        // Redirect /get-channels to /api/channels, preserving query parameters
+        if (url.startsWith('/get-channels')) {
+            url = '/api/channels' + url.substring('/get-channels'.length);
+        }
         
         console.log(`Fetch request to: ${url}`);
         return originalFetch(url, options)
