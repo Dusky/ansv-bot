@@ -17,6 +17,9 @@ class MarkovHandler:
         self.logger.info("Loading models from cache...")
         successful_loads = []  # Initialize a list to keep track of successful loads
         failed_loads = []  # Optionally, track failed loads as well
+        if not os.path.exists(self.cache_directory):
+            self.logger.error(f"Cache directory not found: {self.cache_directory}")
+            return
         for filename in os.listdir(self.cache_directory):
             if filename.endswith("_model.json"):
                 # Extract the channel name (or model name) from the filename

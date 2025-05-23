@@ -27,16 +27,16 @@ async_tts_lock = asyncio.Lock() # For async def process_text, renamed from tts_l
 
 def fetch_latest_message():
     try:
-        print(f"Fetching latest message from database: {db_file}")
+        logging.debug(f"Fetching latest message from database: {db_file}")
         conn = sqlite3.connect(db_file)
         c = conn.cursor()
         c.execute("SELECT id, channel, timestamp, message_length, message FROM messages ORDER BY id DESC LIMIT 1")
         result = c.fetchone()
-        print(f"Latest message fetched: {result}")
+        logging.debug(f"Latest message fetched: {result}")
         conn.close()
         return result if result else (None, None, None, None, None)
     except sqlite3.Error as e:
-        print(f"SQLite error in fetch_latest_message: {e}")
+        logging.error(f"SQLite error in fetch_latest_message: {e}")
         raise
 
 def get_voice_preset(channel_name, db_file):
@@ -150,8 +150,8 @@ def process_text_thread(input_text, channel_name, db_file='./messages.db', full_
             # Default to bark-small if no model specified
             if not bark_model:
                 bark_model = "bark-small"
-                
-            print(f"Using Bark model: {bark_model}")
+            
+            logging.info(f"Using Bark model: {bark_model} for channel {channel_name}") # Keep as info
             model_path = f"suno/{bark_model}"
             
             # Initialize TTS model
@@ -204,18 +204,18 @@ def process_text_thread(input_text, channel_name, db_file='./messages.db', full_
             # Handle voice preset (built-in vs custom)
             if voice_preset and voice_preset.startswith('v2/'):
                 # Built-in Bark preset - nothing special needed
-                print(f"Using built-in Bark preset: {voice_preset}")
+                logging.info(f"Using built-in Bark preset: {voice_preset} for channel {channel_name}") # Keep as info
                 # The preset will be used directly in the processor call
             else:
                 # Try to load custom voice if available
                 custom_voice_data = load_custom_voice(voice_preset)
                 if custom_voice_data and 'weights' in custom_voice_data:
                     model.load_state_dict(custom_voice_data['weights'])
-                    print(f"Loaded custom voice: {voice_preset}")
+                    logging.info(f"Loaded custom voice: {voice_preset} for channel {channel_name}") # Keep as info
                 else:
                     # Fall back to default preset if custom voice not found
-                    voice_preset = 'v2/en_speaker_5'
-                    print(f"Using fallback voice preset: {voice_preset}")
+                    voice_preset = 'v2/en_speaker_5' # Default preset
+                    logging.info(f"Using fallback voice preset: {voice_preset} for channel {channel_name}") # Keep as info
 
             # Process text in chunks for better performance
             all_audio_pieces = []
@@ -313,9 +313,10 @@ def process_text_thread(input_text, channel_name, db_file='./messages.db', full_
             # Ensure output is restored before printing error from this broad catch-all
             sys.stdout = original_stdout
             sys.stderr = original_stderr
-            print(f"[TTS THREAD FATAL ERROR] Uncaught exception in process_text_thread: {e}") # This print will now be visible
-            import traceback
-            traceback.print_exc() # Print full traceback
+            # This is a fatal error for this thread, so logging.error is appropriate
+            logging.error(f"[TTS THREAD FATAL ERROR] Uncaught exception in process_text_thread: {e}", exc_info=True)
+            # import traceback # exc_info=True handles this
+            # traceback.print_exc()
             return None, None # Ensure two values are returned as expected if caller unpacks
         finally:
             # Always restore original stdout and stderr
@@ -329,19 +330,19 @@ def load_custom_voice(voice_preset):
     if voice_preset is None:
         # This print will be silenced if called from process_text_thread during normal operation,
         # but visible if stdout/stderr are restored or if called directly.
-        print("No voice preset provided to load_custom_voice, assuming default will be used by caller.")
+        logging.debug("No voice preset provided to load_custom_voice, assuming default will be used by caller.")
         return None
 
     # Handle built-in presets
     if voice_preset.startswith('v2/'):
         # These are built-in to Bark, no file needed
-        print(f"Using built-in Bark voice preset: {voice_preset}")
+        logging.debug(f"Using built-in Bark voice preset: {voice_preset}")
         return None
     
     # For custom voices, check file existence
     voice_file = os.path.join(VOICES_DIRECTORY, f"{voice_preset}.npz")
     if not os.path.exists(voice_file):
-        print(f"Custom voice file not found: {voice_file}")
+        logging.warning(f"Custom voice file not found: {voice_file}")
         # Fall back to default
         return None
     
@@ -351,7 +352,7 @@ def load_custom_voice(voice_preset):
         weights = {k: torch.tensor(v) for k, v in voice_data.items()}
         return {'weights': weights}
     except Exception as e:
-        print(f"Error loading custom voice: {e}")
+        logging.error(f"Error loading custom voice {voice_preset}: {e}")
         return None
 
 def ensure_nltk_resources():
@@ -362,12 +363,12 @@ def ensure_nltk_resources():
         # Test if punkt is working
         sent_tokenize("Test sentence.")
     except (LookupError, ImportError):
-        print("Downloading required NLTK resources...")
+        logging.info("Downloading required NLTK resources (punkt)...") # Keep as info, important one-time setup
         try:
             nltk.download('punkt')
             return True
         except Exception as e:
-            print(f"Failed to download NLTK resources: {e}")
+            logging.error(f"Failed to download NLTK resources: {e}") # Keep as error
             return False
     return True
 
@@ -491,8 +492,8 @@ def notify_new_audio_available(channel_name, message_id):
     try:
         response = requests.post(url, json=data)
         if response.status_code == 200:
-            print("Notification sent successfully")
+            logging.debug("Notification sent successfully to webapp for new audio.")
         else:
-            print("Failed to send notification")
+            logging.warning(f"Failed to send new audio notification to webapp (status: {response.status_code})")
     except requests.exceptions.RequestException as e:
-        print(f"Error sending notification: {e}")
+        logging.error(f"Error sending new audio notification to webapp: {e}")
