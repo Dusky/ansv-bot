@@ -827,32 +827,73 @@ def api_tts_stats():
 def api_tts_logs():
     try:
         page = request.args.get('page', 1, type=int)
-        per_page = request.args.get('per_page', 15, type=int) # Number of items per page
+        per_page = request.args.get('per_page', 15, type=int)
         offset = (page - 1) * per_page
 
+        # Sorting parameters
+        sort_by_input = request.args.get('sort_by', 'timestamp') # Default sort by timestamp
+        sort_order_input = request.args.get('sort_order', 'desc').lower() # Default sort descending
+
+        # Filtering parameters
+        channel_filter_input = request.args.get('channel_filter', None, type=str)
+        message_filter_input = request.args.get('message_filter', None, type=str)
+
+        # Validate sort_order
+        sort_order = "ASC" if sort_order_input == "asc" else "DESC"
+
+        # Validate sort_by column to prevent SQL injection
+        allowed_sort_columns = {
+            "timestamp": "timestamp",
+            "channel": "channel",
+            "voice_preset": "voice_preset",
+            "message": "message",
+            "id": "message_id" # Allow sorting by ID if needed
+        }
+        sort_column = allowed_sort_columns.get(sort_by_input, "timestamp") # Default to timestamp if invalid
+
         conn = sqlite3.connect(db_file)
-        conn.row_factory = sqlite3.Row 
+        conn.row_factory = sqlite3.Row
         c = conn.cursor()
 
-        # Get total count for pagination
-        c.execute("SELECT COUNT(*) FROM tts_logs")
-        total_items = c.fetchone()[0]
-        total_pages = (total_items + per_page - 1) // per_page if per_page > 0 else 0 # Ceiling division, handle per_page=0
-        app.logger.debug(f"[api_tts_logs] Request Params: page={page}, per_page={per_page}. DB TotalItems: {total_items}, CalculatedTotalPages: {total_pages}, Offset: {offset}")
+        # Build WHERE clause for filtering
+        where_clauses = []
+        query_params = []
 
-        # Fetch paginated data
-        query = """
+        if channel_filter_input:
+            where_clauses.append("channel LIKE ?")
+            query_params.append(f"%{channel_filter_input}%")
+        
+        if message_filter_input:
+            where_clauses.append("message LIKE ?")
+            query_params.append(f"%{message_filter_input}%")
+        
+        where_sql = ""
+        if where_clauses:
+            where_sql = "WHERE " + " AND ".join(where_clauses)
+
+        # Get total count with filters
+        count_query = f"SELECT COUNT(*) FROM tts_logs {where_sql}"
+        c.execute(count_query, tuple(query_params))
+        total_items = c.fetchone()[0]
+        total_pages = (total_items + per_page - 1) // per_page if per_page > 0 else 0
+
+        app.logger.debug(f"[api_tts_logs] Filters: channel='{channel_filter_input}', message='{message_filter_input}'. DB TotalItems (filtered): {total_items}, TotalPages: {total_pages}")
+
+        # Fetch paginated and sorted data
+        data_query = f"""
             SELECT message_id, channel, file_path, message, timestamp, voice_preset 
             FROM tts_logs 
-            ORDER BY message_id DESC 
+            {where_sql}
+            ORDER BY {sort_column} {sort_order}
             LIMIT ? OFFSET ?
         """
-        params = (per_page, offset)
-        app.logger.debug(f"[api_tts_logs] Executing query: {query} with params {params}")
-        c.execute(query, params)
+        final_query_params = tuple(query_params) + (per_page, offset)
+        
+        app.logger.debug(f"[api_tts_logs] Executing query: {data_query} with params {final_query_params}")
+        c.execute(data_query, final_query_params)
         rows = c.fetchall()
         conn.close()
-        app.logger.debug(f"[api_tts_logs] Fetched {len(rows)} rows from DB for page {page}.")
+        app.logger.debug(f"[api_tts_logs] Fetched {len(rows)} rows from DB for page {page} with sort: {sort_column} {sort_order}.")
         
         logs_data = [{
             "id": row["message_id"], 
