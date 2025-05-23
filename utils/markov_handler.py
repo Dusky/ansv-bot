@@ -204,11 +204,67 @@ class MarkovHandler:
             return "Could not generate a message due to an error."
 
     def get_available_models(self):
-        """Get a list of available models from the cache directory."""
-        return [filename.replace("_model.json", "") for filename in os.listdir(self.cache_directory) if filename.endswith("_model.json")]
+        """Get a list of available models from the cache directory with details."""
+        models_details = []
+        logs_directory = 'logs' # Assuming logs are in 'logs/'
+        
+        if not os.path.exists(self.cache_directory):
+            self.logger.warning(f"Cache directory {self.cache_directory} not found in get_available_models.")
+            return []
 
+        for filename in os.listdir(self.cache_directory):
+            if filename.endswith("_model.json"):
+                model_name = filename.replace("_model.json", "")
+                cache_file_path = os.path.join(self.cache_directory, filename)
+                cache_size_bytes = 0
+                cache_size_str = "0 B"
+                line_count = 0
 
+                try:
+                    if os.path.exists(cache_file_path):
+                        cache_size_bytes = os.path.getsize(cache_file_path)
+                        # Convert size to human-readable format (KB, MB, etc.)
+                        if cache_size_bytes == 0:
+                            cache_size_str = "0 B"
+                        else:
+                            size_name = ("B", "KB", "MB", "GB", "TB")
+                            i = int(os.path.getsize(cache_file_path) // 1024)
+                            if i >= len(size_name): i = len(size_name) -1 # Cap at TB for sanity
+                            p = (1024 ** i)
+                            s = round(cache_size_bytes / p, 2)
+                            cache_size_str = f"{s} {size_name[i]}"
+                except Exception as e:
+                    self.logger.error(f"Error getting cache size for {filename}: {e}")
 
+                # Try to get line count from corresponding log file
+                log_file_name = f"{model_name}.txt"
+                log_file_path = os.path.join(logs_directory, log_file_name)
+                if model_name == "general_markov": # Special handling for general model
+                    line_count = 0
+                    # Sum lines from all .txt files in logs directory for general model
+                    if os.path.exists(logs_directory):
+                        for log_fn in os.listdir(logs_directory):
+                            if log_fn.endswith(".txt"):
+                                try:
+                                    with open(os.path.join(logs_directory, log_fn), 'r', encoding='utf-8', errors='ignore') as lf:
+                                        line_count += sum(1 for _ in lf)
+                                except Exception as e:
+                                    self.logger.warning(f"Could not read lines from {log_fn} for general model: {e}")
+                elif os.path.exists(log_file_path):
+                    try:
+                        with open(log_file_path, 'r', encoding='utf-8', errors='ignore') as lf:
+                            line_count = sum(1 for _ in lf)
+                    except Exception as e:
+                        self.logger.error(f"Error reading line count for {log_file_name}: {e}")
+                
+                models_details.append({
+                    "name": model_name,
+                    "cache_file": filename, # Just the filename, path is known
+                    "cache_size_bytes": cache_size_bytes,
+                    "cache_size_str": cache_size_str,
+                    "line_count": line_count
+                })
+        return models_details
 
     def rebuild_all_caches(self):
         """
