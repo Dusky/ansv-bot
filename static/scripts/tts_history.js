@@ -150,4 +150,22 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Initial load
     loadTTSHistory(1);
+
+    // Listen for EventBus notifications for new TTS entries
+    if (window.EventBus && window.AppEvents) {
+        window.EventBus.on(window.AppEvents.TTS_NEW_ENTRY, (data) => {
+            console.log('[TTS History] EventBus TTS_NEW_ENTRY:', data);
+            if (window.notificationSystem && window.notificationSystem.showToast) {
+                // Check if the notification is for the currently viewed channel (if filtering is added later)
+                // For now, always show and refresh.
+                window.notificationSystem.showToast(`New TTS audio generated. Refreshing history.`, 'info');
+            }
+            // Reload the current page of TTS history to show the new entry.
+            // Consider reloading page 1 if the new entry should always appear at the top of the first page.
+            loadTTSHistory(currentPage); 
+        });
+        console.log("[TTS History] EventBus listener for TTS_NEW_ENTRY attached.");
+    } else {
+        console.warn("[TTS History] EventBus or AppEvents not available. Real-time updates for new TTS entries will not work.");
+    }
 });
