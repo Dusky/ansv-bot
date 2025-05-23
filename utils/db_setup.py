@@ -66,6 +66,7 @@ def ensure_db_setup(db_file):
                         value TEXT,
                         timestamp TEXT
                     )''')
+        conn.commit() # Explicit commit
 
         # Check and migrate tts_logs table if needed
         c.execute("PRAGMA table_info(tts_logs)")
