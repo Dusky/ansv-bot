@@ -7,16 +7,9 @@
     <!-- Modern Theme Selector -->
     <div class="mb-4">
       <h6 class="fw-bold mb-3">Select a Theme</h6>
-      <div id="themeCardContainer" class="row row-cols-2 row-cols-sm-3 row-cols-lg-4 g-3">
-        <!-- Theme cards will be populated here by static/scripts/settings.js -->
-        <!-- Example of how it might look (for illustration, actual content is dynamic):
-        <div class="col">
-          <div class="card theme-card">
-            <div class="theme-preview-block">...</div>
-            <div class="card-body"><h6 class="card-title">Theme Name</h6></div>
-          </div>
-        </div>
-        -->
+      <div id="themeCardContainer">
+        <!-- Theme cards will be populated here by static/scripts/settings.js 
+             in "Light Themes" and "Dark Themes" sections. -->
       </div>
       <!-- Hidden theme select, kept for compatibility if ThemeManager needs it, but primarily for dynamic cards now -->
       <select id="themeSelect" class="form-select d-none">

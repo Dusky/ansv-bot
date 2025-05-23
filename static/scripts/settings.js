@@ -280,89 +280,118 @@ window.ThemeManager = {
             console.warn("Theme card container 'themeCardContainer' not found on this page.");
             return;
         }
+        container.innerHTML = ''; // Clear existing content
 
-        container.innerHTML = ''; // Clear existing cards
+        const createSection = (title, themes, isDarkSection) => {
+            const sectionTitle = document.createElement('h5');
+            sectionTitle.className = 'mt-4 mb-3 fw-bold'; // Added fw-bold
+            sectionTitle.textContent = title;
+            container.appendChild(sectionTitle);
 
-        const allThemes = [...new Set([...this.lightThemes, ...this.darkThemes])];
+            const themesRow = document.createElement('div');
+            themesRow.className = 'row row-cols-2 row-cols-sm-3 row-cols-lg-4 g-3'; // Bootstrap grid classes
+            container.appendChild(themesRow);
 
-        allThemes.forEach(themeName => {
-            const colDiv = document.createElement('div');
-            // Use Bootstrap's responsive column classes for better layout
-            colDiv.className = 'col-6 col-md-4 col-lg-3 mb-3'; 
+            themes.forEach(themeName => {
+                const colDiv = document.createElement('div');
+                colDiv.className = 'col mb-3';
 
-            const cardDiv = document.createElement('div');
-            cardDiv.className = 'card theme-card h-100 text-center'; // Ensure consistent height and center text
-            cardDiv.setAttribute('data-theme', themeName);
-            cardDiv.style.cursor = 'pointer';
-            cardDiv.setAttribute('role', 'button');
-            cardDiv.setAttribute('tabindex', '0'); // Make it focusable
-            cardDiv.setAttribute('aria-label', `Select ${themeName} theme`);
+                const cardDiv = document.createElement('div');
+                cardDiv.className = 'card theme-card h-100 text-center';
+                cardDiv.setAttribute('data-theme', themeName);
+                cardDiv.style.cursor = 'pointer';
+                cardDiv.setAttribute('role', 'button');
+                cardDiv.setAttribute('tabindex', '0');
+                cardDiv.setAttribute('aria-label', `Select ${themeName} theme`);
 
-            // Visual preview block
-            const previewBlock = document.createElement('div');
-            previewBlock.className = 'theme-preview-block p-3'; // Added padding
-            
-            // Simulate card header
-            const previewHeader = document.createElement('div');
-            previewHeader.style.height = '20px';
-            previewHeader.style.marginBottom = '5px';
-            previewHeader.style.borderRadius = '0.2rem';
-            
-            // Simulate card body
-            const previewBody = document.createElement('div');
-            previewBody.style.height = '30px';
-            previewBody.style.borderRadius = '0.2rem';
+                // Simplified single preview block
+                const singlePreview = document.createElement('div');
+                singlePreview.className = 'theme-preview-single my-3 mx-auto';
+                singlePreview.style.width = '85%'; // Adjusted width
+                singlePreview.style.height = '50px';
+                singlePreview.style.borderRadius = '0.25rem';
+                singlePreview.style.border = '1px solid rgba(0,0,0,0.1)';
+                singlePreview.style.display = 'flex';
+                singlePreview.style.alignItems = 'center';
+                singlePreview.style.justifyContent = 'center';
 
-            // Color assignment for preview elements using the new themePreviewColors map
-            const previewColors = this.themePreviewColors[themeName];
-            if (previewColors) {
-                previewHeader.style.backgroundColor = previewColors.header;
-                previewBody.style.backgroundColor = previewColors.body;
-            } else {
-                // Fallback for themes not in the map (should ideally not happen if map is complete)
-                if (this.darkThemes.includes(themeName)) {
-                    previewHeader.style.backgroundColor = '#343a40'; // Generic dark header
-                    previewBody.style.backgroundColor = '#212529';   // Generic dark body
+                const previewColors = this.themePreviewColors[themeName];
+                let bgColorToTest = '';
+
+                if (previewColors) {
+                    singlePreview.style.backgroundColor = previewColors.body; // Use body color for the preview
+                    bgColorToTest = previewColors.body;
+                    if (themeName === 'ansv') { // ANSV uses CSS variables
+                        singlePreview.style.backgroundColor = 'var(--ansv-card-bg, #242424)';
+                        bgColorToTest = '#242424'; // Use actual color for contrast test
+                    }
                 } else {
-                    previewHeader.style.backgroundColor = '#0d6efd'; // Generic light header (Bootstrap primary)
-                    previewBody.style.backgroundColor = '#f8f9fa';   // Generic light body
+                    // Fallback colors
+                    if (isDarkSection) {
+                        singlePreview.style.backgroundColor = '#212529'; // Generic dark body
+                        bgColorToTest = '#212529';
+                    } else {
+                        singlePreview.style.backgroundColor = '#f8f9fa'; // Generic light body
+                        bgColorToTest = '#f8f9fa';
+                    }
                 }
-            }
-            
-            // Special handling for Sketchy theme's border
-            if (themeName === 'sketchy') {
-                cardDiv.style.borderStyle = 'solid';
-                cardDiv.style.borderWidth = '2px';
-                cardDiv.style.borderColor = '#333333'; // Match its primary color
-                previewBlock.style.border = '1px dashed #333'; // Inner preview border
-            } else {
-                cardDiv.style.border = ''; // Reset for other themes
-            }
 
-            previewBlock.appendChild(previewHeader);
-            previewBlock.appendChild(previewBody);
-
-            const cardBodyDiv = document.createElement('div');
-            cardBodyDiv.className = 'card-body p-2'; // Reduced padding for card body
-
-            const titleH6 = document.createElement('h6');
-            titleH6.className = 'card-title mb-0 theme-name-display text-capitalize small'; // Smaller text
-            titleH6.textContent = themeName;
-            
-            cardDiv.appendChild(previewBlock);
-            cardBodyDiv.appendChild(titleH6);
-            cardDiv.appendChild(cardBodyDiv);
-            colDiv.appendChild(cardDiv);
-            container.appendChild(colDiv);
-
-            // Add keypress event for accessibility (Enter key to select)
-            cardDiv.addEventListener('keypress', function(event) {
-                if (event.key === 'Enter' || event.keyCode === 13) {
-                    this.click(); // Trigger the click event attached in setupThemeCards
+                // Text contrast preview
+                const textPreview = document.createElement('small');
+                textPreview.textContent = 'Aa';
+                
+                // Determine text color based on background for preview
+                let isDarkBgForText = isDarkSection; // Initial assumption
+                if (bgColorToTest.startsWith('#')) {
+                    const r = parseInt(bgColorToTest.substring(1, 3), 16);
+                    const g = parseInt(bgColorToTest.substring(3, 5), 16);
+                    const b = parseInt(bgColorToTest.substring(5, 7), 16);
+                    isDarkBgForText = (r * 0.299 + g * 0.587 + b * 0.114) < 140;
+                } else if (bgColorToTest.startsWith('var(--ansv-card-bg')) {
+                     isDarkBgForText = true; // ANSV is dark
                 }
+                textPreview.style.color = isDarkBgForText ? '#f8f9fa' : '#212529';
+                singlePreview.appendChild(textPreview);
+
+                // Special handling for Sketchy theme's border
+                if (themeName === 'sketchy') {
+                    cardDiv.style.borderStyle = 'solid';
+                    cardDiv.style.borderWidth = '2px';
+                    cardDiv.style.borderColor = '#333333';
+                    singlePreview.style.border = '2px dashed #333';
+                } else {
+                     // Ensure default card border for non-sketchy themes if needed,
+                     // but Bootstrap classes usually handle this.
+                }
+
+                cardDiv.appendChild(singlePreview);
+
+                const cardBodyDiv = document.createElement('div');
+                cardBodyDiv.className = 'card-body p-2';
+                const titleH6 = document.createElement('h6');
+                titleH6.className = 'card-title mb-0 theme-name-display text-capitalize small';
+                titleH6.textContent = themeName;
+                cardBodyDiv.appendChild(titleH6);
+                cardDiv.appendChild(cardBodyDiv);
+
+                colDiv.appendChild(cardDiv);
+                themesRow.appendChild(colDiv);
+
+                cardDiv.addEventListener('keypress', function(event) {
+                    if (event.key === 'Enter' || event.keyCode === 13) {
+                        this.click();
+                    }
+                });
             });
-        });
-        console.log(`Populated ${allThemes.length} theme cards.`);
+        };
+
+        // Create Light Themes Section
+        createSection('Light Themes', this.lightThemes, false);
+
+        // Create Dark Themes Section (includes 'ansv')
+        createSection('Dark Themes', this.darkThemes, true);
+        
+        console.log(`Populated theme cards into Light and Dark sections.`);
     }
 };
 
