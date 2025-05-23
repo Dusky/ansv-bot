@@ -927,10 +927,11 @@ def get_stats_route():
                 
                 stats_data.append({
                     "name": channel_name,
-                    "cache_file": cache_filename_from_model, # Will be None if model_data is empty or no cache_file key
+                    "cache_file": cache_filename_from_model, 
                     "log_file": log_filename if log_file_exists else None,
-                    "cache_size": model_data.get('cache_size_str', '0 B'), # Use new field
-                    "line_count": model_data.get('line_count', 0),       # Use new field
+                    "cache_size_str": model_data.get('cache_size_str', '0 B'), # For individual display
+                    "cache_size_bytes": model_data.get('cache_size_bytes', 0), # For summation
+                    "line_count": model_data.get('line_count', 0),
                     "use_general_model": bool(use_general_model_val),
                     "lines_between_messages": lines_between_messages_val
                 })
@@ -950,9 +951,10 @@ def get_stats_route():
             if not any(s['name'] == "general_markov" for s in stats_data): 
                 stats_data.append({
                     "name": "general_markov",
-                    "cache_file": general_model_data.get('cache_file'), # Filename or None
+                    "cache_file": general_model_data.get('cache_file'), 
                     "log_file": None, 
-                    "cache_size": general_model_data.get('cache_size_str', '0 B'),
+                    "cache_size_str": general_model_data.get('cache_size_str', '0 B'), # For individual display
+                    "cache_size_bytes": general_model_data.get('cache_size_bytes', 0), # For summation
                     "line_count": general_model_data.get('line_count', 0),
                     "use_general_model": True, # General model is always "using" itself
                     "lines_between_messages": 0 # Not applicable
