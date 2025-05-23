@@ -2,6 +2,7 @@ import os
 import markovify
 import logging
 import json
+import sqlite3 # Import the sqlite3 module
 
 
 class MarkovHandler:
