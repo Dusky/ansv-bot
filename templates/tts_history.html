@@ -4,10 +4,29 @@
 <div class="container mt-4">
     <div class="dashboard-card activity-panel">
         <div class="activity-panel-header">
-            <div class="d-flex justify-content-between align-items-center">
-                <h3 class="panel-title"><i class="fas fa-history me-2"></i>TTS Message History</h3>
-                <div class="panel-actions">
-                    <button id="refreshHistoryBtn" class="btn btn-icon" title="Refresh TTS history">
+            <div class="d-flex flex-wrap justify-content-between align-items-center">
+                <h3 class="panel-title mb-2 mb-md-0"><i class="fas fa-history me-2"></i>TTS Message History</h3>
+                <div class="panel-actions d-flex flex-wrap align-items-center">
+                    <!-- Channel Filter -->
+                    <select id="ttsChannelFilter" class="form-select form-select-sm me-2 mb-2 mb-md-0" style="width: auto; min-width: 150px;" title="Filter by channel">
+                        <option value="">All Channels</option>
+                        <!-- Channel options will be populated by JavaScript -->
+                    </select>
+                    <!-- Message Filter -->
+                    <input type="text" id="ttsMessageFilter" class="form-control form-control-sm me-2 mb-2 mb-md-0" placeholder="Filter by message..." style="width: auto; min-width: 200px;" title="Filter by message content">
+                    
+                    <!-- Sort Controls -->
+                    <select id="ttsSortBy" class="form-select form-select-sm me-1 mb-2 mb-md-0" style="width: auto;" title="Sort by">
+                        <option value="timestamp" selected>Time</option>
+                        <option value="channel">Channel</option>
+                        <option value="voice_preset">Voice Preset</option>
+                        <option value="message">Message</option>
+                    </select>
+                    <button id="ttsSortOrderBtn" class="btn btn-icon me-2 mb-2 mb-md-0" title="Toggle Sort Order (Descending)">
+                        <i class="fas fa-sort-amount-down"></i> <!-- Default to Descending -->
+                    </button>
+                    
+                    <button id="refreshHistoryBtn" class="btn btn-icon mb-2 mb-md-0" title="Refresh TTS history">
                         <i class="fas fa-sync-alt"></i>
                     </button>
                 </div>
