@@ -1166,12 +1166,13 @@ class Bot(commands.Bot):
                                     original_timestamp_str = datetime.now().isoformat()
 
                                 # Get voice preset for the channel
-                                # Assuming get_channel_voice_preset method exists or can be added
-                                voice_preset_for_tts = None 
-                                if hasattr(self, 'get_channel_voice_preset'):
-                                    voice_preset_for_tts = self.get_channel_voice_preset(channel_name)
+                                voice_preset_for_tts = self.get_channel_voice_preset(channel_name)
+                                if not voice_preset_for_tts:
+                                    # Fallback to a global default if channel has no specific preset or on error
+                                    voice_preset_for_tts = 'v2/en_speaker_5' 
+                                    self.logger.info(f"Using default voice preset '{voice_preset_for_tts}' for channel {channel_name} as none was set or found.")
                                 else:
-                                    self.logger.warning("Method 'get_channel_voice_preset' not found in Bot class. TTS will use default preset.")
+                                    self.logger.info(f"Using voice preset '{voice_preset_for_tts}' for channel {channel_name}.")
 
                                 self.logger.debug(f"Calling start_tts_processing for bot response to msg_id: {original_message_id}, channel: {channel_name}, text: {response[:30]}..., timestamp: {original_timestamp_str}, voice: {voice_preset_for_tts}")
                                 
@@ -1568,10 +1569,18 @@ class Bot(commands.Bot):
             # Use the correct parameter order based on how process_text is defined
             try:
                 from utils.tts import process_text
+                # Get the voice preset for the current channel
+                voice_preset_for_speak = self.get_channel_voice_preset(channel)
+                if not voice_preset_for_speak:
+                    voice_preset_for_speak = 'v2/en_speaker_0' # Default for !speak if none set
+                    self.logger.info(f"Using default voice preset '{voice_preset_for_speak}' for !speak in {channel}.")
+                else:
+                    self.logger.info(f"Using voice preset '{voice_preset_for_speak}' for !speak in {channel}.")
+
                 # Note: We're using the import here to ensure we're calling the right function
-                # The signature for async def process_text(channel, text, model_type="bark") in utils/tts.py
-                self.logger.info(f"Calling process_text for !speak command. Channel: {channel}, Text: '{message_to_speak[:30]}...'")
-                success, audio_file = await process_text(channel, message_to_speak) # Corrected call
+                # The signature for async def process_text(channel, text, model_type="bark", voice_preset_override=None) in utils/tts.py
+                self.logger.info(f"Calling process_text for !speak command. Channel: {channel}, Text: '{message_to_speak[:30]}...', Voice: {voice_preset_for_speak}")
+                success, audio_file = await process_text(channel, message_to_speak, voice_preset_override=voice_preset_for_speak)
             except Exception as tts_error:
                 self.logger.error(f"Error calling or during TTS generation via process_text for !speak: {tts_error}", exc_info=True)
                 success, audio_file = False, None
@@ -1614,8 +1623,8 @@ class Bot(commands.Bot):
                         self.logger.error(f"[HANDLE_SPEAK_COMMAND_TRACE] audio_file is None or empty, cannot derive db_audio_file_path.")
 
 
-                    # Get voice preset used. process_text uses "v2/en_speaker_0" by default if not specified.
-                    voice_preset_used = "v2/en_speaker_0" # Matching default in process_text
+                    # Get voice preset used. This should be the one passed to process_text.
+                    voice_preset_used = voice_preset_for_speak # This was determined before calling process_text
 
                     if db_audio_file_path:
                         self.logger.info(f"[HANDLE_SPEAK_COMMAND_TRACE] Logging !speak TTS to DB: msg_id={command_message_id}, channel={channel}, timestamp={command_timestamp_str}, path='{db_audio_file_path}', voice='{voice_preset_used}'")

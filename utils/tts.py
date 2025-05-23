@@ -390,7 +390,7 @@ def ensure_nltk_resources():
             return False
     return True
 
-async def process_text(channel, text, model_type="bark"): # This is for the !speak command path
+async def process_text(channel, text, model_type="bark", voice_preset_override=None): # This is for the !speak command path
     """Process text to speech with proper locking and error handling"""
     # Use locking to prevent concurrent TTS processing
     global async_tts_lock # Use the asyncio lock for this async function
@@ -415,14 +415,15 @@ async def process_text(channel, text, model_type="bark"): # This is for the !spe
                 # Make sure models are loaded
                 preload_models()
                 
-                # Log which voice we're using
-                logging.info(f"Using built-in Bark voice preset: v2/en_speaker_0")
+                # Determine the voice preset to use
+                actual_voice_preset = voice_preset_override if voice_preset_override else "v2/en_speaker_0"
+                logging.info(f"Using Bark voice preset for !speak: {actual_voice_preset} (Override: {voice_preset_override})")
                 
                 # Generate audio with minimal parameters to avoid API issues
                 # The Bark API might have changed, so we only use params we know are supported
                 audio_array = generate_audio(
                     text,
-                    history_prompt="v2/en_speaker_0",
+                    history_prompt=actual_voice_preset, # Use the determined preset
                     text_temp=0.7,
                     waveform_temp=0.7
                 )
