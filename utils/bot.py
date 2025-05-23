@@ -1154,14 +1154,16 @@ class Bot(commands.Bot):
                                 # Ensure start_tts_processing is called correctly with message_id and timestamp_str
                                 original_message_id = message.id # ID of the original message that triggered this response
                                 
-                                # Format the timestamp of the original message
+                                # Format the timestamp of the original message in ISO format
                                 if isinstance(message.timestamp, datetime):
-                                    original_timestamp_str = message.timestamp.strftime("%Y%m%d-%H%M%S")
+                                    original_timestamp_str = message.timestamp.isoformat()
                                 elif isinstance(message.timestamp, str):
+                                    # If it's already a string, assume it's correctly formatted or handle conversion if needed
+                                    # For now, we'll trust it if it's a string. If issues persist, this might need adjustment.
                                     original_timestamp_str = message.timestamp
                                 else: # Fallback
-                                    self.logger.warning(f"Unexpected timestamp type for original message {message.id}: {type(message.timestamp)}. Using current time for TTS log.")
-                                    original_timestamp_str = datetime.now().strftime("%Y%m%d-%H%M%S")
+                                    self.logger.warning(f"Unexpected timestamp type for original message {message.id}: {type(message.timestamp)}. Using current time (ISO) for TTS log.")
+                                    original_timestamp_str = datetime.now().isoformat()
 
                                 # Get voice preset for the channel
                                 # Assuming get_channel_voice_preset method exists or can be added
@@ -1595,8 +1597,8 @@ class Bot(commands.Bot):
                     c = conn.cursor()
                     # Get the message_id of the command message itself
                     command_message_id = ctx.message.id
-                    # Use the timestamp of the command message
-                    command_timestamp_str = ctx.message.timestamp.strftime("%Y%m%d-%H%M%S") if isinstance(ctx.message.timestamp, datetime) else str(ctx.message.timestamp)
+                    # Use the timestamp of the command message in ISO format
+                    command_timestamp_str = ctx.message.timestamp.isoformat() if isinstance(ctx.message.timestamp, datetime) else str(ctx.message.timestamp)
                     
                     # audio_file from process_text is "static/outputs/channel/file.wav"
                     # For the database, we want "outputs/channel/file.wav"
