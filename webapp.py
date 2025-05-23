@@ -1202,6 +1202,24 @@ def api_chat_logs():
         app.logger.error(f"Error in /api/chat-logs: {e}", exc_info=True)
         return jsonify({"error": str(e), "logs": [], "total_pages": 0, "total_items": 0}), 500
 
+@app.route('/new-audio-notification', methods=['POST'])
+def new_audio_notification():
+    data = request.json
+    app.logger.info(f"Received new audio notification: {data}")
+    channel_name = data.get('channel_name')
+    # message_id from the request is the tts_logs table ID (ROWID or PK)
+    tts_log_id = data.get('message_id') 
+
+    if channel_name and tts_log_id is not None:
+        # Emit an event to all connected SocketIO clients
+        # The event name 'new_tts_entry' should match what clients listen for.
+        socketio.emit('new_tts_entry', {'id': tts_log_id, 'channel': channel_name})
+        app.logger.info(f"Emitted 'new_tts_entry' via SocketIO for tts_log_id: {tts_log_id}, channel: {channel_name}")
+        return jsonify({"success": True, "message": "Notification emitted"}), 200
+    else:
+        app.logger.warning(f"Missing channel_name or message_id in /new-audio-notification. Data: {data}")
+        return jsonify({"success": False, "message": "Missing channel_name or message_id"}), 400
+
 if __name__ == "__main__":
     markov_handler.load_models()
     
