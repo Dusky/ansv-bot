@@ -45,11 +45,28 @@ window.ThemeManager = {
     init: function() {
         console.log("ThemeManager initializing");
         
-        // Get current theme from cookie
-        this.currentTheme = this.getThemeFromCookie() || 'flatly';
+        const serverRenderedThemeName = document.documentElement.getAttribute('data-current-theme-name') || 'flatly';
+        const cookieThemeName = this.getThemeFromCookie();
+
+        let themeToActuallyUse = serverRenderedThemeName;
+        let needsCssChange = false;
+
+        if (cookieThemeName && cookieThemeName !== serverRenderedThemeName) {
+            console.log(`ThemeManager: Cookie theme (${cookieThemeName}) overrides server-rendered theme (${serverRenderedThemeName}). Applying cookie theme.`);
+            themeToActuallyUse = cookieThemeName;
+            needsCssChange = true; // We need to load the CSS for the cookie's theme
+        } else {
+            console.log(`ThemeManager: Using server-rendered theme: ${serverRenderedThemeName} (Cookie: ${cookieThemeName || 'not set or matches server'})`);
+            // No CSS change needed, base.html already loaded it and set data-bs-theme.
+            // ThemeManager just needs to sync its state.
+        }
         
-        // Apply theme immediately
-        this.applyTheme(this.currentTheme, false);
+        this.currentTheme = themeToActuallyUse;
+        // Call applyTheme:
+        // - If needsCssChange is true, it will load the new CSS.
+        // - If needsCssChange is false, it will ensure data-bs-theme and ansv class are consistent with this.currentTheme,
+        //   and update the theme toggle button, without reloading CSS.
+        this.applyTheme(this.currentTheme, needsCssChange);
         
         // Set up theme toggle button if it exists
         const themeToggle = document.getElementById('themeToggle');
@@ -72,7 +89,7 @@ window.ThemeManager = {
         // Set up theme selectors
         const themeSelect = document.getElementById('themeSelect');
         if (themeSelect) {
-            themeSelect.value = this.currentTheme;
+            themeSelect.value = this.currentTheme; // Ensure dropdown reflects the theme in use
             themeSelect.addEventListener('change', () => {
                 this.changeTheme(themeSelect.value);
             });
