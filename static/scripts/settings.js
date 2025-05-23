@@ -87,7 +87,7 @@ window.ThemeManager = {
         this.updateActiveThemeCard(themeName);
         
         // Save theme preference on server
-        fetch(`/set_theme/${themeName}?nocache=${Date.now()}`, {
+        fetch(`/set-theme/${themeName}?nocache=${Date.now()}`, { // Changed to use hyphen
             method: 'GET',
             headers: {
                 'X-Requested-With': 'XMLHttpRequest',
