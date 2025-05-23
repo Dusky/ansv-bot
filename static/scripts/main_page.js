@@ -465,8 +465,31 @@ function loadSystemInfo() {
             });
     }
 
+    // Fetch data for "Total Bot Responses"
+    if (totalResponsesElement) {
+        fetch('/api/bot-response-stats')
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`Error fetching /api/bot-response-stats: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(botResponseData => {
+                if (botResponseData && typeof botResponseData.total_responses !== 'undefined') {
+                    totalResponsesElement.textContent = botResponseData.total_responses.toLocaleString();
+                } else {
+                    totalResponsesElement.textContent = 'N/A';
+                    console.warn("/api/bot-response-stats did not return expected data for #totalResponses:", botResponseData);
+                }
+            })
+            .catch(error => {
+                console.error('Error loading bot response stats for #totalResponses:', error);
+                totalResponsesElement.textContent = 'Error';
+            });
+    }
+
     // Note: #activeSince (Bot Uptime) is handled by static/scripts/bot_status.js
-    // Other metrics like CPU, Memory, Disk, Server Uptime, Bot Responses would need their own backend data sources.
+    // Other metrics like CPU, Memory, Disk, Server Uptime would need their own backend data sources if re-added.
 }
 
 // Add this function to handle reconnect requests
