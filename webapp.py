@@ -917,13 +917,23 @@ def get_stats_route():
                 
                 model_data = model_info_map.get(channel_name, {})
                 
-                log_file_path = os.path.join('logs', f"{channel_name}.log")
+                # Correct log file name and check existence
+                log_filename = f"{channel_name}.txt" # Based on utils/bot.py
+                log_file_path = os.path.join('logs', log_filename)
                 log_file_exists = os.path.exists(log_file_path)
+
+                # Cache file path from model_data should be relative to 'cache/' directory
+                cache_filename = model_data.get('cache_file') # e.g., 'channel_name_model.json'
+                actual_cache_file_path = None
+                if cache_filename:
+                    actual_cache_file_path = os.path.join('cache', cache_filename)
+                
+                cache_file_exists = actual_cache_file_path and os.path.exists(actual_cache_file_path)
 
                 stats_data.append({
                     "name": channel_name,
-                    "cache_file": model_data.get('cache_file', 'N/A'),
-                    "log_file": f"{channel_name}.log" if log_file_exists else 'N/A',
+                    "cache_file": cache_filename if cache_file_exists else None, # Send filename or None
+                    "log_file": log_filename if log_file_exists else None,       # Send filename or None
                     "cache_size": model_data.get('cache_size_str', model_data.get('cache_size', '0 KB')),
                     "line_count": model_data.get('line_count', 0),
                     "use_general_model": bool(use_general_model_val),
@@ -940,10 +950,16 @@ def get_stats_route():
         if "general_markov" in model_info_map:
             general_model_data = model_info_map["general_markov"]
             if not any(s['name'] == "general_markov" for s in stats_data):
-                 stats_data.append({
+                general_cache_filename = general_model_data.get('cache_file')
+                actual_general_cache_path = None
+                if general_cache_filename:
+                    actual_general_cache_path = os.path.join('cache', general_cache_filename)
+                general_cache_exists = actual_general_cache_path and os.path.exists(actual_general_cache_path)
+
+                stats_data.append({
                     "name": "general_markov",
-                    "cache_file": general_model_data.get('cache_file', 'N/A'),
-                    "log_file": "N/A (Combined)", 
+                    "cache_file": general_cache_filename if general_cache_exists else None,
+                    "log_file": None, # General model doesn't have a single log file
                     "cache_size": general_model_data.get('cache_size_str', general_model_data.get('cache_size', '0 KB')),
                     "line_count": general_model_data.get('line_count', 0),
                     "use_general_model": True, # General model is always "using" itself
@@ -991,6 +1007,44 @@ def api_cache_build_performance():
     # If loop finishes due to max_retries exceeded
     app.logger.error(f"/api/cache-build-performance: Failed to access 'cache_build_log' after {max_retries} retries.")
     return jsonify({"error": "Failed to access cache build log data after setup attempt.", "data": []}), 500
+
+@app.route('/view-file/<file_type>/<path:filename>')
+def view_file(file_type, filename):
+    base_dir = None
+    if file_type == 'logs':
+        base_dir = 'logs'
+    elif file_type == 'cache':
+        base_dir = 'cache'
+    else:
+        return "Invalid file type specified.", 400
+
+    # Basic security: prevent directory traversal
+    if '..' in filename or filename.startswith('/'):
+        return "Invalid filename.", 400
+
+    file_path = os.path.join(base_dir, filename)
+    
+    if not os.path.exists(file_path) or not os.path.isfile(file_path):
+        return f"File not found: {filename}", 404
+        
+    try:
+        # For JSON cache files, pretty print. For logs, serve as plain text.
+        if file_type == 'cache' and filename.endswith('.json'):
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = json.load(f)
+            response_content = json.dumps(content, indent=2)
+            mimetype = 'application/json'
+        else: # Assuming log files are plain text
+            with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
+                response_content = f.read()
+            mimetype = 'text/plain'
+        
+        response = make_response(response_content)
+        response.mimetype = mimetype
+        return response
+    except Exception as e:
+        app.logger.error(f"Error serving file {file_path}: {e}")
+        return "Error reading file.", 500
 
 @app.route('/api/bot-response-stats')
 def api_bot_response_stats():

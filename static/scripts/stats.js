@@ -83,8 +83,19 @@ function loadStatistics() {
             }
             
             const channelCell = `<td class="${isGeneralModel ? 'fw-bold' : ''}">${channel.name}</td>`;
-            const cacheFileCell = `<td>${channel.cache_file || 'N/A'}</td>`;
-            const logFileCell = `<td>${channel.log_file || 'N/A'}</td>`;
+            
+            let cacheFileCellContent = 'N/A';
+            if (channel.cache_file) {
+                cacheFileCellContent = `<a href="/view-file/cache/${encodeURIComponent(channel.cache_file)}" target="_blank">${channel.cache_file}</a>`;
+            }
+            const cacheFileCell = `<td>${cacheFileCellContent}</td>`;
+
+            let logFileCellContent = 'N/A';
+            if (channel.log_file) {
+                logFileCellContent = `<a href="/view-file/logs/${encodeURIComponent(channel.log_file)}" target="_blank">${channel.log_file}</a>`;
+            }
+            const logFileCell = `<td>${logFileCellContent}</td>`;
+            
             const cacheSizeCell = `<td>${channel.cache_size || '0 KB'}</td>`;
             const lineCountCell = `<td>${lineCount || '0'}</td>`;
             const progressCell = `<td>${progressBarHtml}</td>`;
