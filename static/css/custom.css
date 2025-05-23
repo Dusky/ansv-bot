@@ -68,6 +68,18 @@
     opacity: 0.8;
 }
 
+/* Themed Log Container */
+#logContainer {
+    background-color: var(--bs-secondary-bg); /* Similar to <pre> styling */
+    color: var(--bs-emphasis-color);
+}
+
+/* ANSV theme specific for log container */
+.theme-ansv #logContainer {
+    background-color: var(--ansv-bg-light); 
+    color: var(--ansv-text);
+}
+
 /* Channel badges */
 .channel-badge {
     font-size: 0.75rem;
