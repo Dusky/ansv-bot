@@ -977,6 +977,20 @@ def api_cache_build_performance():
         app.logger.error(f"Error in /api/cache-build-performance: {e}\n{traceback.format_exc()}")
         return jsonify({"error": str(e), "data": []}), 500
 
+@app.route('/api/bot-response-stats')
+def api_bot_response_stats():
+    try:
+        conn = sqlite3.connect(db_file)
+        c = conn.cursor()
+        # Assuming messages in the 'messages' table are bot responses
+        c.execute("SELECT COUNT(*) FROM messages")
+        total_responses = c.fetchone()[0]
+        conn.close()
+        return jsonify({"total_responses": total_responses})
+    except Exception as e:
+        app.logger.error(f"Error in /api/bot-response-stats: {e}", exc_info=True)
+        return jsonify({"error": str(e), "total_responses": 0}), 500
+
 @app.route('/api/chat-logs')
 def api_chat_logs():
     try:
