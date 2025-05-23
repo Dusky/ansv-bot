@@ -529,6 +529,50 @@ def logs_page():
     """Render the chat logs page."""
     return render_template("logs.html")
 
+@app.route('/channel/<channel_name>')
+def channel_page(channel_name):
+    """Render the channel-specific dashboard page."""
+    # Validate channel exists in our database
+    try:
+        conn = sqlite3.connect(db_file)
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        c.execute("SELECT * FROM channel_configs WHERE channel_name = ?", (channel_name,))
+        channel_config = c.fetchone()
+        conn.close()
+        
+        if not channel_config:
+            # Channel doesn't exist in our database
+            return render_template("404.html", error_message=f"Channel '{channel_name}' not found in bot configuration"), 404
+        
+        # Convert to dict for template
+        channel_data = dict(channel_config)
+        channel_data['name'] = channel_name
+        
+        # Get current bot status for this channel
+        bot_running = is_bot_actually_running()
+        
+        # Check if bot is currently connected to this channel
+        currently_connected = False
+        if bot_running and os.path.exists("bot_heartbeat.json"):
+            try:
+                with open("bot_heartbeat.json", "r") as f:
+                    heartbeat = json.load(f)
+                if time.time() - heartbeat.get("timestamp", 0) < 120:  # Within 2 minutes
+                    heartbeat_channels = [ch.lstrip('#') for ch in heartbeat.get("channels", [])]
+                    currently_connected = channel_name in heartbeat_channels
+            except (FileNotFoundError, json.JSONDecodeError):
+                pass
+        
+        channel_data['currently_connected'] = currently_connected
+        channel_data['bot_running'] = bot_running
+        
+        return render_template("channel_page.html", channel=channel_data)
+        
+    except Exception as e:
+        app.logger.error(f"Error loading channel page for {channel_name}: {e}")
+        return render_template("500.html", error_message=f"Error loading channel data: {str(e)}"), 500
+
 @app.route('/api/channels')
 def api_channels_list(): 
     try:
@@ -1265,6 +1309,229 @@ def new_audio_notification():
     else:
         app.logger.warning(f"Missing channel_name or message_id in /new-audio-notification. Data: {data}")
         return jsonify({"success": False, "message": "Missing channel_name or message_id"}), 400
+
+@app.route('/api/channel/<channel_name>/stats')
+def api_channel_stats(channel_name):
+    """Get channel-specific statistics."""
+    try:
+        conn = sqlite3.connect(db_file)
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        
+        # Check if channel exists
+        c.execute("SELECT * FROM channel_configs WHERE channel_name = ?", (channel_name,))
+        channel_config = c.fetchone()
+        if not channel_config:
+            conn.close()
+            return jsonify({"error": "Channel not found"}), 404
+        
+        # Get message count for this channel
+        c.execute("SELECT COUNT(*) as total_messages FROM messages WHERE channel = ?", (channel_name,))
+        message_count = c.fetchone()['total_messages']
+        
+        # Get today's message count
+        today = datetime.now().strftime('%Y-%m-%d')
+        c.execute("SELECT COUNT(*) as today_messages FROM messages WHERE channel = ? AND DATE(timestamp) = ?", (channel_name, today))
+        today_count = c.fetchone()['today_messages']
+        
+        # Get TTS count for this channel
+        c.execute("SELECT COUNT(*) as tts_count FROM tts_logs WHERE channel = ?", (channel_name,))
+        tts_count = c.fetchone()['tts_count']
+        
+        # Get last activity
+        c.execute("SELECT MAX(timestamp) as last_activity FROM messages WHERE channel = ?", (channel_name,))
+        last_activity = c.fetchone()['last_activity']
+        
+        # Get bot response count (messages sent by the bot to this channel)
+        bot_nickname = config.get('auth', 'nickname', fallback='ansvbot').lower()
+        c.execute("SELECT COUNT(*) as bot_responses FROM messages WHERE channel = ? AND LOWER(author_name) = ?", (channel_name, bot_nickname))
+        bot_responses = c.fetchone()['bot_responses']
+        
+        conn.close()
+        
+        # Get model info
+        model_details = markov_handler.get_available_models()
+        model_info = None
+        for model in model_details:
+            if isinstance(model, dict) and model.get('name') == channel_name:
+                model_info = model
+                break
+        
+        return jsonify({
+            "channel_name": channel_name,
+            "total_messages": message_count,
+            "today_messages": today_count,
+            "tts_count": tts_count,
+            "bot_responses": bot_responses,
+            "last_activity": last_activity,
+            "model_info": model_info,
+            "config": dict(channel_config)
+        })
+        
+    except Exception as e:
+        app.logger.error(f"Error getting channel stats for {channel_name}: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/channel/<channel_name>/activity')
+def api_channel_activity(channel_name):
+    """Get recent activity for a specific channel."""
+    try:
+        limit = request.args.get('limit', 20, type=int)
+        
+        conn = sqlite3.connect(db_file)
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        
+        # Get recent messages
+        c.execute("""
+            SELECT author_name as username, message, timestamp, 'message' as type 
+            FROM messages 
+            WHERE channel = ? 
+            ORDER BY timestamp DESC 
+            LIMIT ?
+        """, (channel_name, limit))
+        
+        messages = [dict(row) for row in c.fetchall()]
+        
+        # Get recent TTS entries
+        c.execute("""
+            SELECT message, timestamp, voice_preset, file_path, 'tts' as type
+            FROM tts_logs 
+            WHERE channel = ? 
+            ORDER BY timestamp DESC 
+            LIMIT ?
+        """, (channel_name, limit))
+        
+        tts_entries = [dict(row) for row in c.fetchall()]
+        
+        conn.close()
+        
+        # Combine and sort by timestamp
+        all_activity = messages + tts_entries
+        all_activity.sort(key=lambda x: x['timestamp'], reverse=True)
+        
+        return jsonify({
+            "channel_name": channel_name,
+            "activity": all_activity[:limit],
+            "total_items": len(all_activity)
+        })
+        
+    except Exception as e:
+        app.logger.error(f"Error getting channel activity for {channel_name}: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/channel/<channel_name>/generate', methods=['POST'])
+def api_channel_generate_message(channel_name):
+    """Generate a message for a specific channel."""
+    try:
+        data = request.get_json() or {}
+        send_to_chat = data.get('send_to_chat', False)
+        use_general_model = data.get('use_general_model', False)
+        
+        # Check if channel exists
+        conn = sqlite3.connect(db_file)
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        c.execute("SELECT * FROM channel_configs WHERE channel_name = ?", (channel_name,))
+        channel_config = c.fetchone()
+        conn.close()
+        
+        if not channel_config:
+            return jsonify({"error": "Channel not found"}), 404
+        
+        # Determine which model to use
+        model_name = "general" if use_general_model or channel_config['use_general_model'] else channel_name
+        
+        # Generate message using markov handler
+        try:
+            generated_message = markov_handler.generate_message(model_name)
+            if not generated_message:
+                return jsonify({"error": "Failed to generate message", "message": None}), 400
+        except Exception as e:
+            app.logger.error(f"Error generating message for channel {channel_name}: {e}")
+            return jsonify({"error": f"Message generation failed: {str(e)}", "message": None}), 500
+        
+        # If requested, send to chat
+        sent_to_chat = False
+        if send_to_chat:
+            try:
+                bot_running = is_bot_actually_running()
+                if bot_running:
+                    send_message_via_pid(channel_name, generated_message)
+                    sent_to_chat = True
+                else:
+                    app.logger.warning(f"Cannot send message to {channel_name}: bot not running")
+            except Exception as e:
+                app.logger.error(f"Error sending message to {channel_name}: {e}")
+        
+        return jsonify({
+            "channel_name": channel_name,
+            "message": generated_message,
+            "sent_to_chat": sent_to_chat,
+            "model_used": model_name,
+            "timestamp": datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        app.logger.error(f"Error in channel message generation for {channel_name}: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/channel/<channel_name>/tts', methods=['POST'])
+def api_channel_tts(channel_name):
+    """Generate TTS for a specific channel."""
+    try:
+        data = request.get_json() or {}
+        text = data.get('text', '').strip()
+        
+        if not text:
+            return jsonify({"error": "Text is required"}), 400
+        
+        # Check if channel exists and TTS is enabled
+        conn = sqlite3.connect(db_file)
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        c.execute("SELECT * FROM channel_configs WHERE channel_name = ?", (channel_name,))
+        channel_config = c.fetchone()
+        conn.close()
+        
+        if not channel_config:
+            return jsonify({"error": "Channel not found"}), 404
+        
+        if not channel_config['tts_enabled']:
+            return jsonify({"error": "TTS not enabled for this channel"}), 400
+        
+        # Import TTS module dynamically to avoid import errors if TTS dependencies aren't installed
+        try:
+            from utils.tts import process_text
+            
+            # Process TTS with channel-specific settings
+            result = asyncio.run(process_text(
+                text=text,
+                channel=channel_name,
+                voice_preset=channel_config['voice_preset'],
+                bark_model=channel_config['bark_model']
+            ))
+            
+            if result:
+                return jsonify({
+                    "success": True,
+                    "channel_name": channel_name,
+                    "text": text,
+                    "file_path": result.get('file_path'),
+                    "timestamp": datetime.now().isoformat()
+                })
+            else:
+                return jsonify({"error": "TTS processing failed"}), 500
+                
+        except ImportError:
+            return jsonify({"error": "TTS functionality not available"}), 503
+        except Exception as e:
+            app.logger.error(f"Error processing TTS for channel {channel_name}: {e}")
+            return jsonify({"error": f"TTS processing failed: {str(e)}"}), 500
+        
+    except Exception as e:
+        app.logger.error(f"Error in channel TTS for {channel_name}: {e}")
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
     markov_handler.load_models()

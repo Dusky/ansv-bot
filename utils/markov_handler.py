@@ -223,19 +223,24 @@ class MarkovHandler:
                 cache_size_str = "0 B"
                 line_count = 0
 
+                last_modified = None
                 try:
                     if os.path.exists(cache_file_path):
                         cache_size_bytes = os.path.getsize(cache_file_path)
+                        # Get last modified timestamp
+                        last_modified = os.path.getmtime(cache_file_path)
                         # Convert size to human-readable format (KB, MB, etc.)
                         if cache_size_bytes == 0:
                             cache_size_str = "0 B"
                         else:
                             size_name = ("B", "KB", "MB", "GB", "TB")
-                            i = int(os.path.getsize(cache_file_path) // 1024)
-                            if i >= len(size_name): i = len(size_name) -1 # Cap at TB for sanity
-                            p = (1024 ** i)
-                            s = round(cache_size_bytes / p, 2)
-                            cache_size_str = f"{s} {size_name[i]}"
+                            # Calculate the appropriate unit
+                            i = 0
+                            size_calc = cache_size_bytes
+                            while size_calc >= 1024 and i < len(size_name) - 1:
+                                size_calc /= 1024
+                                i += 1
+                            cache_size_str = f"{size_calc:.1f} {size_name[i]}"
                 except Exception as e:
                     self.logger.error(f"Error getting cache size for {filename}: {e}")
 
@@ -265,7 +270,8 @@ class MarkovHandler:
                     "cache_file": filename, # Just the filename, path is known
                     "cache_size_bytes": cache_size_bytes,
                     "cache_size_str": cache_size_str,
-                    "line_count": line_count
+                    "line_count": line_count,
+                    "last_modified": last_modified
                 })
         return models_details
 

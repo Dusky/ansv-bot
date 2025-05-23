@@ -121,6 +121,14 @@
               </span>
             </a>
           </li>
+          <li class="nav-item dropdown">
+            <a class="nav-link dropdown-toggle {{ 'active' if request.endpoint == 'channel_page' else '' }}" href="#" id="channelsDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+              <i class="fas fa-hashtag me-1"></i> Channels
+            </a>
+            <ul class="dropdown-menu" aria-labelledby="channelsDropdown" id="channelsDropdownMenu">
+              <li><a class="dropdown-item" href="#"><i class="fas fa-spinner fa-spin me-2"></i>Loading channels...</a></li>
+            </ul>
+          </li>
         </ul>
 
         <!-- Right-aligned controls -->
