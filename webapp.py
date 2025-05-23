@@ -958,24 +958,39 @@ def get_stats_route():
 
 @app.route('/api/cache-build-performance')
 def api_cache_build_performance():
-    try:
-        conn = sqlite3.connect(db_file)
-        conn.row_factory = sqlite3.Row
-        c = conn.cursor()
-        # Fetch data from cache_build_log table
-        # Adjust column names if they are different in your schema
-        c.execute("""
-            SELECT channel_name as channel, timestamp, duration, success 
-            FROM cache_build_log 
-            ORDER BY timestamp DESC 
-            LIMIT 20 
-        """) # Assuming 'channel_name' is the column
-        build_times = [dict(row) for row in c.fetchall()]
-        conn.close()
-        return jsonify(build_times)
-    except Exception as e:
-        app.logger.error(f"Error in /api/cache-build-performance: {e}\n{traceback.format_exc()}")
-        return jsonify({"error": str(e), "data": []}), 500
+    retries = 0
+    max_retries = 1
+    while retries <= max_retries:
+        try:
+            conn = sqlite3.connect(db_file)
+            conn.row_factory = sqlite3.Row
+            c = conn.cursor()
+            # Fetch data from cache_build_log table
+            c.execute("""
+                SELECT channel_name as channel, timestamp, duration, success 
+                FROM cache_build_log 
+                ORDER BY timestamp DESC 
+                LIMIT 20 
+            """)
+            build_times = [dict(row) for row in c.fetchall()]
+            conn.close()
+            return jsonify(build_times)
+        except sqlite3.OperationalError as oe:
+            if "no such table: cache_build_log" in str(oe) and retries < max_retries:
+                app.logger.warning(f"/api/cache-build-performance: 'cache_build_log' table not found. Attempting to run ensure_db_setup. Retry {retries + 1}/{max_retries}")
+                ensure_db_setup(db_file) # Attempt to create the table
+                retries += 1
+                time.sleep(0.1) # Small delay before retrying
+                continue # Retry the loop
+            else:
+                app.logger.error(f"Error in /api/cache-build-performance after retries or for other OperationalError: {oe}\n{traceback.format_exc()}")
+                return jsonify({"error": str(oe), "data": []}), 500
+        except Exception as e:
+            app.logger.error(f"Error in /api/cache-build-performance: {e}\n{traceback.format_exc()}")
+            return jsonify({"error": str(e), "data": []}), 500
+    # If loop finishes due to max_retries exceeded
+    app.logger.error(f"/api/cache-build-performance: Failed to access 'cache_build_log' after {max_retries} retries.")
+    return jsonify({"error": "Failed to access cache build log data after setup attempt.", "data": []}), 500
 
 @app.route('/api/bot-response-stats')
 def api_bot_response_stats():

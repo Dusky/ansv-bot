@@ -6,6 +6,17 @@ def ensure_db_setup(db_file):
         conn = sqlite3.connect(db_file)
         c = conn.cursor()
 
+        # Create 'cache_build_log' table (moved earlier)
+        c.execute('''CREATE TABLE IF NOT EXISTS cache_build_log (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        channel_name TEXT,
+                        timestamp REAL,
+                        duration REAL,
+                        success BOOLEAN,
+                        message TEXT
+                    )''')
+        conn.commit() # Explicit commit after creating this table
+
         # Create 'messages' table
         c.execute('''CREATE TABLE IF NOT EXISTS messages (
                         id INTEGER PRIMARY KEY,
