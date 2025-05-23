@@ -46,7 +46,7 @@ window.EventBus = window.EventBus || {
             try {
                 callback(data);
             } catch (e) {
-                console.error(`Error in event listener for ${event}:`, e);
+                console.error(`Error in event listener for ${event}:`, e); // Keep console.error for actual errors
             }
         });
     },
@@ -109,7 +109,7 @@ function setupWebSocket() {
     try {
         // Prevent duplicate event listeners by removing existing ones first
         if (socket._eventsCount > 0) {
-            console.log("Removing existing socket listeners");
+            if (window.DEBUG_MODE) console.log("Removing existing socket listeners");
             socket.off("refresh_table");
             socket.off("new_tts_entry");
             socket.off("bot_status_change");
@@ -117,7 +117,7 @@ function setupWebSocket() {
         
         // Listen for refresh_table events
         socket.on("refresh_table", function (data) {
-            console.log("Received refresh_table event:", data);
+            if (window.DEBUG_MODE) console.log("Received refresh_table event:", data);
             
             // Call refreshTable in data_handler.js
             if (window.refreshTable) {
@@ -130,7 +130,7 @@ function setupWebSocket() {
         
         // Listen for new_tts_entry events
         socket.on("new_tts_entry", function (data) {
-            console.log("Received new_tts_entry event:", data);
+            if (window.DEBUG_MODE) console.log("Received new_tts_entry event:", data);
             
             // Call refreshTable in data_handler.js
             if (window.refreshTable) {
@@ -169,9 +169,9 @@ function setupWebSocket() {
         // Mark socket as initialized
         window._socketEventsInitialized = true;
         
-        console.log("WebSocket listeners successfully set up");
+        if (window.DEBUG_MODE) console.log("WebSocket listeners successfully set up");
     } catch (error) {
-        console.warn("WebSocket setup error:", error);
+        if (window.DEBUG_MODE) console.warn("WebSocket setup error:", error);
         window.EventBus.emit(window.AppEvents.SYSTEM_ERROR, {
             source: 'websocket',
             message: error.message,
@@ -184,13 +184,13 @@ function setupWebSocket() {
 function initializeApp() {
     // Check if we've already initialized this page to avoid duplicate setup
     if (window._pageInitialized) {
-        console.log("Page already initialized, skipping duplicate initialization");
+        if (window.DEBUG_MODE) console.log("Page already initialized, skipping duplicate initialization");
         return;
     }
     
     // Mark the page as initialized
     window._pageInitialized = true;
-    console.log("Initializing page components");
+    if (window.DEBUG_MODE) console.log("Initializing page components");
     
     // Check bot status first
     if (typeof checkBotStatus === 'function') {
