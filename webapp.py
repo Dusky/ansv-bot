@@ -724,8 +724,14 @@ def serve_tts_output(filename):
 
 @app.route('/set-theme/<theme_name>') 
 def set_theme_route(theme_name): 
-    response = make_response(redirect(request.referrer or url_for('main')))
-    response.set_cookie('theme', theme_name, max_age=60*60*24*365)
+    # Create a JSON response
+    response_data = {"success": True, "theme": theme_name, "message": f"Theme set to {theme_name}"}
+    response = make_response(jsonify(response_data))
+    
+    # Set the cookie on this response
+    # Added httponly=True and samesite='Lax' for better security
+    response.set_cookie('theme', theme_name, max_age=60*60*24*365, httponly=True, samesite='Lax')
+    
     return response
 
 @app.errorhandler(404)
