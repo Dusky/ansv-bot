@@ -880,11 +880,16 @@ def api_tts_logs():
         app.logger.debug(f"[api_tts_logs] Filters: channel='{channel_filter_input}', message='{message_filter_input}'. DB TotalItems (filtered): {total_items}, TotalPages: {total_pages}")
 
         # Fetch paginated and sorted data
+        sort_clause = f"ORDER BY {sort_column}"
+        if sort_column in ["channel", "voice_preset", "message"]:
+            sort_clause += " COLLATE NOCASE"
+        sort_clause += f" {sort_order}"
+
         data_query = f"""
             SELECT message_id, channel, file_path, message, timestamp, voice_preset 
             FROM tts_logs 
             {where_sql}
-            ORDER BY {sort_column} {sort_order}
+            {sort_clause}
             LIMIT ? OFFSET ?
         """
         final_query_params = tuple(query_params) + (per_page, offset)
