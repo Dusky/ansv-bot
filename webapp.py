@@ -915,27 +915,22 @@ def get_stats_route():
                 use_general_model_val = row['use_general_model']
                 lines_between_messages_val = row['lines_between_messages']
                 
-                model_data = model_info_map.get(channel_name, {})
+                model_data = model_info_map.get(channel_name, {}) # model_data now contains more details
                 
                 # Correct log file name and check existence
-                log_filename = f"{channel_name}.txt" # Based on utils/bot.py
+                log_filename = f"{channel_name}.txt" 
                 log_file_path = os.path.join('logs', log_filename)
                 log_file_exists = os.path.exists(log_file_path)
 
-                # Cache file path from model_data should be relative to 'cache/' directory
-                cache_filename = model_data.get('cache_file') # e.g., 'channel_name_model.json'
-                actual_cache_file_path = None
-                if cache_filename:
-                    actual_cache_file_path = os.path.join('cache', cache_filename)
+                # cache_file filename comes directly from model_data if model exists
+                cache_filename_from_model = model_data.get('cache_file') # This is just the filename like 'channel_model.json'
                 
-                cache_file_exists = actual_cache_file_path and os.path.exists(actual_cache_file_path)
-
                 stats_data.append({
                     "name": channel_name,
-                    "cache_file": cache_filename if cache_file_exists else None, # Send filename or None
-                    "log_file": log_filename if log_file_exists else None,       # Send filename or None
-                    "cache_size": model_data.get('cache_size_str', model_data.get('cache_size', '0 KB')),
-                    "line_count": model_data.get('line_count', 0),
+                    "cache_file": cache_filename_from_model, # Will be None if model_data is empty or no cache_file key
+                    "log_file": log_filename if log_file_exists else None,
+                    "cache_size": model_data.get('cache_size_str', '0 B'), # Use new field
+                    "line_count": model_data.get('line_count', 0),       # Use new field
                     "use_general_model": bool(use_general_model_val),
                     "lines_between_messages": lines_between_messages_val
                 })
@@ -947,20 +942,17 @@ def get_stats_route():
                 continue
 
         # Add general model if it exists and isn't already covered
-        if "general_markov" in model_info_map:
+        # Add general model if it exists in model_info_map
+        # The name "general_markov" is what get_available_models should return for it
+        if "general_markov" in model_info_map: 
             general_model_data = model_info_map["general_markov"]
-            if not any(s['name'] == "general_markov" for s in stats_data):
-                general_cache_filename = general_model_data.get('cache_file')
-                actual_general_cache_path = None
-                if general_cache_filename:
-                    actual_general_cache_path = os.path.join('cache', general_cache_filename)
-                general_cache_exists = actual_general_cache_path and os.path.exists(actual_general_cache_path)
-
+            # Check if it wasn't already added (e.g. if a channel_config was named 'general_markov')
+            if not any(s['name'] == "general_markov" for s in stats_data): 
                 stats_data.append({
                     "name": "general_markov",
-                    "cache_file": general_cache_filename if general_cache_exists else None,
-                    "log_file": None, # General model doesn't have a single log file
-                    "cache_size": general_model_data.get('cache_size_str', general_model_data.get('cache_size', '0 KB')),
+                    "cache_file": general_model_data.get('cache_file'), # Filename or None
+                    "log_file": None, 
+                    "cache_size": general_model_data.get('cache_size_str', '0 B'),
                     "line_count": general_model_data.get('line_count', 0),
                     "use_general_model": True, # General model is always "using" itself
                     "lines_between_messages": 0 # Not applicable
