@@ -289,12 +289,13 @@ window.ThemeManager = {
             container.appendChild(sectionTitle);
 
             const themesRow = document.createElement('div');
-            themesRow.className = 'row row-cols-2 row-cols-sm-3 row-cols-lg-4 g-3'; // Bootstrap grid classes
+            themesRow.className = 'row g-3'; // Simpler row, column widths defined on children
             container.appendChild(themesRow);
 
             themes.forEach(themeName => {
                 const colDiv = document.createElement('div');
-                colDiv.className = 'col mb-3';
+                // Explicit column sizing for Bootstrap 5 grid
+                colDiv.className = 'col-6 col-sm-4 col-lg-3 mb-3'; 
 
                 const cardDiv = document.createElement('div');
                 cardDiv.className = 'card theme-card h-100 text-center';
