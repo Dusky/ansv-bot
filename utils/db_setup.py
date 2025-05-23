@@ -19,14 +19,42 @@ def ensure_db_setup(db_file):
 
         # Create 'messages' table
         c.execute('''CREATE TABLE IF NOT EXISTS messages (
-                        id INTEGER PRIMARY KEY,
-                        message TEXT,
-                        timestamp TEXT,
-                        channel TEXT,
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        twitch_message_id TEXT UNIQUE,
+                        message TEXT NOT NULL,
+                        author_name TEXT NOT NULL,
+                        timestamp TEXT NOT NULL,
+                        channel TEXT NOT NULL,
+                        is_bot_response BOOLEAN NOT NULL DEFAULT 0,
                         state_size INTEGER,
                         message_length INTEGER,
                         tts_processed BOOLEAN NOT NULL DEFAULT 0
                     )''')
+        conn.commit() # Commit after table creation
+
+        # Add new columns to messages table if they don't exist (for migration)
+        messages_columns = [row[1] for row in c.execute("PRAGMA table_info(messages)").fetchall()]
+        if 'twitch_message_id' not in messages_columns:
+            c.execute('ALTER TABLE messages ADD COLUMN twitch_message_id TEXT UNIQUE')
+            logging.info("Column 'twitch_message_id' added to 'messages'.")
+        if 'author_name' not in messages_columns:
+            # Add with a default for existing rows, then make NOT NULL if desired,
+            # but for simplicity, allow NULL initially if altering, then ensure new inserts are NOT NULL.
+            # For new tables, it's NOT NULL. For altered, it's complex.
+            # Let's assume new inserts will handle NOT NULL.
+            c.execute('ALTER TABLE messages ADD COLUMN author_name TEXT') # Default to NULL for existing
+            logging.info("Column 'author_name' added to 'messages'.")
+        if 'is_bot_response' not in messages_columns:
+            c.execute('ALTER TABLE messages ADD COLUMN is_bot_response BOOLEAN NOT NULL DEFAULT 0')
+            logging.info("Column 'is_bot_response' added to 'messages'.")
+        
+        # Make state_size and message_length nullable if they aren't already
+        # This is complex with ALTER TABLE in SQLite. Usually involves recreating the table.
+        # For now, we'll assume new inserts will handle NULLs if appropriate.
+        # And the table definition above makes them nullable by default if not specified otherwise.
+
+        conn.commit()
+
 
         # Create 'channel_configs' table with default columns
         c.execute('''CREATE TABLE IF NOT EXISTS channel_configs (

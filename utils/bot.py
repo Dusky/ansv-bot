@@ -654,14 +654,16 @@ class Bot(commands.Bot):
         conn = sqlite3.connect(self.db_file)
         c = conn.cursor()
         c.execute(
-            """INSERT INTO messages (message, timestamp, channel, state_size, message_length) 
-                    VALUES (?, ?, ?, ?, ?)""",
+            """INSERT INTO messages (message, timestamp, channel, state_size, message_length, author_name, is_bot_response) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?)""",
             (
                 message,
-                datetime.now(),
+                datetime.now().isoformat(), # Store timestamp as ISO string
                 channel_name,
-                self.general_model.state_size,
+                self.general_model.state_size if hasattr(self.general_model, 'state_size') else None, # Ensure general_model exists
                 len(message),
+                self.nick, # Bot's name as author
+                1 # Mark as bot response
             ),
         )
         conn.commit()
@@ -1081,6 +1083,31 @@ class Bot(commands.Bot):
 
         # Handle any commands in the message.
         await self.handle_commands(message)
+
+        # Save user's message to the database
+        try:
+            conn = sqlite3.connect(self.db_file)
+            c = conn.cursor()
+            c.execute(
+                """INSERT INTO messages (twitch_message_id, message, author_name, timestamp, channel, is_bot_response, message_length, tts_processed)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    message.id,
+                    message.content,
+                    message.author.name,
+                    message.timestamp.isoformat(), # Store timestamp as ISO string
+                    channel_name,
+                    0, # Not a bot response
+                    len(message.content),
+                    0 # Not processed for TTS by default
+                )
+            )
+            conn.commit()
+            conn.close()
+        except sqlite3.Error as e:
+            self.my_logger.error(f"Failed to save user message to DB for channel {channel_name}: {e}")
+            print(f"Error saving user message to DB for {channel_name}: {e}")
+
 
         # Make sure the channel is in our dictionaries
         if channel_name not in self.channel_chat_line_count:
