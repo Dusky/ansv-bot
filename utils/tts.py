@@ -164,6 +164,16 @@ def process_text_thread(input_text, channel_name, db_file='./messages.db', full_
 
             processor = AutoProcessor.from_pretrained(model_path)
             
+            # Ensure the tokenizer has a pad_token_id. For Bark, this is often the eos_token_id.
+            if processor.tokenizer.pad_token_id is None:
+                if processor.tokenizer.eos_token_id is not None:
+                    processor.tokenizer.pad_token_id = processor.tokenizer.eos_token_id
+                    logging.info(f"Set processor.tokenizer.pad_token_id to eos_token_id: {processor.tokenizer.eos_token_id}")
+                else:
+                    # Fallback if eos_token_id is also None (highly unlikely for Bark)
+                    processor.tokenizer.pad_token_id = 10000 # Bark's EOS token ID
+                    logging.warning(f"processor.tokenizer.eos_token_id is None. Set pad_token_id to fallback: 10000")
+
             # The error "module 'torch' has no attribute 'get_default_device'" typically occurs
             # if the PyTorch version is older than 1.9, as this function was introduced then.
             # The 'transformers' library's from_pretrained method seems to internally call this.
@@ -225,8 +235,15 @@ def process_text_thread(input_text, channel_name, db_file='./messages.db', full_
                 pieces = split_sentence(sentence, 165)  # Split long sentences
                 for piece in pieces:
                     # Generate speech with the selected voice preset
-                    inputs = processor(text=piece, voice_preset=voice_preset).to(device)
-                    audio_array = model.generate(**inputs)
+                    # Explicitly use padding=True to ensure attention_mask is generated.
+                    inputs = processor(text=piece, voice_preset=voice_preset, return_tensors="pt", padding=True).to(device)
+                    
+                    # The model.generate call should now use the attention_mask from inputs.
+                    # Explicitly passing pad_token_id can also help, using the model's config.
+                    # Bark's EOS token ID (10000) is often used as pad_token_id for generation.
+                    pad_token_id_for_generation = model.generation_config.pad_token_id or model.generation_config.eos_token_id or 10000
+
+                    audio_array = model.generate(**inputs, pad_token_id=pad_token_id_for_generation)
                     audio_array = audio_array.cpu().numpy().squeeze()
                     all_audio_pieces.append(audio_array)
 
