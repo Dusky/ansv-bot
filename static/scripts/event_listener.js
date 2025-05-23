@@ -140,12 +140,8 @@ function setupWebSocket() {
             // Emit to event bus
             window.EventBus.emit(window.AppEvents.TTS_NEW_ENTRY, data);
             
-            // Show notification using centralized system
-            if (window.notificationSystem && typeof window.notificationSystem.showToast === 'function') {
-                window.notificationSystem.showToast('New TTS message available', 'info');
-            } else if (typeof window.showToast === 'function') {
-                window.showToast('New TTS message available', 'info');
-            }
+            // Notification is now handled by listeners of AppEvents.TTS_NEW_ENTRY (e.g., tts_history.js)
+            // to avoid duplicates.
         });
         
         // Listen for bot status changes
