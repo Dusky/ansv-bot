@@ -239,14 +239,9 @@ window.ThemeManager = {
             if (cardTheme === themeName) {
                 card.classList.add('active');
                 card.classList.add('border-primary', 'shadow-sm'); // Add visual cues
-            } else {
-                // Try to extract from onClick attribute as fallback
-                const onClickAttr = card.getAttribute('onClick');
-                if (onClickAttr && onClickAttr.includes(`"${themeName}"`) || onClickAttr.includes(`'${themeName}'`)) {
-                    card.classList.add('active');
-                    card.classList.add('border-primary', 'shadow-sm'); // Add visual cues
-                }
             }
+            // Removed the 'else' block that was causing the error by trying to read 'onClick' attribute
+            // The data-theme attribute is now the sole source for identifying the active card.
         });
     },
 
