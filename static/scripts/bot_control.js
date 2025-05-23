@@ -295,29 +295,72 @@ window.BotController = window.BotController || {
             const nameCell = document.createElement('td');
             nameCell.innerHTML = `<a href="https://twitch.tv/${normalizedChannel.name}" target="_blank">${normalizedChannel.name}</a>`;
             
+            // Enabled Status (Join Channel) - Clickable
             const statusCell = document.createElement('td');
-            statusCell.innerHTML = `<span class="badge ${normalizedChannel.connected ? 'bg-success' : 'bg-danger'}">${normalizedChannel.connected ? 'Connected' : 'Disconnected'}</span>`;
+            const statusPill = document.createElement('span');
+            statusPill.className = `status-pill ${normalizedChannel.configured_to_join ? 'bg-success' : 'bg-danger'}`;
+            statusPill.style.cursor = 'pointer';
+            statusPill.innerHTML = normalizedChannel.configured_to_join ? 
+                '<i class="fas fa-check-circle"></i> Enabled' : 
+                '<i class="fas fa-times-circle"></i> Disabled';
+            statusPill.title = `Click to ${normalizedChannel.configured_to_join ? 'disable' : 'enable'}`;
+            statusPill.setAttribute('data-channel', normalizedChannel.name);
+            statusPill.setAttribute('data-type', 'join');
+            statusPill.addEventListener('click', function() {
+                window.BotController.toggleChannelStatus(this.getAttribute('data-channel'), this.getAttribute('data-type'));
+            });
+            statusCell.appendChild(statusPill);
             
+            // TTS Status - Clickable
             const ttsCell = document.createElement('td');
-            ttsCell.innerHTML = `<span class="badge ${normalizedChannel.tts_enabled ? 'bg-success' : 'bg-secondary'}">${normalizedChannel.tts_enabled ? 'Enabled' : 'Disabled'}</span>`;
+            const ttsPill = document.createElement('span');
+            ttsPill.className = `status-pill ${normalizedChannel.tts_enabled ? 'bg-info' : 'bg-secondary'}`;
+            ttsPill.style.cursor = 'pointer';
+            ttsPill.innerHTML = normalizedChannel.tts_enabled ? 
+                '<i class="fas fa-volume-up"></i> Enabled' : 
+                '<i class="fas fa-volume-mute"></i> Disabled';
+            ttsPill.title = `Click to ${normalizedChannel.tts_enabled ? 'disable' : 'enable'} TTS`;
+            ttsPill.setAttribute('data-channel', normalizedChannel.name);
+            ttsPill.setAttribute('data-type', 'tts');
+            ttsPill.addEventListener('click', function() {
+                window.BotController.toggleChannelStatus(this.getAttribute('data-channel'), this.getAttribute('data-type'));
+            });
+            ttsCell.appendChild(ttsPill);
             
-            // Add cells for messages and last activity (if available)
+            // Messages Sent
             const messagesCell = document.createElement('td');
             messagesCell.textContent = normalizedChannel.messages_sent || '0';
             
+            // Last Activity
             const activityCell = document.createElement('td');
-            activityCell.textContent = normalizedChannel.last_activity || 'N/A';
+            if (normalizedChannel.last_activity) {
+                try {
+                    const activityDate = new Date(normalizedChannel.last_activity);
+                    activityCell.textContent = activityDate.toLocaleString();
+                    activityCell.title = activityDate.toISOString();
+                } catch (e) {
+                    activityCell.textContent = normalizedChannel.last_activity; // Fallback
+                }
+            } else {
+                activityCell.textContent = 'Never';
+            }
             
             // Add action buttons
             const actionsCell = document.createElement('td');
-            actionsCell.innerHTML = `
-                <button class="btn btn-sm btn-outline-primary me-1" onclick="joinChannel('${normalizedChannel.name}')">
-                    <i class="fas fa-sign-in-alt me-1"></i>Join
-                </button>
-                <button class="btn btn-sm btn-outline-danger" onclick="leaveChannel('${normalizedChannel.name}')">
-                    <i class="fas fa-sign-out-alt me-1"></i>Leave
-                </button>
-            `;
+            const joinBtnHtml = `
+                <button class="btn btn-sm btn-outline-success me-1 btn-action" onclick="window.BotController.joinChannel('${normalizedChannel.name}')" title="Join Channel">
+                    <i class="fas fa-sign-in-alt"></i>
+                </button>`;
+            const leaveBtnHtml = `
+                <button class="btn btn-sm btn-outline-danger me-1 btn-action" onclick="window.BotController.leaveChannel('${normalizedChannel.name}')" title="Leave Channel">
+                    <i class="fas fa-sign-out-alt"></i>
+                </button>`;
+            const settingsBtnHtml = `
+                <button class="btn btn-sm btn-outline-secondary btn-action" onclick="window.location.href='/settings#channel-${normalizedChannel.name}'" title="Channel Settings">
+                    <i class="fas fa-cog"></i>
+                </button>`;
+            
+            actionsCell.innerHTML = joinBtnHtml + leaveBtnHtml + settingsBtnHtml;
             
             // Add all cells to row
             row.appendChild(nameCell);
@@ -342,27 +385,120 @@ window.BotController = window.BotController || {
         // Otherwise do basic normalization
         let normalizedChannel = {
             name: null,
-            connected: false,
-            tts_enabled: false,
-            messages_sent: 0,
-            last_activity: null
+            connected: false, // Bot's connection to Twitch channel
+            configured_to_join: false, // From DB: join_channel
+            tts_enabled: false,    // From DB: tts_enabled
+            messages_sent: 0,  // From log file line count
+            last_activity: null // From messages table MAX(timestamp)
         };
         
-        if (Array.isArray(channel)) {
+        if (Array.isArray(channel)) { // Older format, less likely now
             normalizedChannel.name = channel[0];
             if (channel.length > 1) normalizedChannel.tts_enabled = !!channel[1];
-            if (channel.length > 3) normalizedChannel.connected = !!channel[3];
+            if (channel.length > 3) normalizedChannel.connected = !!channel[3]; // This was likely 'currently_connected'
+            // 'configured_to_join' would need to be passed or assumed
         } else if (typeof channel === 'object' && channel !== null) {
             normalizedChannel.name = channel.name || channel.channel_name || '';
-            normalizedChannel.connected = !!channel.currently_connected || !!channel.connected;
-            normalizedChannel.tts_enabled = !!channel.tts_enabled;
+            normalizedChannel.connected = !!channel.currently_connected; // Heartbeat status
+            normalizedChannel.configured_to_join = !!channel.configured_to_join; // DB join_channel flag
+            normalizedChannel.tts_enabled = !!channel.tts_enabled;    // DB tts_enabled flag
             normalizedChannel.messages_sent = channel.messages_sent || 0;
-            normalizedChannel.last_activity = channel.last_activity || 'N/A';
-        } else if (typeof channel === 'string') {
+            normalizedChannel.last_activity = channel.last_activity || null;
+        } else if (typeof channel === 'string') { // Simplest case, just name
             normalizedChannel.name = channel;
         }
         
         return normalizedChannel;
+    },
+
+    toggleChannelStatus: function(channelName, type) {
+        const endpoint = type === 'join' ? `/api/channel/${channelName}/toggle-join` : `/api/channel/${channelName}/toggle-tts`;
+        const actionText = type === 'join' ? 'join status' : 'TTS status';
+
+        this.showNotification(`Toggling ${actionText} for ${channelName}...`, 'info');
+
+        fetch(endpoint, { method: 'POST' })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    this.showNotification(data.message, 'success');
+                    this.loadChannels(); // Refresh table
+                } else {
+                    this.showNotification(`Failed to toggle ${actionText}: ${data.message || 'Unknown error'}`, 'error');
+                }
+            })
+            .catch(error => {
+                console.error(`Error toggling ${actionText} for ${channelName}:`, error);
+                this.showNotification(`Error toggling ${actionText}: ${error.message}`, 'error');
+            });
+    },
+
+    joinChannel: function(channelName) {
+        this.showNotification(`Attempting to join channel: ${channelName}...`, 'info');
+        fetch(`/join-channel/${channelName}`, { method: 'POST' })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    this.showNotification(`Successfully sent join command for ${channelName}.`, 'success');
+                } else {
+                    this.showNotification(`Failed to join ${channelName}: ${data.message || 'Unknown error'}`, 'error');
+                }
+                this.loadChannels(); // Refresh list
+            })
+            .catch(error => {
+                this.showNotification(`Error joining ${channelName}: ${error.message}`, 'error');
+                this.loadChannels(); // Refresh list
+            });
+    },
+
+    leaveChannel: function(channelName) {
+        this.showNotification(`Attempting to leave channel: ${channelName}...`, 'info');
+        fetch(`/leave-channel/${channelName}`, { method: 'POST' })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    this.showNotification(`Successfully sent leave command for ${channelName}.`, 'success');
+                } else {
+                    this.showNotification(`Failed to leave ${channelName}: ${data.message || 'Unknown error'}`, 'error');
+                }
+                this.loadChannels(); // Refresh list
+            })
+            .catch(error => {
+                this.showNotification(`Error leaving ${channelName}: ${error.message}`, 'error');
+                this.loadChannels(); // Refresh list
+            });
+    },
+
+    loadSystemLogs: function() {
+        const logContainer = document.getElementById('logContainer');
+        if (!logContainer) return;
+
+        logContainer.innerHTML = '<div class="text-muted p-2">Loading system logs...</div>';
+        fetch('/api/system-logs')
+            .then(response => response.json())
+            .then(data => {
+                if (data.logs && data.logs.length > 0) {
+                    logContainer.innerHTML = data.logs.map(line => `<div>${this.escapeHtml(line)}</div>`).join('');
+                } else {
+                    logContainer.innerHTML = '<div class="text-muted p-2">No system logs to display.</div>';
+                }
+                logContainer.scrollTop = logContainer.scrollHeight; // Scroll to bottom
+            })
+            .catch(error => {
+                console.error('Error loading system logs:', error);
+                logContainer.innerHTML = `<div class="text-danger p-2">Error loading system logs: ${error.message}</div>`;
+            });
+    },
+
+    escapeHtml: function(text) {
+        // Basic HTML escaping
+        if (typeof text !== 'string') return text;
+        return text
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
     },
     
     // Safely show notifications using the notification system
@@ -392,6 +528,18 @@ window.BotController = window.BotController || {
 // Initialize the bot controller when the DOM is ready
 document.addEventListener('DOMContentLoaded', function() {
     window.BotController.init();
+    window.BotController.loadSystemLogs(); // Load logs on page load
+
+    const clearLogsBtn = document.getElementById('clearLogsBtn');
+    if (clearLogsBtn) {
+        clearLogsBtn.addEventListener('click', function() {
+            const logContainer = document.getElementById('logContainer');
+            if (logContainer) {
+                logContainer.innerHTML = '<div class="text-muted p-2">Logs cleared from display.</div>';
+            }
+            window.BotController.showNotification('System logs display cleared.', 'info');
+        });
+    }
 });
 
 // Legacy compatibility layer - provide functions that older code might use
@@ -423,6 +571,17 @@ function checkForExistingBotInstance() {
 function loadChannels() {
     window.BotController.loadChannels();
 }
+
+// Legacy function for joining a channel (global scope for onclick)
+function joinChannel(channelName) {
+    window.BotController.joinChannel(channelName);
+}
+
+// Legacy function for leaving a channel (global scope for onclick)
+function leaveChannel(channelName) {
+    window.BotController.leaveChannel(channelName);
+}
+
 
 // Legacy function for safely showing toast notifications
 function safeShowToast(message, type = 'info') {
