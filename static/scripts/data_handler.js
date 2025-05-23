@@ -496,7 +496,13 @@ document.addEventListener('DOMContentLoaded', function() {
     checkBotStatus();
     
     // Then check every 10 seconds
-    setInterval(checkBotStatus, 10000);
+    // setInterval(checkBotStatus, 10000); // checkBotStatus is part of BotStatus which has its own interval
+
+    // Periodically refresh Bot Analytics data
+    if (document.getElementById('totalMessages') || document.getElementById('totalTTS') || document.getElementById('totalResponses')) {
+        loadSystemInfo(); // Initial load
+        setInterval(loadSystemInfo, 20000); // Refresh every 20 seconds
+    }
 
     // Populate channels for message generation if the selector exists
     if (document.getElementById('channelForMessage')) {

@@ -403,10 +403,10 @@ function loadSystemInfo() {
     // Elements on index.html for Bot Analytics
     const totalMessagesElement = document.getElementById('totalMessages'); // Total lines processed by Markov
     const totalTTSElement = document.getElementById('totalTTS');       // Total TTS clips generated
-    // const totalResponsesElement = document.getElementById('totalResponses'); // Bot messages sent (needs backend)
+    const totalResponsesElement = document.getElementById('totalResponses'); // Bot messages sent
     // const activeSinceElement = document.getElementById('activeSince'); // Bot uptime (handled by bot_status.js)
 
-    // Elements for System Metrics (mostly placeholders currently)
+    // Elements for System Metrics (mostly placeholders currently) - These are being removed from UI
     // const cpuUsageElement = document.getElementById('cpuUsage');
     // const memoryUsageElement = document.getElementById('memoryUsage');
     // const diskUsageElement = document.getElementById('diskUsage');
