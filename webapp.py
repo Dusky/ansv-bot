@@ -542,11 +542,11 @@ def api_channels_list():
         heartbeat_joined_channels = []
         bot_is_running_for_heartbeat = is_bot_actually_running() # Check if bot is running to trust heartbeat
 
+        heartbeat_joined_channels = []
         if bot_is_running_for_heartbeat and os.path.exists("bot_heartbeat.json"):
             try:
                 with open("bot_heartbeat.json", "r") as f:
                     heartbeat = json.load(f)
-                # Check if heartbeat is recent
                 if time.time() - heartbeat.get("timestamp", 0) < 120: # Within 2 minutes
                     heartbeat_joined_channels = [ch.lstrip('#') for ch in heartbeat.get("channels", [])]
                 else:
@@ -556,37 +556,46 @@ def api_channels_list():
         elif bot_is_running_for_heartbeat:
             app.logger.warning("Bot is running but bot_heartbeat.json not found for /api/channels.")
 
+        # Fetch model details (includes line_count)
+        model_details_list = markov_handler.get_available_models()
+        model_info_map = {model['name']: model for model in model_details_list if isinstance(model, dict) and 'name' in model}
+
+        # Fetch last activity timestamps
+        conn_msg = sqlite3.connect(db_file)
+        conn_msg.row_factory = sqlite3.Row
+        c_msg = conn_msg.cursor()
+        c_msg.execute("SELECT channel, MAX(timestamp) as last_activity_ts FROM messages GROUP BY channel")
+        last_activities_rows = c_msg.fetchall()
+        conn_msg.close()
+        last_activities = {row['channel']: row['last_activity_ts'] for row in last_activities_rows}
 
         channels_data_adapted = []
         for raw_channel_config in raw_channels_data:
             channel_item = dict(raw_channel_config)
             db_channel_name = raw_channel_config.get('channel_name')
 
-            # Ensure 'name' field exists
             if db_channel_name and 'name' not in channel_item:
                 channel_item['name'] = db_channel_name
             elif 'name' not in channel_item and not db_channel_name:
                 channel_item['name'] = 'Unknown Channel'
                 app.logger.warning(f"Channel config row missing 'channel_name': {raw_channel_config}")
 
-            # Set 'configured_to_join' (boolean) based on 'join_channel' (integer 0 or 1)
-            # Defaults to False (0) if 'join_channel' is missing from the DB row for some reason.
-            join_channel_val = raw_channel_config.get('join_channel', 0) # Default to 0 if missing
+            join_channel_val = raw_channel_config.get('join_channel', 0)
             channel_item['configured_to_join'] = bool(join_channel_val)
-            app.logger.debug(f"Channel: {channel_item.get('name', 'N/A')}, DB join_channel raw value: {join_channel_val}, configured_to_join set to: {channel_item['configured_to_join']}")
-
-            # Set 'currently_connected' (boolean)
-            # Ensure comparison is with channel name without '#' prefix
+        
             current_channel_name_for_check = channel_item.get('name', '').lstrip('#')
             channel_item['currently_connected'] = current_channel_name_for_check in heartbeat_joined_channels
-            
-            # Pass through tts_enabled from DB if it exists
+        
             if 'tts_enabled' in raw_channel_config:
                  channel_item['tts_enabled'] = bool(raw_channel_config.get('tts_enabled',0))
 
-
+            # Add messages_sent (line_count) and last_activity
+            model_data = model_info_map.get(current_channel_name_for_check, {})
+            channel_item['messages_sent'] = model_data.get('line_count', 0)
+            channel_item['last_activity'] = last_activities.get(current_channel_name_for_check, None)
+        
             channels_data_adapted.append(channel_item)
-            
+        
         return jsonify(channels_data_adapted)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1059,6 +1068,78 @@ def api_bot_response_stats():
     except Exception as e:
         app.logger.error(f"Error in /api/bot-response-stats: {e}", exc_info=True)
         return jsonify({"error": str(e), "total_responses": 0}), 500
+
+@app.route('/api/channel/<channel_name>/toggle-join', methods=['POST'])
+def toggle_channel_join_route(channel_name):
+    try:
+        if not re.match(r"^[a-zA-Z0-9_]{1,25}$", channel_name):
+            return jsonify({"success": False, "message": "Invalid channel name format"}), 400
+
+        conn = sqlite3.connect(db_file)
+        c = conn.cursor()
+        c.execute("SELECT join_channel FROM channel_configs WHERE channel_name = ?", (channel_name,))
+        row = c.fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"success": False, "message": "Channel not found"}), 404
+        
+        current_status = row[0]
+        new_status = 1 if current_status == 0 else 0
+        
+        c.execute("UPDATE channel_configs SET join_channel = ? WHERE channel_name = ?", (new_status, channel_name))
+        conn.commit()
+        conn.close()
+        
+        # Optionally, trigger bot to join/leave if running (bot handles this via periodic check)
+        # For immediate effect, a mechanism to notify the bot would be needed.
+        
+        return jsonify({"success": True, "message": f"Channel {channel_name} {'enabled' if new_status else 'disabled'}.", "new_status": new_status})
+    except Exception as e:
+        app.logger.error(f"Error toggling join for {channel_name}: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
+@app.route('/api/channel/<channel_name>/toggle-tts', methods=['POST'])
+def toggle_channel_tts_route(channel_name):
+    try:
+        if not re.match(r"^[a-zA-Z0-9_]{1,25}$", channel_name):
+            return jsonify({"success": False, "message": "Invalid channel name format"}), 400
+            
+        conn = sqlite3.connect(db_file)
+        c = conn.cursor()
+        c.execute("SELECT tts_enabled FROM channel_configs WHERE channel_name = ?", (channel_name,))
+        row = c.fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"success": False, "message": "Channel not found"}), 404
+
+        current_status = row[0]
+        new_status = 1 if current_status == 0 else 0
+
+        c.execute("UPDATE channel_configs SET tts_enabled = ? WHERE channel_name = ?", (new_status, channel_name))
+        conn.commit()
+        conn.close()
+        return jsonify({"success": True, "message": f"TTS for {channel_name} {'enabled' if new_status else 'disabled'}.", "new_status": new_status})
+    except Exception as e:
+        app.logger.error(f"Error toggling TTS for {channel_name}: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
+@app.route('/api/system-logs')
+def api_system_logs():
+    try:
+        log_file_path = logger.APP_LOG_FILE # Use the path from the logger instance
+        if not os.path.exists(log_file_path):
+            return jsonify({"logs": ["Log file not found."]})
+        
+        lines = []
+        with open(log_file_path, 'r', encoding='utf-8') as f:
+            # Read last N lines (e.g., 200)
+            # This is a simple way, for very large files, more efficient methods exist
+            all_lines = f.readlines()
+            lines = all_lines[-200:] # Get the last 200 lines
+        return jsonify({"logs": [line.strip() for line in lines]})
+    except Exception as e:
+        app.logger.error(f"Error reading system logs: {e}")
+        return jsonify({"logs": [f"Error reading logs: {str(e)}"]}), 500
 
 @app.route('/api/chat-logs')
 def api_chat_logs():
