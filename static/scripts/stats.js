@@ -513,7 +513,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     window.addEventListener('botstatus', function(e) {
-      if (isDev) console.log("Received bot status update event:", e.detail);
+      if (isDev && window.DEBUG_MODE) console.log("Received bot status update event:", e.detail); // Add DEBUG_MODE check
       if (e.detail.running && typeof window.loadStatistics === 'function') {
         window.loadStatistics();
       }
