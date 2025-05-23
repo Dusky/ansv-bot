@@ -986,61 +986,35 @@ def api_chat_logs():
         offset = (page - 1) * per_page
 
         conn = sqlite3.connect(db_file)
-        conn.row_factory = sqlite3.Row
-        c = conn.cursor()
-
-        base_query = "FROM messages"
-        count_query = "SELECT COUNT(*) " + base_query
-        data_query = "SELECT timestamp, channel, message, (SELECT GROUP_CONCAT(author_name) FROM message_authors WHERE message_authors.message_id = messages.id) as username " + base_query 
-        
-        params = []
-        if channel_filter:
-            base_query += " WHERE channel = ?"
-            params.append(channel_filter)
-        
-        count_query = "SELECT COUNT(*) " + base_query
-        c.execute(count_query, params)
-        total_items = c.fetchone()[0]
-        total_pages = (total_items + per_page - 1) // per_page if per_page > 0 else 0
-
-        data_query += " ORDER BY timestamp DESC LIMIT ? OFFSET ?" # Fetch most recent first
-        params.extend([per_page, offset])
-        
-        c.execute(data_query, params)
-        rows = c.fetchall()
-        conn.close()
-
-        logs_data = []
-        for row in rows:
-            # Attempt to parse timestamp if it's a string, otherwise use as is
-            ts_value = row['timestamp']
-            try:
-                # Assuming timestamp is stored as ISO 8601 string or similar that JS Date can parse
-                # If it's a Unix timestamp (number), JS Date constructor handles it.
-                # If it's a custom string format, it might need parsing here or be passed as is.
-                dt_obj = datetime.fromisoformat(ts_value) if isinstance(ts_value, str) else datetime.fromtimestamp(ts_value)
-                formatted_ts = dt_obj.isoformat() # Ensure consistent ISO format for JS
-            except (ValueError, TypeError):
-                formatted_ts = ts_value # Fallback to original value
-
-            logs_data.append({
-                "timestamp": formatted_ts,
-                "channel": row["channel"],
-                "username": row["username"] if row["username"] else "UnknownUser", # Handle cases where author might be missing
-                "message": row["message"]
+        # --- TEMPORARY DUMMY DATA FOR TESTING ---
+        app.logger.info(f"[/api/chat-logs] Returning DUMMY data for page {page}")
+        dummy_logs = []
+        for i in range(per_page):
+            dummy_logs.append({
+                "timestamp": datetime.now().isoformat(),
+                "channel": "test_channel",
+                "username": f"User{(page-1)*per_page + i + 1}",
+                "message": f"This is dummy log message #{(page-1)*per_page + i + 1} on page {page}."
             })
         
-        # Since we fetch most recent first (DESC), but want to display oldest of the batch first in console style:
-        logs_data.reverse() 
+        # Simulate pagination
+        total_dummy_items = 100 
+        total_dummy_pages = (total_dummy_items + per_page - 1) // per_page
+
+        if page > total_dummy_pages:
+            dummy_logs = [] # No logs if page is out of bounds
 
         return jsonify({
-            "logs": logs_data,
+            "logs": dummy_logs,
             "page": page,
             "per_page": per_page,
-            "total_items": total_items,
-            "total_pages": total_pages
+            "total_items": total_dummy_items,
+            "total_pages": total_dummy_pages,
+            "note": "This is dummy data for testing."
         })
-    except sqlite3.OperationalError as oe:
+        # --- END OF TEMPORARY DUMMY DATA ---
+
+    except sqlite3.OperationalError as oe: # Keep original error handlers
         if "no such column: author_name" in str(oe) or "no such table: message_authors" in str(oe):
             app.logger.error(f"Database schema error for chat logs: {oe}. The 'messages' table might be missing an 'author_name' column or 'message_authors' table.")
             return jsonify({
