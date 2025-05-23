@@ -844,7 +844,24 @@ class Bot(commands.Bot):
             print(f"SQLite error in fetch_channel_settings: {e}")
             return 0, 0, False, False
 
-
+    def get_channel_voice_preset(self, channel_name):
+        """Fetch the voice_preset for a given channel from the database."""
+        try:
+            clean_channel_name = channel_name.lstrip('#')
+            conn = sqlite3.connect(self.db_file)
+            c = conn.cursor()
+            c.execute("SELECT voice_preset FROM channel_configs WHERE channel_name = ?", (clean_channel_name,))
+            result = c.fetchone()
+            conn.close()
+            if result and result[0]:
+                self.logger.debug(f"Voice preset for channel {clean_channel_name}: {result[0]}")
+                return result[0]
+            else:
+                self.logger.debug(f"No specific voice preset found for channel {clean_channel_name}, using default.")
+                return None # Or a global default like 'v2/en_speaker_5'
+        except sqlite3.Error as e:
+            self.logger.error(f"SQLite error in get_channel_voice_preset for {channel_name}: {e}")
+            return None # Fallback on error
 
 
 
