@@ -16,6 +16,21 @@ document.addEventListener('DOMContentLoaded', function() {
     let currentPage = 1;
     const perPage = 50; // Number of log entries per page
 
+    // Helper function to generate a color from a string (e.g., username, channel)
+    function stringToHslColor(str, s = 70, l = 65, a = 1) {
+        if (!str) return `hsla(0, 0%, 70%, ${a})`; // Default grey for empty strings
+        let hash = 0;
+        for (let i = 0; i < str.length; i++) {
+            hash = str.charCodeAt(i) + ((hash << 5) - hash);
+            hash = hash & hash; // Convert to 32bit integer
+        }
+        const hue = hash % 360;
+        // Adjust lightness for dark themes to ensure visibility
+        const isDarkTheme = document.documentElement.getAttribute('data-bs-theme') === 'dark';
+        const effectiveLightness = isDarkTheme ? Math.min(l + 15, 85) : l; // Brighter on dark themes
+        return `hsla(${hue}, ${s}%, ${effectiveLightness}%, ${a})`;
+    }
+
     function fetchChannelsForFilter() {
         if (!channelFilter) return;
 
@@ -106,23 +121,31 @@ document.addEventListener('DOMContentLoaded', function() {
             const timestampSpan = document.createElement('span');
             timestampSpan.className = 'log-timestamp text-muted me-2';
             try {
-                timestampSpan.textContent = `[${new Date(log.timestamp).toLocaleTimeString()}]`;
+                // More concise timestamp
+                const date = new Date(log.timestamp);
+                timestampSpan.textContent = `[${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}:${date.getSeconds().toString().padStart(2, '0')}]`;
             } catch (e) {
                 timestampSpan.textContent = `[${log.timestamp}]`; // Fallback
             }
             
             const channelSpan = document.createElement('span');
             channelSpan.className = 'log-channel fw-bold me-1';
-            channelSpan.textContent = `#${log.channel || 'unknown'}:`;
-            // Apply color based on channel name (optional, requires ColorManager logic or similar)
+            const channelName = log.channel || 'unknown';
+            channelSpan.textContent = `#${channelName}:`;
+            channelSpan.style.color = stringToHslColor(channelName, 70, 55);
+
 
             const userSpan = document.createElement('span');
             userSpan.className = 'log-user me-1';
-            userSpan.textContent = `<${log.username || 'system'}>`;
-            // Apply color based on username (optional)
+            const userName = log.username || 'system';
+            userSpan.textContent = `<${userName}>`;
+            userSpan.style.color = stringToHslColor(userName, 60, 60);
+
 
             const messageSpan = document.createElement('span');
             messageSpan.className = 'log-message';
+            // For messages, use the default text color of the log container for theme consistency
+            // messageSpan.style.color = 'var(--bs-body-color)'; // Example, or let it inherit
             messageSpan.textContent = log.message;
 
             logEntryDiv.appendChild(timestampSpan);
