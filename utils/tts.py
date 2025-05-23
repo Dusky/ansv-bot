@@ -235,8 +235,9 @@ def process_text_thread(input_text, channel_name, db_file='./messages.db', full_
                 pieces = split_sentence(sentence, 165)  # Split long sentences
                 for piece in pieces:
                     # Generate speech with the selected voice preset
-                    # Explicitly use padding=True to ensure attention_mask is generated.
-                    inputs = processor(text=piece, voice_preset=voice_preset, return_tensors="pt", padding=True).to(device)
+                    # Removed padding=True as it caused TypeError with BarkProcessor.
+                    # The processor should handle padding and attention_mask with return_tensors="pt".
+                    inputs = processor(text=piece, voice_preset=voice_preset, return_tensors="pt").to(device)
                     
                     # The model.generate call should now use the attention_mask from inputs.
                     # Explicitly passing pad_token_id can also help, using the model's config.
