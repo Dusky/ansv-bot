@@ -15,6 +15,7 @@ from datetime import datetime, timedelta
 import configparser
 from utils.markov_handler import MarkovHandler
 from utils.logger import Logger
+from utils.tts import start_tts_processing # Import for TTS generation
 from utils.db_setup import ensure_db_setup
 
 # Initialize application components
@@ -1682,37 +1683,39 @@ def api_channel_tts(channel_name):
         if not channel_config['tts_enabled']:
             return jsonify({"error": "TTS not enabled for this channel"}), 400
         
-        # Import TTS module dynamically to avoid import errors if TTS dependencies aren't installed
-        try:
-            from utils.tts import process_text
-            
-            # Process TTS with channel-specific settings
-            result = asyncio.run(process_text(
-                text=text,
-                channel=channel_name,
-                voice_preset=channel_config['voice_preset'],
-                bark_model=channel_config['bark_model']
-            ))
-            
-            if result:
-                return jsonify({
-                    "success": True,
-                    "channel_name": channel_name,
-                    "text": text,
-                    "file_path": result.get('file_path'),
-                    "timestamp": datetime.now().isoformat()
-                })
-            else:
-                return jsonify({"error": "TTS processing failed"}), 500
-                
-        except ImportError:
-            return jsonify({"error": "TTS functionality not available"}), 503
-        except Exception as e:
-            app.logger.error(f"Error processing TTS for channel {channel_name}: {e}")
-            return jsonify({"error": f"TTS processing failed: {str(e)}"}), 500
+        
+        # Use start_tts_processing for consistency with bot's TTS generation
+        # This will process TTS in a background thread and use the notification system.
+        
+        # Generate a synthetic message_id for this web-initiated TTS
+        synthetic_message_id = f"webtts_{channel_name}_{int(time.time())}"
+        current_timestamp_str = datetime.now().isoformat()
+        
+        app.logger.info(f"Web UI TTS request for channel '{channel_name}'. Text: '{text[:30]}...'. Voice: '{channel_config['voice_preset']}'. MsgID: {synthetic_message_id}")
+
+        start_tts_processing(
+            input_text=text,
+            channel_name=channel_name,
+            db_file=db_file, # Ensure db_file is accessible here
+            message_id=synthetic_message_id,
+            timestamp_str=current_timestamp_str,
+            voice_preset_override=channel_config['voice_preset']
+            # bark_model is handled within process_text_thread if needed
+        )
+        
+        # Since start_tts_processing is threaded, we don't get an immediate file_path.
+        # The client-side will rely on WebSocket updates or polling for the new TTS entry.
+        return jsonify({
+            "success": True,
+            "message": "TTS generation initiated. Listen for updates.",
+            "channel_name": channel_name,
+            "text": text,
+            "timestamp": current_timestamp_str 
+            # file_path will be available via the tts_logs table and WebSocket notification
+        })
         
     except Exception as e:
-        app.logger.error(f"Error in channel TTS for {channel_name}: {e}")
+        app.logger.error(f"Error in channel TTS for {channel_name}: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
