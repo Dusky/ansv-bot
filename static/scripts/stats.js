@@ -184,7 +184,11 @@ function initializeDynamicElements() {
                 window.rebuildCacheForChannelGlobal(channelName);
             } else {
                 console.error('Rebuild function not found for channel:', channelName); // Keep console.error for actual errors
-                safeShowToast('Error: Rebuild functionality not available.', 'error');
+                if (window.notificationSystem && typeof window.notificationSystem.showToast === 'function') {
+                    window.notificationSystem.showToast('Error: Rebuild functionality not available.', 'error');
+                } else {
+                    alert('Error: Rebuild functionality not available.');
+                }
             }
         });
     });
@@ -201,7 +205,11 @@ function initializeDynamicElements() {
                 window.markovModule.sendMarkovMessage(channelName, this); // Pass button for UI updates
             } else {
                 console.error('Send message function not found for channel:', channelName); // Keep console.error for actual errors
-                safeShowToast('Error: Send message functionality not available.', 'error');
+                if (window.notificationSystem && typeof window.notificationSystem.showToast === 'function') {
+                    window.notificationSystem.showToast('Error: Send message functionality not available.', 'error');
+                } else {
+                    alert('Error: Send message functionality not available.');
+                }
             }
         });
     });
@@ -461,24 +469,6 @@ function loadBuildTimes() {
       if (lastRebuildElement) lastRebuildElement.textContent = "Error";
       if (timeSinceRebuildElement) timeSinceRebuildElement.textContent = "Error";
     });
-}
-
-// Helper function to safely show toast notifications
-function safeShowToast(message, type = 'info') {
-  try {
-    if (window.notificationSystem && typeof window.notificationSystem.showToast === 'function') {
-      window.notificationSystem.showToast(message, type);
-    } else if (typeof window.showToast === 'function') {
-      window.showToast(message, type);
-    } else {
-      if (window.DEBUG_MODE) console.log(`Toast (${type}): ${message}`);
-      if (type === 'error') {
-        alert(message); // Keep alert for errors if no toast system
-      }
-    }
-  } catch (e) {
-    console.error("Error showing toast:", e); // Keep console.error for actual errors
-  }
 }
 
 // Load stats when the page loads
