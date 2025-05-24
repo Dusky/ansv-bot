@@ -1,27 +1,3 @@
-// Helper function to safely show toast notifications
-function safeShowToast(message, type = 'info') {
-  // Function to safely display toast notifications using the notification system
-  try {
-    // Try using the namespaced version first
-    if (window.notificationSystem && typeof window.notificationSystem.showToast === 'function') {
-      window.notificationSystem.showToast(message, type);
-    }
-    // Fall back to global version
-    else if (typeof window.showToast === 'function') {
-      window.showToast(message, type);
-    }
-    // Last resort - log to console
-    else {
-      console.log(`Toast (${type}): ${message}`);
-      if (type === 'error') {
-        alert(message);
-      }
-    }
-  } catch (e) {
-    console.error("Error showing toast:", e);
-  }
-}
-
 // Main page functionality
 document.addEventListener('DOMContentLoaded', function() {
     // Initialize functions
@@ -132,7 +108,11 @@ function checkBotStatus() {
             // If there's an error message, display it
             if (data.error) {
                 console.warn('Bot status check warning:', data.error);
-                showToast('Bot status check warning: ' + data.error, 'warning');
+                if (window.notificationSystem && typeof window.notificationSystem.showToast === 'function') {
+                    window.notificationSystem.showToast('Bot status check warning: ' + data.error, 'warning');
+                } else {
+                    alert('Bot status check warning: ' + data.error);
+                }
             }
         })
         .catch(error => {
@@ -146,7 +126,11 @@ function checkBotStatus() {
             
             // Don't show toast for common errors
             if (error.message !== "Cannot read properties of null (reading 'disabled')") {
-                showToast('Failed to check bot status: ' + error.message, 'error');
+                if (window.notificationSystem && typeof window.notificationSystem.showToast === 'function') {
+                    window.notificationSystem.showToast('Failed to check bot status: ' + error.message, 'error');
+                } else {
+                    alert('Failed to check bot status: ' + error.message);
+                }
             }
         });
 }
@@ -501,7 +485,11 @@ function reconnectBot() {
         reconnectBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Reconnecting...';
     }
     
-    showToast('Attempting to reconnect bot...', 'info');
+    if (window.notificationSystem && typeof window.notificationSystem.showToast === 'function') {
+        window.notificationSystem.showToast('Attempting to reconnect bot...', 'info');
+    } else {
+        alert('Attempting to reconnect bot...');
+    }
     
     fetch('/api/reconnect-bot', {
         method: 'POST'
@@ -509,14 +497,26 @@ function reconnectBot() {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            showToast('Reconnect command sent', 'success');
+            if (window.notificationSystem && typeof window.notificationSystem.showToast === 'function') {
+                window.notificationSystem.showToast('Reconnect command sent', 'success');
+            } else {
+                alert('Reconnect command sent');
+            }
         } else {
-            showToast(data.message || 'Failed to reconnect', 'error');
+            if (window.notificationSystem && typeof window.notificationSystem.showToast === 'function') {
+                window.notificationSystem.showToast(data.message || 'Failed to reconnect', 'error');
+            } else {
+                alert(data.message || 'Failed to reconnect');
+            }
         }
     })
     .catch(error => {
         console.error('Error reconnecting bot:', error);
-        showToast('Error requesting reconnect', 'error');
+        if (window.notificationSystem && typeof window.notificationSystem.showToast === 'function') {
+            window.notificationSystem.showToast('Error requesting reconnect', 'error');
+        } else {
+            alert('Error requesting reconnect');
+        }
     })
     .finally(() => {
         if (reconnectBtn) {
@@ -542,7 +542,11 @@ function startBot() {
     if (startBotBtn) startBotBtn.disabled = true;
     if (stopBotBtn) stopBotBtn.disabled = true;
     
-    showToast('Starting bot...', 'info');
+    if (window.notificationSystem && typeof window.notificationSystem.showToast === 'function') {
+        window.notificationSystem.showToast('Starting bot...', 'info');
+    } else {
+        alert('Starting bot...');
+    }
     
     // Use the correct API endpoint from the existing application
     fetch('/start_bot', {
@@ -554,16 +558,28 @@ function startBot() {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            showToast('Bot started successfully', 'success');
+            if (window.notificationSystem && typeof window.notificationSystem.showToast === 'function') {
+                window.notificationSystem.showToast('Bot started successfully', 'success');
+            } else {
+                alert('Bot started successfully');
+            }
         } else {
-            showToast(`Failed to start bot: ${data.message || 'Unknown error'}`, 'error');
+            if (window.notificationSystem && typeof window.notificationSystem.showToast === 'function') {
+                window.notificationSystem.showToast(`Failed to start bot: ${data.message || 'Unknown error'}`, 'error');
+            } else {
+                alert(`Failed to start bot: ${data.message || 'Unknown error'}`);
+            }
         }
         
         checkBotStatus();
     })
     .catch(error => {
         console.error('Error starting bot:', error);
-        showToast('Error starting bot', 'error');
+        if (window.notificationSystem && typeof window.notificationSystem.showToast === 'function') {
+            window.notificationSystem.showToast('Error starting bot', 'error');
+        } else {
+            alert('Error starting bot');
+        }
         
         // Re-check status which will properly handle button states
         checkBotStatus();
@@ -580,7 +596,11 @@ function stopBot() {
     if (startBotBtn) startBotBtn.disabled = true;
     if (stopBotBtn) stopBotBtn.disabled = true;
     
-    showToast('Stopping bot...', 'info');
+    if (window.notificationSystem && typeof window.notificationSystem.showToast === 'function') {
+        window.notificationSystem.showToast('Stopping bot...', 'info');
+    } else {
+        alert('Stopping bot...');
+    }
     
     // Use the correct API endpoint from the existing application
     fetch('/stop_bot', {
@@ -592,16 +612,28 @@ function stopBot() {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            showToast('Bot stopped successfully', 'success');
+            if (window.notificationSystem && typeof window.notificationSystem.showToast === 'function') {
+                window.notificationSystem.showToast('Bot stopped successfully', 'success');
+            } else {
+                alert('Bot stopped successfully');
+            }
         } else {
-            showToast(`Failed to stop bot: ${data.message || 'Unknown error'}`, 'error');
+            if (window.notificationSystem && typeof window.notificationSystem.showToast === 'function') {
+                window.notificationSystem.showToast(`Failed to stop bot: ${data.message || 'Unknown error'}`, 'error');
+            } else {
+                alert(`Failed to stop bot: ${data.message || 'Unknown error'}`);
+            }
         }
         
         checkBotStatus();
     })
     .catch(error => {
         console.error('Error stopping bot:', error);
-        showToast('Error stopping bot', 'error');
+        if (window.notificationSystem && typeof window.notificationSystem.showToast === 'function') {
+            window.notificationSystem.showToast('Error stopping bot', 'error');
+        } else {
+            alert('Error stopping bot');
+        }
         
         // Re-check status which will properly handle button states
         checkBotStatus();
