@@ -47,24 +47,6 @@ function fetchAvailableModels() {
       .catch((error) => console.error("Error fetching models:", error));
 }
 
-// Helper function to safely show toast notifications
-function safeShowToast(message, type = 'info') {
-  try {
-    if (window.notificationSystem && typeof window.notificationSystem.showToast === 'function') {
-      window.notificationSystem.showToast(message, type);
-    } else if (typeof window.showToast === 'function') {
-      window.showToast(message, type);
-    } else {
-      console.log(`Toast (${type}): ${message}`);
-      if (type === 'error') {
-        alert(message);
-      }
-    }
-  } catch (e) {
-    console.error("Error showing toast:", e);
-  }
-}
-
 /**
  * Centralized message generation and sending
  * Provides a single interface for generating and sending messages to channels
@@ -172,7 +154,7 @@ window.MessageManager = window.MessageManager || {
     setButtonLoading: function(button, isLoading, isSending = false) {
         if (!button) return;
         const actionText = isSending ? 'Sending' : 'Generating';
-        const iconClass = isSending ? 'fa-comment-dots' : 'fa-paper-plane'; // Or some other appropriate icon
+        const iconClass = isSending ? 'fa-comment-dots' : 'fa-paper-plane';
 
         if (isLoading) {
             button.dataset.originalContent = button.innerHTML;
@@ -197,7 +179,12 @@ window.MessageManager = window.MessageManager || {
     },
     
     showNotification: function(message, type = 'info') {
-        safeShowToast(message, type);
+        if (window.notificationSystem && typeof window.notificationSystem.showToast === 'function') {
+            window.notificationSystem.showToast(message, type);
+        } else {
+            console.warn('Notification system not available. Message:', message, 'Type:', type);
+            alert(`(${type}) ${message}`); // Fallback alert
+        }
     }
 };
 
@@ -212,7 +199,11 @@ function rebuildCacheForChannel(channelName) {
     button.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Building...';
     button.disabled = true;
   } else {
-    safeShowToast(`Rebuilding cache for ${channelName}...`, 'info');
+    if (window.notificationSystem && typeof window.notificationSystem.showToast === 'function') {
+        window.notificationSystem.showToast(`Rebuilding cache for ${channelName}...`, 'info');
+    } else {
+        alert(`Rebuilding cache for ${channelName}...`);
+    }
   }
   
   fetch(`/rebuild-cache/${channelName}`, {
@@ -221,17 +212,29 @@ function rebuildCacheForChannel(channelName) {
     .then(response => response.json())
     .then(data => {
       if (data.success) {
-        safeShowToast(`Model for ${channelName} rebuilt successfully`, 'success');
+        if (window.notificationSystem && typeof window.notificationSystem.showToast === 'function') {
+            window.notificationSystem.showToast(`Model for ${channelName} rebuilt successfully`, 'success');
+        } else {
+            alert(`Model for ${channelName} rebuilt successfully`);
+        }
         if (typeof window.loadStatistics === 'function') {
           window.loadStatistics(); // Refresh stats table
         }
       } else {
-        safeShowToast(`Failed to rebuild model for ${channelName}: ${data.message || 'Unknown error'}`, 'error');
+        if (window.notificationSystem && typeof window.notificationSystem.showToast === 'function') {
+            window.notificationSystem.showToast(`Failed to rebuild model for ${channelName}: ${data.message || 'Unknown error'}`, 'error');
+        } else {
+            alert(`Failed to rebuild model for ${channelName}: ${data.message || 'Unknown error'}`);
+        }
       }
     })
     .catch(error => {
       console.error('Error rebuilding cache for:', channelName, error);
-      safeShowToast(`Error rebuilding model for ${channelName}: ${error.message}`, 'error');
+      if (window.notificationSystem && typeof window.notificationSystem.showToast === 'function') {
+        window.notificationSystem.showToast(`Error rebuilding model for ${channelName}: ${error.message}`, 'error');
+      } else {
+        alert(`Error rebuilding model for ${channelName}: ${error.message}`);
+      }
     })
     .finally(() => {
       if (button) {
@@ -291,9 +294,17 @@ function rebuildAllCaches() {
           .then(response => response.json())
           .then(data => {
               if (data.success) {
-                  safeShowToast('All caches rebuilt successfully', 'success');
+                  if (window.notificationSystem && typeof window.notificationSystem.showToast === 'function') {
+                    window.notificationSystem.showToast('All caches rebuilt successfully', 'success');
+                  } else {
+                    alert('All caches rebuilt successfully');
+                  }
               } else {
-                  safeShowToast(`Failed to rebuild all caches: ${data.message || 'Unknown error'}`, 'error');
+                  if (window.notificationSystem && typeof window.notificationSystem.showToast === 'function') {
+                    window.notificationSystem.showToast(`Failed to rebuild all caches: ${data.message || 'Unknown error'}`, 'error');
+                  } else {
+                    alert(`Failed to rebuild all caches: ${data.message || 'Unknown error'}`);
+                  }
               }
               if (typeof window.loadStatistics === 'function') {
                   window.loadStatistics();
@@ -301,7 +312,11 @@ function rebuildAllCaches() {
           })
           .catch(error => {
               console.error('Error rebuilding all caches:', error);
-              safeShowToast(`Error rebuilding all caches: ${error.message}`, 'error');
+              if (window.notificationSystem && typeof window.notificationSystem.showToast === 'function') {
+                window.notificationSystem.showToast(`Error rebuilding all caches: ${error.message}`, 'error');
+              } else {
+                alert(`Error rebuilding all caches: ${error.message}`);
+              }
           })
           .finally(() => {
               rebuildAllButton.disabled = false;
@@ -321,9 +336,17 @@ function rebuildGeneralCache() {
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    safeShowToast('General cache rebuilt successfully', 'success');
+                    if (window.notificationSystem && typeof window.notificationSystem.showToast === 'function') {
+                        window.notificationSystem.showToast('General cache rebuilt successfully', 'success');
+                    } else {
+                        alert('General cache rebuilt successfully');
+                    }
                 } else {
-                    safeShowToast(`Failed to rebuild general cache: ${data.message || 'Unknown error'}`, 'error');
+                    if (window.notificationSystem && typeof window.notificationSystem.showToast === 'function') {
+                        window.notificationSystem.showToast(`Failed to rebuild general cache: ${data.message || 'Unknown error'}`, 'error');
+                    } else {
+                        alert(`Failed to rebuild general cache: ${data.message || 'Unknown error'}`);
+                    }
                 }
                 if (typeof window.loadStatistics === 'function') {
                     window.loadStatistics();
@@ -331,7 +354,11 @@ function rebuildGeneralCache() {
             })
             .catch(error => {
                 console.error('Error rebuilding general cache:', error);
-                safeShowToast(`Error rebuilding general cache: ${error.message}`, 'error');
+                if (window.notificationSystem && typeof window.notificationSystem.showToast === 'function') {
+                    window.notificationSystem.showToast(`Error rebuilding general cache: ${error.message}`, 'error');
+                } else {
+                    alert(`Error rebuilding general cache: ${error.message}`);
+                }
             })
             .finally(() => {
                 rebuildGeneralButton.disabled = false;
