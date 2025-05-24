@@ -66,7 +66,7 @@ def get_last_10_tts_files_with_last_id(db_file_path): # Renamed db_file to db_fi
         conn = sqlite3.connect(db_file_path)
         c = conn.cursor()
         # Assuming 'message_id' is the primary key for tts_logs
-        c.execute("SELECT message_id, file_path, message, timestamp FROM tts_logs ORDER BY message_id DESC LIMIT 10")
+        c.execute("SELECT message_id, file_path, message, timestamp, channel FROM tts_logs ORDER BY message_id DESC LIMIT 10")
         rows = c.fetchall()
         conn.close()
         
@@ -78,7 +78,8 @@ def get_last_10_tts_files_with_last_id(db_file_path): # Renamed db_file to db_fi
                 "id": row[0],       # This is message_id
                 "file": row[1],     # This is file_path
                 "message": row[2],
-                "timestamp": row[3]
+                "timestamp": row[3],
+                "channel": row[4] if len(row) > 4 else None   # This is channel
             })
         
         return files_data, last_id_val
@@ -1475,6 +1476,160 @@ def api_channel_generate_message(channel_name):
     except Exception as e:
         app.logger.error(f"Error in channel message generation for {channel_name}: {e}")
         return jsonify({"error": str(e)}), 500
+
+@app.route('/beta')
+def beta_dashboard():
+    """Render the redesigned beta dashboard."""
+    try:
+        # Get bot status and basic info for the beta dashboard
+        bot_running = is_bot_actually_running()
+        
+        # Get channels data
+        conn = sqlite3.connect(db_file)
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        c.execute("SELECT * FROM channel_configs ORDER BY channel_name")
+        channels_data = [dict(row) for row in c.fetchall()]
+        conn.close()
+        
+        # Get recent TTS activity
+        recent_tts, _ = get_last_10_tts_files_with_last_id(db_file)
+        
+        return render_template("beta/dashboard.html", 
+                             bot_running=bot_running,
+                             channels=channels_data,
+                             recent_tts=recent_tts[:5])  # Just show 5 most recent
+        
+    except Exception as e:
+        app.logger.error(f"Error loading beta dashboard: {e}")
+        return render_template("500.html", error_message=f"Error loading beta dashboard: {str(e)}"), 500
+
+@app.route('/beta/stats')
+def beta_stats_page():
+    """Render the redesigned beta stats page."""
+    try:
+        # Get comprehensive stats data
+        bot_running = is_bot_actually_running()
+        
+        # Get model details
+        try:
+            model_details = markov_handler.get_available_models()
+            if not isinstance(model_details, list):
+                app.logger.error(f"Model details is not a list, got: {type(model_details)} - {model_details}")
+                model_details = []
+        except Exception as model_error:
+            app.logger.error(f"Error getting model details: {model_error}")
+            model_details = []
+        
+        # Get channels data
+        conn = sqlite3.connect(db_file)
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        c.execute("SELECT * FROM channel_configs ORDER BY channel_name")
+        channels_data = [dict(row) for row in c.fetchall()]
+        conn.close()
+        
+        # Get recent TTS and message stats
+        try:
+            recent_tts, _ = get_last_10_tts_files_with_last_id(db_file)
+            if not isinstance(recent_tts, list):
+                app.logger.error(f"Recent TTS is not a list, got: {type(recent_tts)} - {recent_tts}")
+                recent_tts = []
+        except Exception as tts_error:
+            app.logger.error(f"Error getting TTS data: {tts_error}")
+            recent_tts = []
+        
+        return render_template("beta/stats.html", 
+                             bot_running=bot_running,
+                             channels=channels_data,
+                             models=model_details,
+                             recent_tts=recent_tts[:10] if recent_tts else [])
+        
+    except Exception as e:
+        app.logger.error(f"Error loading beta stats page: {e}")
+        return render_template("500.html", error_message=f"Error loading stats: {str(e)}"), 500
+
+@app.route('/beta/settings')
+def beta_settings_page():
+    """Render the redesigned beta settings page."""
+    try:
+        bot_running = is_bot_actually_running()
+        
+        # Get channels data with additional info
+        conn = sqlite3.connect(db_file)
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        c.execute("SELECT * FROM channel_configs ORDER BY channel_name")
+        channels_data = [dict(row) for row in c.fetchall()]
+        conn.close()
+        
+        # Get bot status for connection info
+        bot_status = {}
+        if bot_running and os.path.exists("bot_heartbeat.json"):
+            try:
+                with open("bot_heartbeat.json", "r") as f:
+                    bot_status = json.load(f)
+            except (FileNotFoundError, json.JSONDecodeError):
+                pass
+        
+        # Add connection status to channels
+        heartbeat_channels = []
+        if bot_status.get('channels'):
+            heartbeat_channels = [ch.lstrip('#').lower() for ch in bot_status.get('channels', [])]
+        
+        for channel in channels_data:
+            channel['currently_connected'] = channel['channel_name'].lower() in heartbeat_channels
+        
+        return render_template("beta/settings.html", 
+                             bot_running=bot_running,
+                             channels=channels_data,
+                             bot_status=bot_status)
+        
+    except Exception as e:
+        app.logger.error(f"Error loading beta settings page: {e}")
+        return render_template("500.html", error_message=f"Error loading settings: {str(e)}"), 500
+
+@app.route('/beta/channel/<channel_name>')
+def beta_channel_page(channel_name):
+    """Render the redesigned beta channel page."""
+    try:
+        # Validate channel exists
+        conn = sqlite3.connect(db_file)
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        c.execute("SELECT * FROM channel_configs WHERE channel_name = ?", (channel_name,))
+        channel_config = c.fetchone()
+        conn.close()
+        
+        if not channel_config:
+            return render_template("404.html", error_message=f"Channel '{channel_name}' not found"), 404
+        
+        # Convert to dict for template
+        channel_data = dict(channel_config)
+        channel_data['name'] = channel_name
+        
+        # Get current bot status for this channel
+        bot_running = is_bot_actually_running()
+        currently_connected = False
+        
+        if bot_running and os.path.exists("bot_heartbeat.json"):
+            try:
+                with open("bot_heartbeat.json", "r") as f:
+                    heartbeat = json.load(f)
+                if time.time() - heartbeat.get("timestamp", 0) < 120:
+                    heartbeat_channels = [ch.lstrip('#') for ch in heartbeat.get("channels", [])]
+                    currently_connected = channel_name in heartbeat_channels
+            except (FileNotFoundError, json.JSONDecodeError):
+                pass
+        
+        channel_data['currently_connected'] = currently_connected
+        channel_data['bot_running'] = bot_running
+        
+        return render_template("beta/channel.html", channel=channel_data)
+        
+    except Exception as e:
+        app.logger.error(f"Error loading beta channel page for {channel_name}: {e}")
+        return render_template("500.html", error_message=f"Error loading channel data: {str(e)}"), 500
 
 @app.route('/api/channel/<channel_name>/tts', methods=['POST'])
 def api_channel_tts(channel_name):

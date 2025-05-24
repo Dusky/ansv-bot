@@ -1,0 +1,224 @@
+{% extends "beta/base.html" %}
+
+{% block title %}Dashboard - ANSV Bot Beta{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-4 py-3">
+    <!-- Hero Section -->
+    <div class="hero-section mb-4">
+        <div class="hero-content">
+            <h1 class="hero-title">
+                <i class="fas fa-robot me-3"></i>
+                ANSV Bot Dashboard
+            </h1>
+            <p class="hero-subtitle">Manage your Twitch bot channels and monitor activity</p>
+        </div>
+        <div class="hero-actions">
+            <button class="btn btn-primary btn-lg" id="quickActionsBtn">
+                <i class="fas fa-bolt me-2"></i>Quick Actions
+            </button>
+        </div>
+    </div>
+
+    <!-- Status Overview -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="status-overview">
+                <div class="status-card" id="botStatusCard">
+                    <div class="status-icon">
+                        <i class="fas fa-robot"></i>
+                    </div>
+                    <div class="status-content">
+                        <h3 class="status-title">Bot Status</h3>
+                        <p class="status-value" id="botStatusText">Checking...</p>
+                        <small class="status-subtitle" id="botUptimeText">-</small>
+                    </div>
+                </div>
+                
+                <div class="status-card" id="channelsStatusCard">
+                    <div class="status-icon">
+                        <i class="fas fa-hashtag"></i>
+                    </div>
+                    <div class="status-content">
+                        <h3 class="status-title">Active Channels</h3>
+                        <p class="status-value" id="activeChannelsCount">{{ channels|length }}</p>
+                        <small class="status-subtitle">Total configured</small>
+                    </div>
+                </div>
+                
+                <div class="status-card" id="ttsStatusCard">
+                    <div class="status-icon">
+                        <i class="fas fa-volume-up"></i>
+                    </div>
+                    <div class="status-content">
+                        <h3 class="status-title">TTS Activity</h3>
+                        <p class="status-value" id="ttsActivityCount">{{ recent_tts|length }}</p>
+                        <small class="status-subtitle">Recent generations</small>
+                    </div>
+                </div>
+                
+                <div class="status-card" id="messagesStatusCard">
+                    <div class="status-icon">
+                        <i class="fas fa-comments"></i>
+                    </div>
+                    <div class="status-content">
+                        <h3 class="status-title">Messages Today</h3>
+                        <p class="status-value" id="messagesTodayCount">-</p>
+                        <small class="status-subtitle">Across all channels</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Dashboard Grid -->
+    <div class="row">
+        <!-- Left Column: Channels -->
+        <div class="col-lg-8 mb-4">
+            <div class="dashboard-panel">
+                <div class="panel-header">
+                    <h2 class="panel-title">
+                        <i class="fas fa-hashtag me-2"></i>
+                        Channels
+                    </h2>
+                    <div class="panel-actions">
+                        <button class="btn btn-outline-primary btn-sm" id="refreshChannelsBtn">
+                            <i class="fas fa-sync-alt"></i>
+                        </button>
+                        <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addChannelModal">
+                            <i class="fas fa-plus me-1"></i>Add Channel
+                        </button>
+                    </div>
+                </div>
+                <div class="panel-body">
+                    <div class="channels-grid" id="channelsGrid">
+                        {% for channel in channels %}
+                        <div class="channel-card" data-channel="{{ channel.channel_name }}">
+                            <div class="channel-header">
+                                <div class="channel-info">
+                                    <h3 class="channel-name">#{{ channel.channel_name }}</h3>
+                                    <div class="channel-status">
+                                        {% if channel.join_channel %}
+                                            <span class="status-badge status-connected">
+                                                <i class="fas fa-circle"></i>
+                                                Active
+                                            </span>
+                                        {% else %}
+                                            <span class="status-badge status-disconnected">
+                                                <i class="fas fa-circle"></i>
+                                                Disabled
+                                            </span>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                                <div class="channel-actions">
+                                    <a href="/beta/channel/{{ channel.channel_name }}" class="btn btn-outline-primary btn-sm">
+                                        <i class="fas fa-external-link-alt"></i>
+                                    </a>
+                                </div>
+                            </div>
+                            
+                            <div class="channel-stats">
+                                <div class="stat-item">
+                                    <i class="fas fa-volume-up text-success"></i>
+                                    <span>TTS: {{ 'On' if channel.tts_enabled else 'Off' }}</span>
+                                </div>
+                                <div class="stat-item">
+                                    <i class="fas fa-robot text-info"></i>
+                                    <span>Auto-Reply: {{ 'On' if channel.voice_enabled else 'Off' }}</span>
+                                </div>
+                                <div class="stat-item">
+                                    <i class="fas fa-clock text-warning"></i>
+                                    <span>{{ channel.lines_between_messages or 100 }} lines</span>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Column: Activity & Quick Actions -->
+        <div class="col-lg-4">
+            <!-- Recent TTS Activity -->
+            <div class="dashboard-panel mb-4">
+                <div class="panel-header">
+                    <h2 class="panel-title">
+                        <i class="fas fa-volume-up me-2"></i>
+                        Recent TTS
+                    </h2>
+                </div>
+                <div class="panel-body">
+                    <div class="activity-feed" id="recentTtsFeed">
+                        {% for tts in recent_tts %}
+                        <div class="activity-item">
+                            <div class="activity-icon">
+                                <i class="fas fa-volume-up"></i>
+                            </div>
+                            <div class="activity-content">
+                                <p class="activity-text">{{ tts.message[:50] }}{% if tts.message|length > 50 %}...{% endif %}</p>
+                                <small class="activity-time">{{ tts.timestamp }}</small>
+                            </div>
+                            {% if tts.file %}
+                            <div class="activity-actions">
+                                <button class="btn btn-sm btn-outline-primary play-tts-btn" data-file="{{ tts.file }}">
+                                    <i class="fas fa-play"></i>
+                                </button>
+                            </div>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                        {% if not recent_tts %}
+                        <div class="empty-state">
+                            <i class="fas fa-volume-mute text-muted"></i>
+                            <p class="text-muted mb-0">No recent TTS activity</p>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Quick Actions -->
+            <div class="dashboard-panel">
+                <div class="panel-header">
+                    <h2 class="panel-title">
+                        <i class="fas fa-bolt me-2"></i>
+                        Quick Actions
+                    </h2>
+                </div>
+                <div class="panel-body">
+                    <div class="quick-actions">
+                        <button class="action-btn" id="rebuildAllBtn">
+                            <i class="fas fa-sync-alt"></i>
+                            <span>Rebuild All Models</span>
+                        </button>
+                        
+                        <button class="action-btn" id="botControlBtn">
+                            <i class="fas fa-power-off"></i>
+                            <span id="botControlText">Start Bot</span>
+                        </button>
+                        
+                        <a href="/tts-history" class="action-btn">
+                            <i class="fas fa-history"></i>
+                            <span>TTS History</span>
+                        </a>
+                        
+                        <a href="/logs" class="action-btn">
+                            <i class="fas fa-file-alt"></i>
+                            <span>View Logs</span>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Audio Player (Hidden) -->
+<audio id="ttsAudioPlayer" style="display: none;"></audio>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='scripts/beta-dashboard.js') }}"></script>
+{% endblock %}
