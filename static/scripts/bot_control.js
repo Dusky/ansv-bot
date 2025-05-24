@@ -53,7 +53,7 @@ window.BotController = window.BotController || {
                     console.log('Found existing bot instance:', data);
                     
                     // Show notification using notification system
-                    this.showNotification(`Bot is already running (PID: ${data.pid})`, 'info');
+                    window.notificationSystem.showToast(`Bot is already running (PID: ${data.pid})`, 'info');
                     
                     // Trigger status check to update buttons
                     if (window.BotStatus) {
@@ -77,7 +77,7 @@ window.BotController = window.BotController || {
         startBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Starting...';
         
         // Show a loading notification
-        this.showNotification('Starting bot...', 'info');
+        window.notificationSystem.showToast('Starting bot...', 'info');
         
         // Get TTS status with better validation
         const ttsElement = document.getElementById('enable_tts');
@@ -117,12 +117,12 @@ window.BotController = window.BotController || {
             console.log('Bot start response:', data);
             
             if (data.success) {
-                this.showNotification('Bot started successfully', 'success');
+                window.notificationSystem.showToast('Bot started successfully', 'success');
                 
                 // Reset the button text immediately for successful start
                 startBtn.innerHTML = '<i class="fas fa-play me-2"></i>Start Bot';
             } else {
-                this.showNotification(`Failed to start bot: ${data.message || 'Unknown error'}`, 'error');
+                window.notificationSystem.showToast(`Failed to start bot: ${data.message || 'Unknown error'}`, 'error');
                 
                 // Show detailed error information
                 if (errorDisplay) {
@@ -146,7 +146,7 @@ window.BotController = window.BotController || {
         })
         .catch(error => {
             console.error('Error starting bot:', error);
-            this.showNotification(`Error starting bot: ${error.message}`, 'error');
+            window.notificationSystem.showToast(`Error starting bot: ${error.message}`, 'error');
             
             // Show the error in the UI
             if (errorDisplay) {
@@ -177,7 +177,7 @@ window.BotController = window.BotController || {
             document.getElementById('stopBotBtn').disabled = true;
             
             // Show a loading notification
-            this.showNotification('Stopping bot...', 'info');
+            window.notificationSystem.showToast('Stopping bot...', 'info');
             
             fetch('/stop_bot', {
                 method: 'POST'
@@ -185,9 +185,9 @@ window.BotController = window.BotController || {
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    this.showNotification('Bot stopped successfully', 'success');
+                    window.notificationSystem.showToast('Bot stopped successfully', 'success');
                 } else {
-                    this.showNotification(`Failed to stop bot: ${data.message}`, 'error');
+                    window.notificationSystem.showToast(`Failed to stop bot: ${data.message}`, 'error');
                 }
                 
                 // Update status immediately
@@ -197,7 +197,7 @@ window.BotController = window.BotController || {
             })
             .catch(error => {
                 console.error('Error stopping bot:', error);
-                this.showNotification('Error stopping bot', 'error');
+                window.notificationSystem.showToast('Error stopping bot', 'error');
                 
                 // Restore button states based on last known status
                 document.getElementById('startBotBtn').disabled = false;
@@ -415,56 +415,56 @@ window.BotController = window.BotController || {
         const endpoint = type === 'join' ? `/api/channel/${channelName}/toggle-join` : `/api/channel/${channelName}/toggle-tts`;
         const actionText = type === 'join' ? 'join status' : 'TTS status';
 
-        this.showNotification(`Toggling ${actionText} for ${channelName}...`, 'info');
+        window.notificationSystem.showToast(`Toggling ${actionText} for ${channelName}...`, 'info');
 
         fetch(endpoint, { method: 'POST' })
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    this.showNotification(data.message, 'success');
+                    window.notificationSystem.showToast(data.message, 'success');
                     this.loadChannels(); // Refresh table
                 } else {
-                    this.showNotification(`Failed to toggle ${actionText}: ${data.message || 'Unknown error'}`, 'error');
+                    window.notificationSystem.showToast(`Failed to toggle ${actionText}: ${data.message || 'Unknown error'}`, 'error');
                 }
             })
             .catch(error => {
                 console.error(`Error toggling ${actionText} for ${channelName}:`, error);
-                this.showNotification(`Error toggling ${actionText}: ${error.message}`, 'error');
+                window.notificationSystem.showToast(`Error toggling ${actionText}: ${error.message}`, 'error');
             });
     },
 
     joinChannel: function(channelName) {
-        this.showNotification(`Attempting to join channel: ${channelName}...`, 'info');
+        window.notificationSystem.showToast(`Attempting to join channel: ${channelName}...`, 'info');
         fetch(`/join-channel/${channelName}`, { method: 'POST' })
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    this.showNotification(`Successfully sent join command for ${channelName}.`, 'success');
+                    window.notificationSystem.showToast(`Successfully sent join command for ${channelName}.`, 'success');
                 } else {
-                    this.showNotification(`Failed to join ${channelName}: ${data.message || 'Unknown error'}`, 'error');
+                    window.notificationSystem.showToast(`Failed to join ${channelName}: ${data.message || 'Unknown error'}`, 'error');
                 }
                 this.loadChannels(); // Refresh list
             })
             .catch(error => {
-                this.showNotification(`Error joining ${channelName}: ${error.message}`, 'error');
+                window.notificationSystem.showToast(`Error joining ${channelName}: ${error.message}`, 'error');
                 this.loadChannels(); // Refresh list
             });
     },
 
     leaveChannel: function(channelName) {
-        this.showNotification(`Attempting to leave channel: ${channelName}...`, 'info');
+        window.notificationSystem.showToast(`Attempting to leave channel: ${channelName}...`, 'info');
         fetch(`/leave-channel/${channelName}`, { method: 'POST' })
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    this.showNotification(`Successfully sent leave command for ${channelName}.`, 'success');
+                    window.notificationSystem.showToast(`Successfully sent leave command for ${channelName}.`, 'success');
                 } else {
-                    this.showNotification(`Failed to leave ${channelName}: ${data.message || 'Unknown error'}`, 'error');
+                    window.notificationSystem.showToast(`Failed to leave ${channelName}: ${data.message || 'Unknown error'}`, 'error');
                 }
                 this.loadChannels(); // Refresh list
             })
             .catch(error => {
-                this.showNotification(`Error leaving ${channelName}: ${error.message}`, 'error');
+                window.notificationSystem.showToast(`Error leaving ${channelName}: ${error.message}`, 'error');
                 this.loadChannels(); // Refresh list
             });
     },
@@ -499,29 +499,6 @@ window.BotController = window.BotController || {
             .replace(/>/g, "&gt;")
             .replace(/"/g, "&quot;")
             .replace(/'/g, "&#039;");
-    },
-    
-    // Safely show notifications using the notification system
-    showNotification: function(message, type = 'info') {
-        try {
-            // Try using the namespaced version first
-            if (window.notificationSystem && typeof window.notificationSystem.showToast === 'function') {
-                window.notificationSystem.showToast(message, type);
-            }
-            // Fall back to global version
-            else if (typeof window.showToast === 'function') {
-                window.showToast(message, type);
-            }
-            // Last resort - log to console
-            else {
-                console.log(`Toast (${type}): ${message}`);
-                if (type === 'error') {
-                    alert(message);
-                }
-            }
-        } catch (e) {
-            console.error("Error showing notification:", e);
-        }
     }
 };
 
@@ -537,7 +514,7 @@ document.addEventListener('DOMContentLoaded', function() {
             if (logContainer) {
                 logContainer.innerHTML = '<div class="text-muted p-2">Logs cleared from display.</div>';
             }
-            window.BotController.showNotification('System logs display cleared.', 'info');
+            window.notificationSystem.showToast('System logs display cleared.', 'info');
         });
     }
 });
@@ -583,7 +560,5 @@ function leaveChannel(channelName) {
 }
 
 
-// Legacy function for safely showing toast notifications
-function safeShowToast(message, type = 'info') {
-    window.BotController.showNotification(message, type);
-}
+// Legacy global safeShowToast is removed as BotController.showNotification is removed.
+// The primary window.showToast (from notification.js) should be used.
