@@ -1184,6 +1184,7 @@ body {
   background: var(--beta-surface-color);
   border-radius: var(--beta-border-radius-sm);
   border: 1px solid var(--beta-border-color);
+  margin-bottom: var(--beta-spacing-md);
 }
 
 .channels-table-container {
@@ -1242,6 +1243,33 @@ body {
   display: flex;
   flex-direction: column;
   gap: var(--beta-spacing-sm);
+  margin-bottom: var(--beta-spacing-lg);
+}
+
+.tts-setting-group {
+  margin-bottom: var(--beta-spacing-xl);
+  padding-bottom: var(--beta-spacing-lg);
+  border-bottom: 1px solid var(--beta-border-color);
+}
+
+.tts-setting-group:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+
+.action-item {
+  margin-bottom: var(--beta-spacing-lg);
+  padding-bottom: var(--beta-spacing-md);
+  border-bottom: 1px solid var(--beta-border-color);
+}
+
+.action-item:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+
+.settings-panel + .settings-panel {
+  margin-top: var(--beta-spacing-xl);
 }
 
 .form-check-input:checked {
