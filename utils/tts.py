@@ -61,9 +61,18 @@ class TTSModelCache:
                 from transformers import AutoProcessor, BarkModel
                 import torch
                 
+                # Check PyTorch version compatibility
+                pytorch_version = torch.__version__
+                logging.info(f"TTS: Using PyTorch version {pytorch_version} with device {device}")
+                
                 processor = AutoProcessor.from_pretrained(model_path)
                 model = BarkModel.from_pretrained(model_path)
-                model = model.to(device)
+                
+                # Force CPU device if CPU-only mode
+                if str(device) == "cpu":
+                    model = model.to(torch.device("cpu"))
+                else:
+                    model = model.to(device)
                 
                 # Apply optimizations for CUDA
                 if device.type == "cuda":
@@ -88,6 +97,15 @@ class TTSModelCache:
                 logging.info(f"TTS: Successfully cached model {model_path}")
                 return cached_model
                 
+            except AttributeError as ae:
+                if 'get_default_device' in str(ae):
+                    logging.error(f"TTS: PyTorch compatibility error - {ae}")
+                    logging.error("TTS: This suggests a version mismatch between PyTorch and transformers")
+                    logging.error(f"TTS: Current PyTorch version: {torch.__version__}")
+                    logging.error("TTS: Try upgrading PyTorch to 2.2+ or downgrading transformers")
+                else:
+                    logging.error(f"TTS: AttributeError loading model {model_path}: {ae}")
+                return None
             except Exception as e:
                 logging.error(f"TTS: Failed to load model {model_path}: {e}")
                 return None
