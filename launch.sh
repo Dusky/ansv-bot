@@ -279,6 +279,18 @@ start_bot() {
         echo -e "${GREEN}Using existing dependencies${NC}"
     fi
     
+    # Run database migrations if not coming from clean install
+    if [[ -z "${CLEAN_INSTALL_DONE:-}" ]]; then
+        safe_kill_process "$load_pid"
+        if ! run_database_migrations; then
+            echo -e "${RED}Database migration failed${NC}"
+            exit 1
+        fi
+        # Restart loading animation
+        show_loading &
+        load_pid=$!
+    fi
+    
     # Validate virtual environment
     if [[ ! -f "$VENV_DIR/bin/activate" ]]; then
         echo -e "${RED}Virtual environment not found at $VENV_DIR${NC}"
@@ -470,6 +482,21 @@ parse_arguments() {
             --dev) DEV=true ;;
             --web-only) WEB_ONLY=true ;;
             --clean) CLEAN=true ;;
+            --migrate-db) 
+                if [[ ! -f "$VENV_DIR/bin/activate" ]]; then
+                    echo -e "${RED}Virtual environment not found! Run --clean first.${NC}"
+                    exit 1
+                fi
+                
+                # shellcheck disable=SC1091
+                source "$VENV_DIR/bin/activate" || {
+                    echo -e "${RED}Failed to activate virtual environment${NC}"
+                    exit 1
+                }
+                
+                run_database_migrations
+                exit $?
+                ;;
             -h|--help) show_help; exit 0 ;;
             *) echo -e "${RED}Unknown option: $1${NC}"; exit 1 ;;
         esac
@@ -513,6 +540,7 @@ show_help() {
     echo "  --dev       : Start web interface in development mode"
     echo "  --web-only  : Start web interface without bot"
     echo "  --clean     : Perform fresh install"
+    echo "  --migrate-db: Run database migrations manually"
     echo "  --help      : Show this help message"
     echo
     echo "${YELLOW}Configuration:${NC}"
@@ -524,6 +552,7 @@ show_help() {
     echo "  ./launch.sh --tts --verbose # Bot with TTS and detailed logs"
     echo "  ./launch.sh --tts --voice-preset v2/en_speaker_9  # Use specific voice"
     echo "  ./launch.sh --download-models # Pre-download models"
+    echo "  ./launch.sh --migrate-db     # Run database migrations"
     echo "  ./launch.sh --dev            # Dev server with hot reload"
 }
 
@@ -727,8 +756,67 @@ clean_install() {
     
     check_dependencies
     install_requirements
+    
+    # Run database migrations
+    if ! run_database_migrations; then
+        echo -e "${RED}Database migration failed during clean install${NC}"
+        exit 1
+    fi
+    
     export CLEAN_INSTALL_DONE=true
     echo -e "${GREEN}✅ Fresh environment created!${NC}"
+}
+
+run_database_migrations() {
+    echo -e "${CYAN}🗄️ Running database migrations...${NC}"
+    
+    # Ensure we're in the virtual environment
+    if [[ ! -f "$VENV_DIR/bin/activate" ]]; then
+        echo -e "${RED}Virtual environment not found!${NC}"
+        return 1
+    fi
+    
+    # shellcheck disable=SC1091
+    source "$VENV_DIR/bin/activate" || {
+        echo -e "${RED}Failed to activate virtual environment${NC}"
+        return 1
+    }
+    
+    # Check if we need to migrate to user system
+    if [[ ! -f "ansv.db" ]] || ! python -c "
+import sqlite3
+import sys
+try:
+    conn = sqlite3.connect('ansv.db')
+    cursor = conn.cursor()
+    cursor.execute(\"SELECT name FROM sqlite_master WHERE type='table' AND name='users'\")
+    result = cursor.fetchone()
+    conn.close()
+    sys.exit(0 if result else 1)
+except:
+    sys.exit(1)
+" 2>/dev/null; then
+        echo -e "${YELLOW}User management system not found. Running migration...${NC}"
+        
+        # Run user migration
+        if ! python utils/migrate_to_users.py --db ansv.db; then
+            echo -e "${RED}Failed to migrate user system${NC}"
+            return 1
+        fi
+        
+        echo -e "${GREEN}✅ User migration completed${NC}"
+    else
+        echo -e "${GREEN}✅ User management system already exists${NC}"
+    fi
+    
+    # Verify migration was successful
+    if ! python utils/migrate_to_users.py --verify-only --db ansv.db; then
+        echo -e "${RED}Migration verification failed${NC}"
+        return 1
+    fi
+    
+    echo -e "${GREEN}✅ Database migrations completed successfully${NC}"
+    return 0
 }
 
 prepare_tts_directories() {
