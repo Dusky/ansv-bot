@@ -3,6 +3,24 @@ document.addEventListener('DOMContentLoaded', function() {
     initializeSettingsPage();
 });
 
+// Toast notification function
+function showToast(message, type = 'info') {
+    // Use the global notification system if available
+    if (window.notificationSystem && window.notificationSystem.showToast) {
+        window.notificationSystem.showToast(message, type);
+    } else if (window.showToast) {
+        window.showToast(message, type);
+    } else {
+        // Fallback to console log
+        console.log(`[${type.toUpperCase()}] ${message}`);
+        
+        // For errors, also use alert as fallback
+        if (type === 'error') {
+            alert(`Error: ${message}`);
+        }
+    }
+}
+
 function initializeSettingsPage() {
     setupTabSwitching();
     setupChannelSettings();
@@ -10,6 +28,7 @@ function initializeSettingsPage() {
     setupTTSSettings();
     setupAdvancedSettings();
     loadCurrentSettings();
+    updateBotStatus(); // Add bot status checking
 }
 
 function setupTabSwitching() {
@@ -686,3 +705,97 @@ function getSelectedChannels() {
     const selectedCheckboxes = document.querySelectorAll('.channel-select:checked');
     return Array.from(selectedCheckboxes).map(checkbox => checkbox.value);
 }
+
+// Function to update bot status display
+async function updateBotStatus() {
+    const statusIcon = document.getElementById('botStatusIcon');
+    const statusTitle = document.getElementById('botStatusTitle');
+    const statusDesc = document.getElementById('botStatusDesc');
+    const uptimeElement = document.getElementById('botUptime');
+    const connectedChannelsElement = document.getElementById('connectedChannels');
+    const memoryUsageElement = document.getElementById('memoryUsage');
+    
+    try {
+        const response = await fetch('/api/bot-status');
+        if (!response.ok) throw new Error('Failed to fetch bot status');
+        
+        const data = await response.json();
+        
+        // Update status display
+        if (statusIcon && statusTitle && statusDesc) {
+            if (data.running) {
+                statusIcon.className = 'fas fa-robot text-success';
+                statusTitle.textContent = 'Bot Online';
+                statusDesc.textContent = data.connected ? 'Connected and running normally' : 'Running but not connected to Twitch';
+                statusDesc.className = data.connected ? 'status-description text-success' : 'status-description text-warning';
+            } else {
+                statusIcon.className = 'fas fa-robot text-danger';
+                statusTitle.textContent = 'Bot Offline';
+                statusDesc.textContent = 'Bot is currently stopped';
+                statusDesc.className = 'status-description text-danger';
+            }
+        }
+        
+        // Update performance metrics if elements exist
+        if (uptimeElement && data.uptime) {
+            const uptime = formatUptime(data.uptime);
+            uptimeElement.textContent = uptime;
+        } else if (uptimeElement) {
+            uptimeElement.textContent = data.running ? 'Just started' : 'Offline';
+        }
+        
+        if (connectedChannelsElement && typeof data.connected_channels !== 'undefined') {
+            connectedChannelsElement.textContent = data.connected_channels;
+        }
+        
+        if (memoryUsageElement && data.memory_usage) {
+            memoryUsageElement.textContent = data.memory_usage;
+        }
+        
+        // Show/hide bot control buttons based on status
+        const startBtn = document.getElementById('startBotBtn');
+        const stopBtn = document.getElementById('stopBotBtn');
+        
+        if (startBtn && stopBtn) {
+            if (data.running) {
+                startBtn.style.display = 'none';
+                stopBtn.style.display = 'inline-block';
+            } else {
+                startBtn.style.display = 'inline-block';
+                stopBtn.style.display = 'none';
+            }
+        }
+        
+    } catch (error) {
+        console.error('Error fetching bot status:', error);
+        
+        // Show error state
+        if (statusIcon && statusTitle && statusDesc) {
+            statusIcon.className = 'fas fa-robot text-warning';
+            statusTitle.textContent = 'Status Unknown';
+            statusDesc.textContent = 'Unable to connect to bot service';
+            statusDesc.className = 'status-description text-warning';
+        }
+    }
+}
+
+// Helper function to format uptime
+function formatUptime(seconds) {
+    if (!seconds || seconds < 0) return 'Unknown';
+    
+    const days = Math.floor(seconds / (24 * 3600));
+    const hours = Math.floor((seconds % (24 * 3600)) / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+    
+    let result = '';
+    if (days > 0) result += `${days}d `;
+    if (hours > 0 || days > 0) result += `${hours}h `;
+    if (minutes > 0 || hours > 0 || days > 0) result += `${minutes}m `;
+    result += `${secs}s`;
+    
+    return result.trim();
+}
+
+// Set up periodic status updates (every 30 seconds)
+setInterval(updateBotStatus, 30000);

@@ -3,6 +3,9 @@ import markovify
 import logging
 import json
 import sqlite3 # Import the sqlite3 module
+import asyncio
+import aiofiles
+from concurrent.futures import ThreadPoolExecutor
 
 
 class MarkovHandler:
@@ -10,6 +13,8 @@ class MarkovHandler:
         self.cache_directory = cache_directory
         self.models = {}
         self.logger = logging.getLogger(__name__)
+        # PERFORMANCE: Thread pool for CPU-intensive operations
+        self.thread_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="markov-worker")
 
 
     def load_models(self):
@@ -53,6 +58,27 @@ class MarkovHandler:
             self.logger.error(f"Cache file not found: {cache_file_path}")
         except Exception as e:
             self.logger.error(f"Error loading model from {cache_file_path}: {e}")
+        return None
+
+    async def async_load_model_from_cache(self, filename):
+        """PERFORMANCE: Async version of load_model_from_cache for non-blocking file I/O"""
+        cache_file_path = os.path.join(self.cache_directory, filename)
+        self.logger.debug(f"Trying to async load model from: {cache_file_path}")
+        try:
+            async with aiofiles.open(cache_file_path, "r") as f:
+                model_json = await f.read()
+                self.logger.debug(f"Successfully async loaded model from: {cache_file_path}")
+                # CPU-intensive operation - run in thread pool
+                loop = asyncio.get_event_loop()
+                return await loop.run_in_executor(
+                    self.thread_pool, 
+                    markovify.Text.from_json, 
+                    model_json
+                )
+        except FileNotFoundError:
+            self.logger.error(f"Cache file not found: {cache_file_path}")
+        except Exception as e:
+            self.logger.error(f"Error async loading model from {cache_file_path}: {e}")
         return None
 
 
@@ -392,6 +418,83 @@ class MarkovHandler:
                 self.logger.error(f"Failed to record build time: {record_error}")
             return False
 
+    async def async_rebuild_cache_for_channel(self, channel_name, logs_directory):
+        """
+        PERFORMANCE: Async version of rebuild_cache_for_channel for non-blocking file I/O
+        """
+        import time
+        
+        # Check if inputs are valid
+        if not channel_name:
+            self.logger.error("Empty channel name provided to async_rebuild_cache_for_channel")
+            return False
+            
+        if not logs_directory or not os.path.exists(logs_directory):
+            self.logger.error(f"Invalid logs directory: {logs_directory}")
+            return False
+            
+        # Create cache directory if it doesn't exist
+        if not os.path.exists(self.cache_directory):
+            try:
+                os.makedirs(self.cache_directory)
+                self.logger.info(f"Created cache directory: {self.cache_directory}")
+            except Exception as e:
+                self.logger.error(f"Failed to create cache directory: {e}")
+                return False
+        
+        # Check if log file exists
+        log_file_path = os.path.join(logs_directory, f'{channel_name}.txt')
+        if not os.path.exists(log_file_path):
+            self.logger.error(f'Log file not found: {log_file_path}')
+            return False
+
+        try:
+            # Record start time
+            start_time = time.time()
+            self.logger.info(f"Starting async rebuild of cache for channel: {channel_name}")
+            
+            # PERFORMANCE: Async file read
+            async with aiofiles.open(log_file_path, 'r', encoding='utf-8', errors='ignore') as file:
+                text = await file.read()
+                
+            if not text or len(text.strip()) == 0:
+                self.logger.warning(f"Empty log file for channel {channel_name}")
+                self.record_build_time(channel_name, start_time, 0, False)
+                return False
+                
+            # PERFORMANCE: CPU-intensive model creation in thread pool
+            loop = asyncio.get_event_loop()
+            model = await loop.run_in_executor(
+                self.thread_pool, 
+                markovify.Text, 
+                text
+            )
+            
+            # Store in memory
+            self.models[channel_name] = model
+            
+            # PERFORMANCE: Async save to cache
+            await self.async_save_model_to_cache(channel_name, model)
+            
+            # Calculate duration and record build time
+            end_time = time.time()
+            duration = end_time - start_time
+            success = True
+            
+            # Save build time information
+            self.record_build_time(channel_name, start_time, duration, success)
+            
+            self.logger.info(f"Successfully async rebuilt cache for channel {channel_name} in {duration:.2f}s")
+            return True
+        except Exception as e:
+            self.logger.error(f'Error async rebuilding cache for {channel_name}: {e}')
+            # Record failed build
+            try:
+                self.record_build_time(channel_name, time.time(), 0, False)
+            except Exception as record_error:
+                self.logger.error(f"Failed to record build time: {record_error}")
+            return False
+
     def save_model_to_cache(self, channel_name, model):
         """
         Saves a Markov model to a cache file.
@@ -431,6 +534,51 @@ class MarkovHandler:
             return True
         except Exception as e:
             self.logger.error(f'Error saving model to cache for {channel_name}: {e}')
+            return False
+
+    async def async_save_model_to_cache(self, channel_name, model):
+        """
+        PERFORMANCE: Async version of save_model_to_cache for non-blocking file I/O
+        
+        Args:
+            channel_name (str): Name of the channel/model
+            model (markovify.Text): Markov model to save
+        
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            # Create cache directory if it doesn't exist
+            if not os.path.exists(self.cache_directory):
+                os.makedirs(self.cache_directory)
+                self.logger.info(f"Created cache directory: {self.cache_directory}")
+            
+            # Generate file path
+            cache_file_path = os.path.join(self.cache_directory, f'{channel_name}_model.json')
+            
+            # PERFORMANCE: CPU-intensive JSON conversion in thread pool
+            loop = asyncio.get_event_loop()
+            model_json = await loop.run_in_executor(
+                self.thread_pool, 
+                model.to_json
+            )
+            
+            # PERFORMANCE: Async file write with atomic pattern
+            temp_path = cache_file_path + '.tmp'
+            async with aiofiles.open(temp_path, 'w', encoding='utf-8') as cache_file:
+                await cache_file.write(model_json)
+                await cache_file.flush()
+                # Note: aiofiles doesn't support fsync directly, but the OS will handle this
+                
+            # Rename temp file to actual file (atomic operation)
+            if os.path.exists(cache_file_path):
+                os.remove(cache_file_path)  # Remove old file if it exists
+            os.rename(temp_path, cache_file_path)
+            
+            self.logger.info(f'Successfully async saved model to cache: {cache_file_path}')
+            return True
+        except Exception as e:
+            self.logger.error(f'Error async saving model to cache for {channel_name}: {e}')
             return False
         
     def rebuild_general_cache(self, logs_directory):
@@ -519,6 +667,110 @@ class MarkovHandler:
             return True
         except Exception as e:
             self.logger.error(f"Error creating general model: {e}")
+            
+            # Record failed build
+            try:
+                self.record_build_time("general_markov", start_time, 0, False)
+            except Exception as record_error:
+                self.logger.error(f"Failed to record build time: {record_error}")
+                
+            return False
+
+    async def async_rebuild_general_cache(self, logs_directory):
+        """
+        PERFORMANCE: Async version of rebuild_general_cache for non-blocking file I/O
+        
+        Args:
+            logs_directory (str): Path to directory containing log files
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        import time
+        
+        # Check if logs directory exists
+        if not logs_directory or not os.path.exists(logs_directory):
+            self.logger.error(f"Invalid logs directory: {logs_directory}")
+            return False
+            
+        # Start time tracking
+        start_time = time.time()
+        self.logger.info(f"Starting async rebuild of general cache")
+        
+        try:
+            # Create cache directory if it doesn't exist
+            if not os.path.exists(self.cache_directory):
+                os.makedirs(self.cache_directory)
+                self.logger.info(f"Created cache directory: {self.cache_directory}")
+            
+            # PERFORMANCE: Async read and combine all text from log files
+            combined_text = ""
+            file_count = 0
+            total_chars = 0
+            
+            for filename in os.listdir(logs_directory):
+                if filename.endswith('.txt') and filename != "general_markov.txt":  # Skip the general_markov.txt file
+                    file_path = os.path.join(logs_directory, filename)
+                    try:
+                        async with aiofiles.open(file_path, 'r', encoding='utf-8', errors='ignore') as file:
+                            file_text = await file.read()
+                            combined_text += file_text + "\n"
+                            total_chars += len(file_text)
+                            file_count += 1
+                    except Exception as e:
+                        self.logger.warning(f"Error async reading file {file_path}: {e}")
+                        # Continue with other files rather than failing completely
+                        continue
+
+            # Check if we have enough text
+            if not combined_text or len(combined_text.strip()) < 100:
+                self.logger.warning(f"Insufficient text found to build general model. Found {len(combined_text)} characters from {file_count} files.")
+                self.record_build_time("general_markov", start_time, 0, False)
+                return False
+                
+            # Log progress
+            self.logger.info(f"Read {file_count} files with total {total_chars} characters for general model")
+                
+            # PERFORMANCE: CPU-intensive model creation in thread pool
+            loop = asyncio.get_event_loop()
+            general_model = await loop.run_in_executor(
+                self.thread_pool, 
+                markovify.Text, 
+                combined_text
+            )
+            
+            # Save to memory
+            self.models["general_markov"] = general_model
+            
+            # PERFORMANCE: Async save to cache with atomic write pattern
+            cache_file_path = os.path.join(self.cache_directory, 'general_markov_model.json')
+            
+            # Convert model to JSON in thread pool
+            model_json = await loop.run_in_executor(
+                self.thread_pool, 
+                general_model.to_json
+            )
+            
+            # Async file write
+            temp_path = cache_file_path + '.tmp'
+            async with aiofiles.open(temp_path, 'w', encoding='utf-8') as cache_file:
+                await cache_file.write(model_json)
+                await cache_file.flush()
+                
+            # Rename temp file to actual file (atomic operation)
+            if os.path.exists(cache_file_path):
+                os.remove(cache_file_path)  # Remove old file if it exists
+            os.rename(temp_path, cache_file_path)
+            
+            # Record timing
+            end_time = time.time()
+            duration = end_time - start_time
+            self.record_build_time("general_markov", start_time, duration, True)
+            
+            self.logger.info(f'Successfully async built and saved general model in {duration:.2f}s')
+            return True
+        except Exception as e:
+            self.logger.error(f"Error async creating general model: {e}")
             
             # Record failed build
             try:

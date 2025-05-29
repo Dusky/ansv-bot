@@ -1,0 +1,623 @@
+{% extends "beta/base.html" %}
+
+{% block title %}Admin - User Management{% endblock %}
+
+{% block head %}
+{{ super() }}
+<style>
+.admin-header {
+    background: linear-gradient(135deg, #dc3545, #ff6b7d);
+    color: white;
+    padding: 2rem 0;
+    margin-bottom: 2rem;
+    border-radius: 15px;
+}
+
+.admin-header h1 {
+    margin: 0;
+    font-size: 2.5rem;
+    font-weight: 700;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+}
+
+.admin-header p {
+    margin: 0.5rem 0 0 0;
+    font-size: 1.1rem;
+    opacity: 0.9;
+}
+
+.user-table {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 15px;
+    overflow: hidden;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+}
+
+.user-table th {
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    font-weight: 600;
+    padding: 1rem;
+}
+
+.user-table td {
+    border: none;
+    padding: 1rem;
+    vertical-align: middle;
+}
+
+.role-badge {
+    padding: 0.25rem 0.75rem;
+    border-radius: 50px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.role-admin {
+    background: linear-gradient(135deg, #dc3545, #ff6b7d);
+    color: white;
+}
+
+.role-streamer {
+    background: linear-gradient(135deg, #28a745, #5cb85c);
+    color: white;
+}
+
+.role-viewer {
+    background: linear-gradient(135deg, #6c757d, #868e96);
+    color: white;
+}
+
+.action-buttons {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.btn-action {
+    padding: 0.375rem 0.75rem;
+    border-radius: 8px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    border: none;
+    transition: all 0.2s ease;
+}
+
+.btn-edit {
+    background: linear-gradient(135deg, #007bff, #0056b3);
+    color: white;
+}
+
+.btn-edit:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 123, 255, 0.3);
+}
+
+.btn-delete {
+    background: linear-gradient(135deg, #dc3545, #c82333);
+    color: white;
+}
+
+.btn-delete:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(220, 53, 69, 0.3);
+}
+
+.btn-channels {
+    background: linear-gradient(135deg, #17a2b8, #138496);
+    color: white;
+}
+
+.btn-channels:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(23, 162, 184, 0.3);
+}
+
+.create-user-btn {
+    background: linear-gradient(135deg, #28a745, #1e7e34);
+    color: white;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: 1rem;
+    transition: all 0.3s ease;
+    margin-bottom: 1.5rem;
+}
+
+.create-user-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(40, 167, 69, 0.3);
+    color: white;
+}
+
+.modal-content {
+    border-radius: 15px;
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(10px);
+}
+
+.modal-header {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 15px 15px 0 0;
+    background: linear-gradient(135deg, #007bff, #0056b3);
+    color: white;
+}
+
+.modal-title {
+    font-weight: 600;
+}
+
+.form-control, .form-select {
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--bs-body-color);
+}
+
+.form-control:focus, .form-select:focus {
+    border-color: #007bff;
+    box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+    background: rgba(255, 255, 255, 0.15);
+}
+
+.channel-count {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.channel-count .badge {
+    background: linear-gradient(135deg, #6f42c1, #5a3b9e);
+    color: white;
+    border-radius: 50px;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+}
+
+.last-login {
+    font-size: 0.875rem;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.user-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #6f42c1, #5a3b9e);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-weight: 600;
+    font-size: 1.1rem;
+    margin-right: 0.75rem;
+}
+
+.user-info {
+    display: flex;
+    align-items: center;
+}
+
+.user-details {
+    display: flex;
+    flex-direction: column;
+}
+
+.username {
+    font-weight: 600;
+    font-size: 1rem;
+}
+
+.email {
+    font-size: 0.875rem;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+@media (max-width: 768px) {
+    .action-buttons {
+        flex-direction: column;
+    }
+    
+    .btn-action {
+        width: 100%;
+        margin-bottom: 0.25rem;
+    }
+    
+    .admin-header h1 {
+        font-size: 2rem;
+    }
+    
+    .user-table {
+        font-size: 0.875rem;
+    }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Admin Header -->
+    <div class="admin-header text-center">
+        <h1><i class="fas fa-users-cog me-3"></i>User Management</h1>
+        <p>Manage all user accounts, roles, and permissions</p>
+    </div>
+
+    <!-- Create User Button -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <button class="btn create-user-btn" data-bs-toggle="modal" data-bs-target="#createUserModal">
+                <i class="fas fa-plus me-2"></i>Create New User
+            </button>
+        </div>
+    </div>
+
+    <!-- Users Table -->
+    <div class="row">
+        <div class="col-12">
+            <div class="user-table">
+                <table class="table table-dark table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th>User</th>
+                            <th>Role</th>
+                            <th>Channels</th>
+                            <th>Last Login</th>
+                            <th>Member Since</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for user in users %}
+                        <tr>
+                            <td>
+                                <div class="user-info">
+                                    <div class="user-avatar">
+                                        {{ user.username[0]|upper }}
+                                    </div>
+                                    <div class="user-details">
+                                        <div class="username">{{ user.username }}</div>
+                                        <div class="email">{{ user.email }}</div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td>
+                                <span class="role-badge role-{{ user.role_name }}">
+                                    {{ user.role_display_name }}
+                                </span>
+                            </td>
+                            <td>
+                                <div class="channel-count">
+                                    {% if user.channel_count > 0 %}
+                                        <i class="fas fa-hashtag"></i>
+                                        <span class="badge">{{ user.channel_count }}</span>
+                                    {% else %}
+                                        <span class="text-muted">No channels</span>
+                                    {% endif %}
+                                </div>
+                            </td>
+                            <td>
+                                <div class="last-login">
+                                    {% if user.last_login %}
+                                        {{ user.last_login|strftime('%Y-%m-%d %H:%M') }}
+                                    {% else %}
+                                        <span class="text-muted">Never</span>
+                                    {% endif %}
+                                </div>
+                            </td>
+                            <td>
+                                <div class="last-login">
+                                    {{ user.created_at|strftime('%Y-%m-%d') }}
+                                </div>
+                            </td>
+                            <td>
+                                <div class="action-buttons">
+                                    <button class="btn btn-action btn-edit" 
+                                            onclick="editUser({{ user.user_id }}, '{{ user.username }}', '{{ user.email }}', {{ user.role_id }})">
+                                        <i class="fas fa-edit"></i>
+                                    </button>
+                                    <button class="btn btn-action btn-channels" 
+                                            onclick="manageChannels({{ user.user_id }}, '{{ user.username }}')">
+                                        <i class="fas fa-hashtag"></i>
+                                    </button>
+                                    {% if current_user.user_id != user.user_id %}
+                                    <button class="btn btn-action btn-delete" 
+                                            onclick="deleteUser({{ user.user_id }}, '{{ user.username }}')">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                    {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Create User Modal -->
+<div class="modal fade" id="createUserModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Create New User</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="createUserForm">
+                    <div class="mb-3">
+                        <label for="createUsername" class="form-label">Username</label>
+                        <input type="text" class="form-control" id="createUsername" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="createEmail" class="form-label">Email</label>
+                        <input type="email" class="form-control" id="createEmail" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="createPassword" class="form-label">Password</label>
+                        <input type="password" class="form-control" id="createPassword" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="createRole" class="form-label">Role</label>
+                        <select class="form-select" id="createRole" required>
+                            {% for role in roles %}
+                            <option value="{{ role.id }}">{{ role.display_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="createUser()">Create User</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit User Modal -->
+<div class="modal fade" id="editUserModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Edit User</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="editUserForm">
+                    <input type="hidden" id="editUserId">
+                    <div class="mb-3">
+                        <label for="editUsername" class="form-label">Username</label>
+                        <input type="text" class="form-control" id="editUsername" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editEmail" class="form-label">Email</label>
+                        <input type="email" class="form-control" id="editEmail" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editRole" class="form-label">Role</label>
+                        <select class="form-select" id="editRole" required>
+                            {% for role in roles %}
+                            <option value="{{ role.id }}">{{ role.display_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="updateUser()">Save Changes</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Channel Assignment Modal -->
+<div class="modal fade" id="channelModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Manage Channels</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="channelForm">
+                    <input type="hidden" id="channelUserId">
+                    <div class="mb-3">
+                        <label class="form-label">Assigned Channels</label>
+                        <div id="channelsList" style="max-height: 300px; overflow-y: auto;">
+                            <!-- Channels will be loaded here -->
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="updateChannels()">Save Changes</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+function createUser() {
+    const username = document.getElementById('createUsername').value;
+    const email = document.getElementById('createEmail').value;
+    const password = document.getElementById('createPassword').value;
+    const role_id = document.getElementById('createRole').value;
+    
+    fetch('/admin/users/create', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            username: username,
+            email: email,
+            password: password,
+            role_id: parseInt(role_id)
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            window.notificationSystem.showToast('success', data.message);
+            document.getElementById('createUserForm').reset();
+            bootstrap.Modal.getInstance(document.getElementById('createUserModal')).hide();
+            location.reload();
+        } else {
+            window.notificationSystem.showToast('error', data.error || 'Failed to create user');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        window.notificationSystem.showToast('error', 'Error creating user');
+    });
+}
+
+function editUser(userId, username, email, roleId) {
+    document.getElementById('editUserId').value = userId;
+    document.getElementById('editUsername').value = username;
+    document.getElementById('editEmail').value = email;
+    document.getElementById('editRole').value = roleId;
+    
+    new bootstrap.Modal(document.getElementById('editUserModal')).show();
+}
+
+function updateUser() {
+    const userId = document.getElementById('editUserId').value;
+    const username = document.getElementById('editUsername').value;
+    const email = document.getElementById('editEmail').value;
+    const role_id = document.getElementById('editRole').value;
+    
+    fetch(`/admin/users/${userId}/edit`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            username: username,
+            email: email,
+            role_id: parseInt(role_id)
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            window.notificationSystem.showToast('success', data.message);
+            bootstrap.Modal.getInstance(document.getElementById('editUserModal')).hide();
+            location.reload();
+        } else {
+            window.notificationSystem.showToast('error', data.error || 'Failed to update user');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        window.notificationSystem.showToast('error', 'Error updating user');
+    });
+}
+
+function deleteUser(userId, username) {
+    if (confirm(`Are you sure you want to delete user "${username}"? This action cannot be undone.`)) {
+        fetch(`/admin/users/${userId}/delete`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                window.notificationSystem.showToast('success', data.message);
+                location.reload();
+            } else {
+                window.notificationSystem.showToast('error', data.error || 'Failed to delete user');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            window.notificationSystem.showToast('error', 'Error deleting user');
+        });
+    }
+}
+
+function manageChannels(userId, username) {
+    document.getElementById('channelUserId').value = userId;
+    document.querySelector('#channelModal .modal-title').textContent = `Manage Channels - ${username}`;
+    
+    // Load available channels and user's current assignments
+    fetch('/api/channels')
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            const channelsList = document.getElementById('channelsList');
+            channelsList.innerHTML = '';
+            
+            // Get user's current channels
+            fetch(`/api/user/${userId}/channels`)
+            .then(response => response.json())
+            .then(userChannels => {
+                const assignedChannels = userChannels.success ? userChannels.channels : [];
+                
+                data.data.forEach(channel => {
+                    const isAssigned = assignedChannels.includes(channel.channel_name);
+                    const channelItem = document.createElement('div');
+                    channelItem.className = 'form-check';
+                    channelItem.innerHTML = `
+                        <input class="form-check-input" type="checkbox" value="${channel.channel_name}" 
+                               id="channel_${channel.channel_name}" ${isAssigned ? 'checked' : ''}>
+                        <label class="form-check-label" for="channel_${channel.channel_name}">
+                            #${channel.channel_name}
+                        </label>
+                    `;
+                    channelsList.appendChild(channelItem);
+                });
+                
+                new bootstrap.Modal(document.getElementById('channelModal')).show();
+            });
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        window.notificationSystem.showToast('error', 'Error loading channels');
+    });
+}
+
+function updateChannels() {
+    const userId = document.getElementById('channelUserId').value;
+    const checkboxes = document.querySelectorAll('#channelsList input[type="checkbox"]:checked');
+    const selectedChannels = Array.from(checkboxes).map(cb => cb.value);
+    
+    fetch(`/admin/users/${userId}/assign-channels`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            channels: selectedChannels
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            window.notificationSystem.showToast('success', data.message);
+            bootstrap.Modal.getInstance(document.getElementById('channelModal')).hide();
+            location.reload();
+        } else {
+            window.notificationSystem.showToast('error', data.error || 'Failed to update channels');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        window.notificationSystem.showToast('error', 'Error updating channels');
+    });
+}
+</script>
+{% endblock %}

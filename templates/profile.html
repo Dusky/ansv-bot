@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>User Profile - ANSV Bot</title>
+    
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Beta CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/beta.css') }}">
+    
+    <style>
+        body {
+            background: var(--beta-bg-primary);
+            font-family: var(--beta-font-family);
+            min-height: 100vh;
+            padding: var(--beta-spacing-2xl) 0;
+        }
+        
+        .profile-container {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 0 var(--beta-spacing-lg);
+        }
+        
+        .profile-card {
+            background: var(--beta-card-bg);
+            border: 1px solid var(--beta-border-color);
+            border-radius: var(--beta-border-radius-lg);
+            box-shadow: var(--beta-shadow-lg);
+            padding: var(--beta-spacing-4xl);
+            margin-bottom: var(--beta-spacing-2xl);
+        }
+        
+        .profile-header {
+            text-align: center;
+            margin-bottom: var(--beta-spacing-4xl);
+        }
+        
+        .profile-avatar {
+            width: 80px;
+            height: 80px;
+            background: linear-gradient(135deg, var(--beta-primary), var(--beta-secondary));
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: var(--beta-font-size-3xl);
+            margin: 0 auto var(--beta-spacing-lg);
+        }
+        
+        .profile-name {
+            font-size: var(--beta-font-size-2xl);
+            font-weight: 700;
+            color: var(--beta-text-primary);
+            margin-bottom: var(--beta-spacing-xs);
+        }
+        
+        .profile-role {
+            display: inline-block;
+            background: var(--beta-primary-light);
+            color: var(--beta-primary-dark);
+            padding: var(--beta-spacing-xs) var(--beta-spacing-md);
+            border-radius: var(--beta-border-radius-sm);
+            font-size: var(--beta-font-size-sm);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .section-title {
+            font-size: var(--beta-font-size-lg);
+            font-weight: 600;
+            color: var(--beta-text-primary);
+            margin-bottom: var(--beta-spacing-lg);
+            display: flex;
+            align-items: center;
+            gap: var(--beta-spacing-sm);
+        }
+        
+        .form-floating {
+            margin-bottom: var(--beta-spacing-lg);
+        }
+        
+        .form-control {
+            background: var(--beta-surface-color);
+            border: 1px solid var(--beta-border-color);
+            border-radius: var(--beta-border-radius-sm);
+        }
+        
+        .form-control:focus {
+            border-color: var(--beta-primary);
+            box-shadow: 0 0 0 0.2rem rgba(99, 102, 241, 0.15);
+            background: var(--beta-surface-color);
+        }
+        
+        .btn-update {
+            background: var(--beta-primary);
+            border: none;
+            color: white;
+            padding: var(--beta-spacing-md) var(--beta-spacing-2xl);
+            border-radius: var(--beta-border-radius-sm);
+            font-weight: 600;
+            transition: var(--beta-transition);
+        }
+        
+        .btn-update:hover {
+            background: var(--beta-primary-hover);
+            color: white;
+            transform: translateY(-1px);
+        }
+        
+        .btn-back {
+            background: transparent;
+            border: 1px solid var(--beta-border-color);
+            color: var(--beta-text-secondary);
+            padding: var(--beta-spacing-md) var(--beta-spacing-xl);
+            border-radius: var(--beta-border-radius-sm);
+            font-weight: 600;
+            text-decoration: none;
+            transition: var(--beta-transition);
+            display: inline-flex;
+            align-items: center;
+            gap: var(--beta-spacing-sm);
+        }
+        
+        .btn-back:hover {
+            background: var(--beta-hover-bg);
+            color: var(--beta-text-primary);
+            border-color: var(--beta-primary);
+            text-decoration: none;
+        }
+        
+        .alert {
+            border: none;
+            border-radius: var(--beta-border-radius-sm);
+            padding: var(--beta-spacing-lg);
+            margin-bottom: var(--beta-spacing-lg);
+        }
+        
+        .alert-success {
+            background: var(--beta-success-light);
+            color: var(--beta-success-dark);
+            border-left: 4px solid var(--beta-success);
+        }
+        
+        .alert-danger {
+            background: var(--beta-danger-light);
+            color: var(--beta-danger-dark);
+            border-left: 4px solid var(--beta-danger);
+        }
+        
+        .user-info {
+            background: var(--beta-surface-color);
+            border-radius: var(--beta-border-radius-sm);
+            padding: var(--beta-spacing-lg);
+            margin-bottom: var(--beta-spacing-2xl);
+        }
+        
+        .user-info-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: var(--beta-spacing-sm) 0;
+            border-bottom: 1px solid var(--beta-border-color);
+        }
+        
+        .user-info-item:last-child {
+            border-bottom: none;
+        }
+        
+        .user-info-label {
+            font-weight: 600;
+            color: var(--beta-text-secondary);
+            font-size: var(--beta-font-size-sm);
+        }
+        
+        .user-info-value {
+            color: var(--beta-text-primary);
+        }
+    </style>
+</head>
+<body>
+    <div class="profile-container">
+        <!-- Header -->
+        <div class="profile-card">
+            <div class="profile-header">
+                <div class="profile-avatar">
+                    <i class="fas fa-user"></i>
+                </div>
+                <div class="profile-name">{{ user.username }}</div>
+                <div class="profile-role">{{ user.role_display_name }}</div>
+            </div>
+            
+            <!-- User Information -->
+            <div class="user-info">
+                <div class="user-info-item">
+                    <span class="user-info-label">
+                        <i class="fas fa-envelope me-2"></i>Email
+                    </span>
+                    <span class="user-info-value">{{ user.email or 'Not set' }}</span>
+                </div>
+                <div class="user-info-item">
+                    <span class="user-info-label">
+                        <i class="fas fa-calendar me-2"></i>Member Since
+                    </span>
+                    <span class="user-info-value">{{ user.created_at.split('T')[0] if user.created_at else 'Unknown' }}</span>
+                </div>
+                <div class="user-info-item">
+                    <span class="user-info-label">
+                        <i class="fas fa-clock me-2"></i>Last Login
+                    </span>
+                    <span class="user-info-value">{{ user.last_login.split('T')[0] if user.last_login else 'Never' }}</span>
+                </div>
+                {% if user.role_name == 'streamer' %}
+                <div class="user-info-item">
+                    <span class="user-info-label">
+                        <i class="fas fa-tv me-2"></i>Assigned Channels
+                    </span>
+                    <span class="user-info-value">
+                        {{ get_user_channels() | length }} channels
+                    </span>
+                </div>
+                {% endif %}
+            </div>
+            
+            <!-- Navigation -->
+            <div class="text-center">
+                <a href="/beta" class="btn-back">
+                    <i class="fas fa-arrow-left"></i>
+                    Back to Dashboard
+                </a>
+            </div>
+        </div>
+        
+        <!-- Change Password -->
+        <div class="profile-card">
+            <h3 class="section-title">
+                <i class="fas fa-key"></i>
+                Change Password
+            </h3>
+            
+            <div id="passwordAlert" class="alert" style="display: none;"></div>
+            
+            <form id="passwordForm">
+                <div class="form-floating">
+                    <input type="password" class="form-control" id="currentPassword" name="current_password" placeholder="Current Password" required>
+                    <label for="currentPassword">Current Password</label>
+                </div>
+                
+                <div class="form-floating">
+                    <input type="password" class="form-control" id="newPassword" name="new_password" placeholder="New Password" required>
+                    <label for="newPassword">New Password</label>
+                </div>
+                
+                <div class="form-floating">
+                    <input type="password" class="form-control" id="confirmPassword" name="confirm_password" placeholder="Confirm New Password" required>
+                    <label for="confirmPassword">Confirm New Password</label>
+                </div>
+                
+                <button type="submit" class="btn btn-update" id="passwordBtn">
+                    <i class="fas fa-save me-2"></i>
+                    Update Password
+                </button>
+            </form>
+        </div>
+        
+        <!-- Change Email -->
+        <div class="profile-card">
+            <h3 class="section-title">
+                <i class="fas fa-envelope"></i>
+                Change Email
+            </h3>
+            
+            <div id="emailAlert" class="alert" style="display: none;"></div>
+            
+            <form id="emailForm">
+                <div class="form-floating">
+                    <input type="email" class="form-control" id="newEmail" name="new_email" placeholder="New Email" required value="{{ user.email or '' }}">
+                    <label for="newEmail">New Email Address</label>
+                </div>
+                
+                <div class="form-floating">
+                    <input type="password" class="form-control" id="emailPassword" name="password" placeholder="Confirm Password" required>
+                    <label for="emailPassword">Confirm Password</label>
+                </div>
+                
+                <button type="submit" class="btn btn-update" id="emailBtn">
+                    <i class="fas fa-save me-2"></i>
+                    Update Email
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <script>
+        // Password change form
+        document.getElementById('passwordForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const btn = document.getElementById('passwordBtn');
+            const alert = document.getElementById('passwordAlert');
+            const formData = new FormData(this);
+            
+            // Show loading state
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Updating...';
+            
+            try {
+                const response = await fetch('/profile/change-password', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showAlert('passwordAlert', 'success', result.message);
+                    this.reset();
+                } else {
+                    showAlert('passwordAlert', 'danger', result.error);
+                }
+            } catch (error) {
+                showAlert('passwordAlert', 'danger', 'Error updating password');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-save me-2"></i>Update Password';
+            }
+        });
+        
+        // Email change form
+        document.getElementById('emailForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const btn = document.getElementById('emailBtn');
+            const alert = document.getElementById('emailAlert');
+            const formData = new FormData(this);
+            
+            // Show loading state
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Updating...';
+            
+            try {
+                const response = await fetch('/profile/change-email', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showAlert('emailAlert', 'success', result.message);
+                    // Clear password field but keep email
+                    document.getElementById('emailPassword').value = '';
+                } else {
+                    showAlert('emailAlert', 'danger', result.error);
+                }
+            } catch (error) {
+                showAlert('emailAlert', 'danger', 'Error updating email');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-save me-2"></i>Update Email';
+            }
+        });
+        
+        // Helper function to show alerts
+        function showAlert(alertId, type, message) {
+            const alert = document.getElementById(alertId);
+            alert.className = `alert alert-${type}`;
+            alert.textContent = message;
+            alert.style.display = 'block';
+            
+            // Auto-hide after 5 seconds
+            setTimeout(() => {
+                alert.style.display = 'none';
+            }, 5000);
+        }
+        
+        // Theme management (inherit from main app)
+        function initializeTheme() {
+            const savedTheme = localStorage.getItem('beta-theme') || 'light';
+            document.documentElement.setAttribute('data-bs-theme', savedTheme);
+        }
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeTheme();
+        });
+    </script>
+</body>
+</html>

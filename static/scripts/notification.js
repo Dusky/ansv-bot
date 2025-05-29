@@ -11,13 +11,17 @@ window.notificationSystem = window.notificationSystem || {};
 window.notificationSystem.recentToasts = [];
 
 /**
- * Primary toast notification function
+ * Primary toast notification function with enhanced user experience
  * @param {string} message - The message to display
  * @param {string} type - The type of notification: 'success', 'error', 'warning', or 'info'
  * @param {number} duration - How long to show the toast in milliseconds
+ * @param {Object} options - Additional options for enhanced UX
+ * @param {string} options.action - Optional action button text
+ * @param {Function} options.actionCallback - Callback for action button
+ * @param {boolean} options.persistent - Whether the toast should stay until dismissed
  * @returns {string} The ID of the created toast element
  */
-window.notificationSystem.showToast = function(message, type = 'info', duration = 5000) {
+window.notificationSystem.showToast = function(message, type = 'info', duration = 5000, options = {}) {
     console.log(`Showing toast: ${message} (${type})`);
     
     // DUPLICATE PREVENTION: Check if we've shown this message recently
@@ -137,8 +141,139 @@ window.notificationSystem.showToast = function(message, type = 'info', duration 
     return toastId;
 };
 
-// Export the function to the global window object for backward compatibility
+/**
+ * Enhanced error handling with user-friendly messages and actionable advice
+ * @param {Error|string} error - The error object or message
+ * @param {string} context - Context where the error occurred (e.g., 'bot_control', 'tts_generation')
+ * @param {Object} options - Additional options for error handling
+ */
+window.notificationSystem.handleError = function(error, context = 'general', options = {}) {
+    let userMessage = '';
+    let technicalMessage = '';
+    let actionButton = null;
+    
+    // Extract error message
+    if (typeof error === 'string') {
+        technicalMessage = error;
+    } else if (error?.message) {
+        technicalMessage = error.message;
+    } else {
+        technicalMessage = 'An unknown error occurred';
+    }
+    
+    // Context-specific user-friendly messages
+    switch (context) {
+        case 'bot_control':
+            if (technicalMessage.includes('not running')) {
+                userMessage = 'Bot is not currently running. ';
+                actionButton = {
+                    text: 'Start Bot',
+                    callback: () => window.BotControl?.startBot?.()
+                };
+            } else if (technicalMessage.includes('connection')) {
+                userMessage = 'Connection issue detected. Check your internet connection and try again.';
+            } else {
+                userMessage = 'Bot control operation failed. ';
+            }
+            break;
+            
+        case 'tts_generation':
+            if (technicalMessage.includes('model')) {
+                userMessage = 'TTS model not loaded. This may take a moment to download.';
+                actionButton = {
+                    text: 'Download Models',
+                    callback: () => fetch('/download-models', {method: 'POST'})
+                };
+            } else {
+                userMessage = 'Voice generation failed. ';
+            }
+            break;
+            
+        case 'api_request':
+            if (technicalMessage.includes('404')) {
+                userMessage = 'Requested resource not found. Please refresh the page.';
+                actionButton = {
+                    text: 'Refresh',
+                    callback: () => window.location.reload()
+                };
+            } else if (technicalMessage.includes('500')) {
+                userMessage = 'Server error occurred. Please try again in a moment.';
+            } else if (technicalMessage.includes('network')) {
+                userMessage = 'Network connection problem. Check your internet connection.';
+            } else {
+                userMessage = 'Request failed. ';
+            }
+            break;
+            
+        case 'markov_generation':
+            userMessage = 'Message generation failed. The bot may need more training data.';
+            break;
+            
+        default:
+            userMessage = 'An error occurred. ';
+    }
+    
+    // Append suggestion to check logs for technical users
+    if (!actionButton) {
+        userMessage += 'Check the browser console for technical details.';
+    }
+    
+    // Show the error with enhanced options
+    const toastOptions = {
+        persistent: true, // Errors should stay visible
+        ...options
+    };
+    
+    if (actionButton) {
+        toastOptions.action = actionButton.text;
+        toastOptions.actionCallback = actionButton.callback;
+    }
+    
+    console.error(`Error in ${context}:`, technicalMessage);
+    return this.showToast(userMessage, 'error', 10000, toastOptions);
+};
+
+/**
+ * Show success message with optional next steps
+ * @param {string} message - Success message
+ * @param {Object} options - Additional options
+ */
+window.notificationSystem.showSuccess = function(message, options = {}) {
+    return this.showToast(message, 'success', 5000, options);
+};
+
+/**
+ * Show loading state notification
+ * @param {string} message - Loading message
+ * @returns {string} Toast ID for updating/dismissing
+ */
+window.notificationSystem.showLoading = function(message) {
+    return this.showToast(`⏳ ${message}`, 'info', 0, { persistent: true });
+};
+
+/**
+ * Update existing loading notification with completion
+ * @param {string} toastId - ID of loading toast to update
+ * @param {string} message - Completion message
+ * @param {string} type - Type of completion ('success' or 'error')
+ */
+window.notificationSystem.completeLoading = function(toastId, message, type = 'success') {
+    // Remove the loading toast
+    const loadingToast = document.getElementById(toastId);
+    if (loadingToast) {
+        loadingToast.remove();
+    }
+    
+    // Show completion message
+    return this.showToast(message, type, 5000);
+};
+
+// Export enhanced functions to global window object for backward compatibility
 window.showToast = window.notificationSystem.showToast;
+window.handleError = window.notificationSystem.handleError;
+window.showSuccess = window.notificationSystem.showSuccess;
+window.showLoading = window.notificationSystem.showLoading;
+window.completeLoading = window.notificationSystem.completeLoading;
 
 // Local function for internal use
 function showToast(message, type = 'info', duration = 5000) {

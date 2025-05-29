@@ -8,6 +8,8 @@ import sqlite3
 from datetime import datetime
 import os
 import math
+from functools import lru_cache
+from collections import OrderedDict
 
 from colorama import init
 from datetime import datetime
@@ -49,6 +51,41 @@ except Exception as e:
     channels = []
 
 
+class LRUCache:
+    """Memory-efficient LRU (Least Recently Used) cache to prevent memory leaks."""
+    
+    def __init__(self, maxsize=1000):
+        self.maxsize = maxsize
+        self.cache = OrderedDict()
+    
+    def __contains__(self, key):
+        return key in self.cache
+    
+    def __getitem__(self, key):
+        if key in self.cache:
+            # Move to end (most recently used)
+            self.cache.move_to_end(key)
+            return self.cache[key]
+        raise KeyError(key)
+    
+    def __setitem__(self, key, value):
+        if key in self.cache:
+            # Update existing key and move to end
+            self.cache[key] = value
+            self.cache.move_to_end(key)
+        else:
+            # Add new key
+            self.cache[key] = value
+            # Remove oldest if over size limit
+            if len(self.cache) > self.maxsize:
+                self.cache.popitem(last=False)  # Remove oldest (first) item
+    
+    def get(self, key, default=None):
+        try:
+            return self[key]
+        except KeyError:
+            return default
+
 
 class Bot(commands.Bot):
     def __init__(
@@ -81,8 +118,9 @@ class Bot(commands.Bot):
         self.ignored_users = []
         self.chat_line_count = 0
         self.last_message_time = time.time()
-        self.user_colors = {}
-        self.channel_colors = {}
+        # PERFORMANCE: Use memory-efficient caches with size limits to prevent memory leaks
+        self.user_colors = LRUCache(maxsize=1000)  # Limit to 1000 users
+        self.channel_colors = LRUCache(maxsize=100)  # Limit to 100 channels
         self.logger = logging.getLogger("bot")
         self.logger.setLevel(logging.INFO)
         formatter = logging.Formatter("%(asctime)s:%(levelname)s:%(name)s: %(message)s")
@@ -1035,23 +1073,29 @@ class Bot(commands.Bot):
         if not username or username.strip() == "":
             return 7  # Default gray for empty usernames
         
-        if username not in self.user_colors:
+        # PERFORMANCE: Use cache with automatic memory management
+        cached_color = self.user_colors.get(username)
+        if cached_color is None:
             # Generate color based on username (simple hash)
             color_num = sum(ord(c) for c in username) % 200 + 20  # Range 20-220 to avoid dark colors
             self.user_colors[username] = color_num
+            return color_num
             
-        return self.user_colors[username]
+        return cached_color
 
     def get_channel_color(self, channel_name):
         """Get a consistent color number for a channel."""
         clean_channel = channel_name.lstrip('#')
         
-        if clean_channel not in self.channel_colors:
+        # PERFORMANCE: Use cache with automatic memory management
+        cached_color = self.channel_colors.get(clean_channel)
+        if cached_color is None:
             # Generate color based on channel name (simple hash)
             color_num = sum(ord(c) for c in clean_channel) % 200 + 20  # Range 20-220
             self.channel_colors[clean_channel] = color_num
+            return color_num
             
-        return self.channel_colors[clean_channel]
+        return cached_color
 
     async def event_command_error(self, ctx, error):
         """Handle command errors."""

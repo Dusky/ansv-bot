@@ -22,7 +22,12 @@ This guide explains how to run ANSV Bot using Docker.
    docker-compose up -d
    ```
 
-4. Access the web interface at http://localhost:5001
+4. Initialize the user management system:
+   ```
+   docker-compose exec ansv-bot python utils/migrate_to_users.py --db ansv_bot.db
+   ```
+
+5. Access the web interface at http://localhost:5001 and login with admin credentials
 
 ## Container Management
 
