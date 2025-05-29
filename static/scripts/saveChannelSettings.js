@@ -24,6 +24,7 @@ function saveChannelSettings() {
   var updatedData = {
     channel_name: channelName,
     tts_enabled: document.getElementById("ttsEnabled").checked ? 1 : 0,
+    tts_delay_enabled: document.getElementById("ttsDelayEnabled").checked ? 1 : 0,
     voice_enabled: document.getElementById("voiceEnabled").checked ? 1 : 0,
     join_channel: document.getElementById("joinChannel").checked ? 1 : 0,
     owner: document.getElementById("owner").value || channelName,
@@ -199,6 +200,7 @@ function displayChannelConfig(channels, selectedChannel) {
 function resetFormForNewChannel() {
   // Clear the form and set default values for a new channel
   document.getElementById("ttsEnabled").checked = false;
+  document.getElementById("ttsDelayEnabled").checked = false;
   document.getElementById("voiceEnabled").checked = false;
   document.getElementById("joinChannel").checked = true;
   document.getElementById("owner").value = "";
@@ -465,6 +467,7 @@ function fetchChannelSettings(channelName) {
     .then((data) => {
       if (data) {
         document.getElementById("ttsEnabled").checked = data.tts_enabled === 1;
+        document.getElementById("ttsDelayEnabled").checked = data.tts_delay_enabled === 1;
         document.getElementById("voiceEnabled").checked =
           data.voice_enabled === 1;
         document.getElementById("joinChannel").checked =
@@ -528,6 +531,7 @@ function checkForAddChannelOption(selectElement) {
           
           // Set checkbox values
           document.getElementById("ttsEnabled").checked = data.tts_enabled === 1;
+          document.getElementById("ttsDelayEnabled").checked = data.tts_delay_enabled === 1;
           document.getElementById("voiceEnabled").checked = data.voice_enabled === 1;
           document.getElementById("joinChannel").checked = data.join_channel === 1;
           document.getElementById("useGeneralModel").checked = data.use_general_model === 1;

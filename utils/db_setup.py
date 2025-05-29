@@ -74,7 +74,8 @@ def ensure_db_setup(db_file):
                         time_between_messages INTEGER DEFAULT 0,
                         voice_preset TEXT DEFAULT 'v2/en_speaker_5',
                         bark_model TEXT DEFAULT 'regular',
-                        currently_connected BOOLEAN DEFAULT 0
+                        currently_connected BOOLEAN DEFAULT 0,
+                        tts_delay_enabled BOOLEAN DEFAULT 0
                     )''')
 
         # Create 'user_colors' table
@@ -170,6 +171,9 @@ def ensure_db_setup(db_file):
         if 'currently_connected' not in channel_config_columns:
             c.execute('ALTER TABLE channel_configs ADD COLUMN currently_connected BOOLEAN DEFAULT 0')
             logging.info("Column 'currently_connected' added to 'channel_configs'.")
+        if 'tts_delay_enabled' not in channel_config_columns:
+            c.execute('ALTER TABLE channel_configs ADD COLUMN tts_delay_enabled BOOLEAN DEFAULT 0')
+            logging.info("Column 'tts_delay_enabled' added to 'channel_configs'.")
 
         # PERFORMANCE OPTIMIZATION: Add indexes for frequently queried columns
         # These indexes will significantly improve query performance

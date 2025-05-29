@@ -1266,7 +1266,7 @@ def update_channel_settings_route():
             'tts_enabled', 'voice_enabled', 'join_channel', 'owner', 
             'trusted_users', 'ignored_users', 'use_general_model',
             'lines_between_messages', 'time_between_messages', 
-            'voice_preset', 'bark_model'
+            'voice_preset', 'bark_model', 'tts_delay_enabled'
         }
         
         # Filter and validate input fields
