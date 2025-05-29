@@ -910,7 +910,83 @@ class Bot(commands.Bot):
             self.logger.error(f"SQLite error in get_channel_voice_preset for {channel_name}: {e}")
             return None # Fallback on error
 
+    def get_tts_delay_setting(self, channel_name):
+        """Get TTS delay setting for a channel"""
+        try:
+            clean_channel_name = channel_name.lstrip('#')
+            conn = sqlite3.connect(self.db_file)
+            c = conn.cursor()
+            c.execute("SELECT tts_delay_enabled FROM channel_configs WHERE channel_name = ?", (clean_channel_name,))
+            result = c.fetchone()
+            conn.close()
+            if result and result[0]:
+                self.logger.debug(f"TTS delay enabled for channel {clean_channel_name}: {result[0]}")
+                return bool(result[0])
+            else:
+                self.logger.debug(f"TTS delay disabled or not set for channel {clean_channel_name}")
+                return False
+        except sqlite3.Error as e:
+            self.logger.error(f"SQLite error in get_tts_delay_setting for {channel_name}: {e}")
+            return False # Fallback to disabled on error
 
+    async def generate_tts_sync(self, text, channel_name, voice_preset, message_id, timestamp_str):
+        """Generate TTS synchronously and return success status"""
+        try:
+            import asyncio
+            from concurrent.futures import ThreadPoolExecutor
+            
+            self.logger.info(f"Starting synchronous TTS generation for {channel_name}: '{text[:30]}...'")
+            
+            # Create a result container
+            result = {'success': False, 'file_path': None, 'tts_id': None}
+            
+            def tts_worker():
+                """Worker function to run TTS generation in thread"""
+                try:
+                    from utils.tts import process_text_thread
+                    import os
+                    from datetime import datetime
+                    
+                    # Generate filename
+                    filename_timestamp = datetime.now().strftime("%Y%m%d-%H%M%S") 
+                    clean_channel_name = channel_name.lstrip('#')
+                    output_dir = f"static/outputs/{clean_channel_name}"
+                    os.makedirs(output_dir, exist_ok=True)
+                    generated_full_path = f"{output_dir}/{clean_channel_name}-{filename_timestamp}.wav"
+                    
+                    # Call process_text_thread synchronously
+                    file_path, tts_id = process_text_thread(
+                        input_text=text,
+                        channel_name=channel_name,
+                        db_file=self.db_file,
+                        full_path=generated_full_path,
+                        timestamp=timestamp_str,
+                        message_id=message_id,
+                        voice_preset=voice_preset
+                    )
+                    
+                    if file_path and tts_id:
+                        result['success'] = True
+                        result['file_path'] = file_path
+                        result['tts_id'] = tts_id
+                        self.logger.info(f"Synchronous TTS generation completed: {file_path}")
+                    else:
+                        self.logger.error(f"TTS generation failed for {channel_name}")
+                        
+                except Exception as e:
+                    self.logger.error(f"Error in TTS worker thread: {e}")
+                    
+            # Run TTS generation in thread pool
+            loop = asyncio.get_event_loop()
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                # Wait for TTS generation to complete with timeout
+                await loop.run_in_executor(executor, tts_worker)
+                
+            return result['success']
+            
+        except Exception as e:
+            self.logger.error(f"Error in generate_tts_sync for {channel_name}: {e}")
+            return False
 
     async def event_ready(self):
         """Handle the bot ready event."""
@@ -1211,47 +1287,77 @@ class Bot(commands.Bot):
                 # If a response was generated.
                 if response:
                     try:
-                        # Send the response in the current channel.
                         channel_obj = self.get_channel(channel_name)
-                        if channel_obj:
+                        if not channel_obj:
+                            self.logger.error(f"Could not find channel object for {channel_name}")
+                            return
+
+                        # Prepare TTS-related variables if TTS is enabled
+                        original_message_id = message.id # ID of the original message that triggered this response
+                        voice_preset_for_tts = None
+                        original_timestamp_str = None
+                        tts_delay_enabled = False
+
+                        if self.enable_tts and tts_enabled:
+                            # Check if TTS delay mode is enabled for this channel
+                            tts_delay_enabled = self.get_tts_delay_setting(channel_name)
+                            
+                            # Format the timestamp of the original message in ISO format
+                            if isinstance(message.timestamp, datetime):
+                                original_timestamp_str = message.timestamp.isoformat()
+                            elif isinstance(message.timestamp, str):
+                                original_timestamp_str = message.timestamp
+                            else: # Fallback
+                                self.logger.warning(f"Unexpected timestamp type for original message {message.id}: {type(message.timestamp)}. Using current time (ISO) for TTS log.")
+                                original_timestamp_str = datetime.now().isoformat()
+
+                            # Get voice preset for the channel
+                            voice_preset_for_tts = self.get_channel_voice_preset(channel_name)
+                            if not voice_preset_for_tts:
+                                voice_preset_for_tts = 'v2/en_speaker_5' 
+                                self.logger.info(f"Using default voice preset '{voice_preset_for_tts}' for channel {channel_name} as none was set or found.")
+                            else:
+                                self.logger.info(f"Using voice preset '{voice_preset_for_tts}' for channel {channel_name}.")
+
+                        # TTS DELAY MODE: Generate TTS first, then send message
+                        if self.enable_tts and tts_enabled and tts_delay_enabled:
+                            self.logger.info(f"TTS Delay Mode enabled for {channel_name}. Generating TTS before sending message.")
+                            
+                            try:
+                                # Generate TTS synchronously
+                                tts_success = await self.generate_tts_sync(
+                                    response, channel_name, voice_preset_for_tts, 
+                                    original_message_id, original_timestamp_str
+                                )
+                                
+                                if tts_success:
+                                    self.logger.info(f"TTS generation successful for {channel_name}. Sending message now.")
+                                    # Send message after TTS is ready
+                                    await channel_obj.send(response)
+                                    self.my_logger.log_message(channel_name, self.nick, response)
+                                else:
+                                    self.logger.warning(f"TTS generation failed for {channel_name}. Sending message without TTS.")
+                                    # Fallback: send message even if TTS failed
+                                    await channel_obj.send(response)
+                                    self.my_logger.log_message(channel_name, self.nick, response)
+                                    
+                            except Exception as e:
+                                self.logger.error(f"Error in TTS delay mode for {channel_name}: {e}")
+                                # Fallback: send message even if TTS failed
+                                await channel_obj.send(response)
+                                self.my_logger.log_message(channel_name, self.nick, response)
+
+                        # NORMAL MODE: Send message immediately, then generate TTS
+                        else:
+                            # Send the response immediately
                             await channel_obj.send(response)
-                            # Log the response.
                             self.my_logger.log_message(channel_name, self.nick, response)
 
-                            # If TTS is enabled for the current channel.
+                            # Generate TTS asynchronously after message is sent
                             if self.enable_tts and tts_enabled:
-                                # Generate TTS audio for the response.
-                                # Ensure start_tts_processing is called correctly with message_id and timestamp_str
-                                original_message_id = message.id # ID of the original message that triggered this response
-                                
-                                # Format the timestamp of the original message in ISO format
-                                if isinstance(message.timestamp, datetime):
-                                    original_timestamp_str = message.timestamp.isoformat()
-                                elif isinstance(message.timestamp, str):
-                                    # If it's already a string, assume it's correctly formatted or handle conversion if needed
-                                    # For now, we'll trust it if it's a string. If issues persist, this might need adjustment.
-                                    original_timestamp_str = message.timestamp
-                                else: # Fallback
-                                    self.logger.warning(f"Unexpected timestamp type for original message {message.id}: {type(message.timestamp)}. Using current time (ISO) for TTS log.")
-                                    original_timestamp_str = datetime.now().isoformat()
-
-                                # Get voice preset for the channel
-                                voice_preset_for_tts = self.get_channel_voice_preset(channel_name)
-                                if not voice_preset_for_tts:
-                                    # Fallback to a global default if channel has no specific preset or on error
-                                    voice_preset_for_tts = 'v2/en_speaker_5' 
-                                    self.logger.info(f"Using default voice preset '{voice_preset_for_tts}' for channel {channel_name} as none was set or found.")
-                                else:
-                                    self.logger.info(f"Using voice preset '{voice_preset_for_tts}' for channel {channel_name}.")
-
                                 self.logger.debug(f"Calling start_tts_processing for bot response to msg_id: {original_message_id}, channel: {channel_name}, text: {response[:30]}..., timestamp: {original_timestamp_str}, voice: {voice_preset_for_tts}")
                                 
-                                # Call start_tts_processing from utils.tts
-                                # Note: The process_text function was previously called here, but start_tts_processing is the one
-                                # that takes message_id and timestamp_str for proper logging.
-                                # start_tts_processing is now imported at the top of utils/bot.py
-
-                                self.logger.info(f"Attempting to start TTS processing for bot auto-response. MsgID: {original_message_id}, Channel: {channel_name}, Text: '{response[:30]}...'")
+                                self.logger.info(f"Starting async TTS processing for bot auto-response. MsgID: {original_message_id}, Channel: {channel_name}, Text: '{response[:30]}...'")
                                 start_tts_processing(
                                     input_text=response, # The bot's generated response
                                     channel_name=channel_name,
