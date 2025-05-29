@@ -23,6 +23,12 @@
                                 <i class="fab fa-twitch me-1"></i>
                                 Open on Twitch
                             </a>
+                            <button type="button" class="btn btn-sm btn-outline-primary" 
+                                    onclick="openTTSPopup('{{ channel.name }}')" 
+                                    title="Open TTS popup for stream capture">
+                                <i class="fas fa-external-link-alt me-1"></i>
+                                TTS Popup
+                            </button>
                             <button class="btn btn-sm btn-outline-secondary" onclick="location.reload()">
                                 <i class="fas fa-sync-alt me-1"></i>
                                 Refresh
@@ -461,6 +467,42 @@ window.channelData = {
     currently_connected: {{ channel.currently_connected|tojson }},
     bot_running: {{ channel.bot_running|tojson }}
 };
+
+// TTS Popup window management
+let ttsPopupWindow = null;
+
+function openTTSPopup(channelName) {
+    const popupUrl = `/tts-popup/${channelName}`;
+    const popupOptions = 'width=350,height=400,scrollbars=no,resizable=yes,status=no,toolbar=no,menubar=no';
+    
+    // Close existing popup if open
+    if (ttsPopupWindow && !ttsPopupWindow.closed) {
+        ttsPopupWindow.close();
+    }
+    
+    // Open new popup
+    ttsPopupWindow = window.open(popupUrl, `tts-popup-${channelName}`, popupOptions);
+    
+    if (!ttsPopupWindow) {
+        // Show notification if available, otherwise alert
+        if (window.notificationSystem && typeof window.notificationSystem.showToast === 'function') {
+            window.notificationSystem.showToast('Popup blocked! Please allow popups for this site.', 'warning');
+        } else {
+            alert('Popup blocked! Please allow popups for this site.');
+        }
+    } else {
+        // Focus the popup
+        ttsPopupWindow.focus();
+        console.log('TTS popup opened for channel:', channelName);
+    }
+}
+
+// Close popup when main window closes
+window.addEventListener('beforeunload', () => {
+    if (ttsPopupWindow && !ttsPopupWindow.closed) {
+        ttsPopupWindow.close();
+    }
+});
 </script>
 <script src="{{ url_for('static', filename='scripts/channel_page.js') }}"></script>
 {% endblock %}

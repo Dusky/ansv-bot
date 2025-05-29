@@ -1402,6 +1402,12 @@ def serve_tts_output(filename):
     directory = os.path.join(app.root_path, 'static', 'outputs')
     return send_from_directory(directory, filename)
 
+@app.route('/tts-popup/<channel_name>')
+@require_auth
+def tts_popup(channel_name):
+    """Serve TTS popup window for stream capture"""
+    return render_template('tts_popup.html', channel_name=channel_name)
+
 @app.route('/set-theme/<theme_name>') 
 def set_theme_route(theme_name): 
     # Create a JSON response
