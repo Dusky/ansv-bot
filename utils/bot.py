@@ -401,7 +401,7 @@ class Bot(commands.Bot):
         async def check_periodically():
             while True:
                 await asyncio.sleep(interval)
-                await self.check_and_join_channels()
+                await self.check_and_join_channels(silent=True)  # Periodic check, silent mode
         
         # Start the periodic task
         self.loop.create_task(check_periodically())
@@ -975,7 +975,7 @@ class Bot(commands.Bot):
         try:
             if verbose:
                 print(f"{YELLOW}Step 4: Joining all configured channels...{RESET}")
-            await self.check_and_join_channels()
+            await self.check_and_join_channels(silent=False)  # Initial join, show full output
             if verbose:
                 print(f"{GREEN}✅ Channel joining completed{RESET}")
         except Exception as e:
