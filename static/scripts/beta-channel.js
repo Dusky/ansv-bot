@@ -77,6 +77,12 @@ function initializeControls() {
         autoReplyToggle.addEventListener('change', handleAutoReplyToggle);
     }
     
+    // TTS Delay Toggle
+    const ttsDelayToggle = document.getElementById('ttsDelayToggle');
+    if (ttsDelayToggle) {
+        ttsDelayToggle.addEventListener('change', handleTTSDelayToggle);
+    }
+    
     // Message Generation
     const generateBtn = document.getElementById('generateMessageBtn');
     if (generateBtn) {
@@ -147,6 +153,32 @@ async function handleAutoReplyToggle() {
         console.error('[Beta Channel] Error toggling auto-reply:', error);
         toggle.checked = !enabled; // Revert
         showToast('Failed to toggle auto-reply', 'error');
+    }
+}
+
+async function handleTTSDelayToggle() {
+    const toggle = document.getElementById('ttsDelayToggle');
+    const enabled = toggle.checked;
+    const channelName = window.channelData.name;
+    
+    try {
+        const response = await betaUtils.apiRequest(`/update-channel-settings`, {
+            method: 'POST',
+            body: JSON.stringify({ 
+                channel_name: channelName,
+                tts_delay_enabled: enabled ? 1 : 0
+            })
+        });
+        
+        showToast(`TTS delay ${enabled ? 'enabled' : 'disabled'} for #${channelName}`, 'success');
+        
+        // Update channel data
+        window.channelData.tts_delay_enabled = enabled;
+        
+    } catch (error) {
+        console.error('[Beta Channel] Error toggling TTS delay:', error);
+        toggle.checked = !enabled; // Revert
+        showToast('Failed to toggle TTS delay', 'error');
     }
 }
 

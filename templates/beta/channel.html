@@ -64,6 +64,17 @@
                     </div>
                     
                     <div class="control-item">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="ttsDelayToggle" 
+                                   {% if channel.tts_delay_enabled %}checked{% endif %}>
+                            <label class="form-check-label" for="ttsDelayToggle">
+                                <i class="fas fa-clock me-1"></i>
+                                TTS Delay Mode
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div class="control-item">
                         <button class="btn btn-primary" id="generateMessageBtn">
                             <i class="fas fa-dice me-2"></i>Generate Message
                         </button>
@@ -334,6 +345,7 @@ window.channelData = {
     name: "{{ channel.name }}",
     tts_enabled: {{ channel.tts_enabled|tojson }},
     voice_enabled: {{ channel.voice_enabled|tojson }},
+    tts_delay_enabled: {{ channel.tts_delay_enabled|tojson }},
     currently_connected: {{ channel.currently_connected|tojson }},
     bot_running: {{ channel.bot_running|tojson }}
 };
