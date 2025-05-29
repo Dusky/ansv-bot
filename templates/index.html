@@ -1,0 +1,186 @@
+{% extends 'beta/base.html' %}
+
+{% block content %}
+<div class="container my-4">
+    <!-- Status Dashboard -->
+    <div class="row mb-4">
+        <!-- Main Status Panel -->
+        <div class="col-md-5 mb-3">
+            <div class="dashboard-card status-panel">
+                <div class="status-panel-header">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h3 class="panel-title"><i class="fas fa-heartbeat me-2"></i>Bot Status</h3>
+                        <span class="timestamp text-muted" id="statusLastUpdated">Last updated: -</span>
+                    </div>
+                </div>
+                <div class="status-panel-body">
+                    <div class="status-display">
+                        <div class="d-flex align-items-center mb-3">
+                            <div id="statusSpinner" class="spinner-border text-primary me-3"></div>
+                            <div class="status-info">
+                                <h2 id="botStatusText" class="status-text">Checking status...</h2>
+                                <p class="status-desc">ANSV Bot status is being verified</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="status-controls">
+                        <div class="row">
+                            <div class="col-md-6 mb-2">
+                                <button id="quickStartBtn" class="btn btn-success d-flex align-items-center w-100 justify-content-center btn-control" onclick="startBot()">
+                                    <i class="fas fa-play me-2"></i>Start Bot
+                                </button>
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <button id="quickStopBtn" class="btn btn-danger d-flex align-items-center w-100 justify-content-center btn-control" onclick="stopBot()">
+                                    <i class="fas fa-stop me-2"></i>Stop Bot
+                                </button>
+                            </div>
+                            <div class="col-md-6">
+                                <button id="refreshStatusBtn" class="btn btn-outline-secondary d-flex align-items-center w-100 justify-content-center btn-control" onclick="window.BotStatus.checkStatus(); loadChannels();">
+                                    <i class="fas fa-sync-alt me-2"></i>Refresh Status
+                                </button>
+                            </div>
+                            <div class="col-md-6">
+                                <button id="reconnectBtn" class="btn btn-outline-primary d-flex align-items-center w-100 justify-content-center btn-control" onclick="reconnectBot()">
+                                    <i class="fas fa-plug me-2"></i>Force Reconnect
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Activity Stats -->
+        <div class="col-md-7 mb-3">
+            <div class="row h-100">
+                <!-- Connected Channels Card -->
+                <div class="col-md-6 mb-3">
+                    <div class="dashboard-card stats-card channels-card h-100">
+                        <div class="stats-card-icon">
+                            <i class="fas fa-tv"></i>
+                        </div>
+                        <div class="stats-card-content">
+                            <h3 class="stats-card-title">Connected Channels</h3>
+                            <div class="channel-count-display">
+                                <span id="channelCount" class="stats-value">0</span>
+                                <span class="stats-label">channels</span>
+                            </div>
+                            <div id="channelLoadingSpinner" class="spinner-border text-success spinner-sm" role="status"></div>
+                            <div id="channelsList" class="channels-list mt-3">
+                                <div class="text-muted">Loading channels...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- TTS Activity Card -->
+                <div class="col-md-6 mb-3">
+                    <div class="dashboard-card stats-card tts-card h-100">
+                        <div class="stats-card-icon">
+                            <i class="fas fa-volume-up"></i>
+                        </div>
+                        <div class="stats-card-content">
+                            <h3 class="stats-card-title">TTS Activity</h3>
+                            <div id="ttsStats" class="tts-stats">
+                                <div class="stat-row">
+                                    <div class="stat-item">
+                                        <span class="stat-label">Today</span>
+                                        <span id="ttsTodayCount" class="stat-value">0</span>
+                                    </div>
+                                    <div class="stat-item">
+                                        <span class="stat-label">Week</span>
+                                        <span id="ttsWeekCount" class="stat-value">0</span>
+                                    </div>
+                                    <div class="stat-item">
+                                        <span class="stat-label">Total</span>
+                                        <span id="ttsTotalCount" class="stat-value">0</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="text-center mt-3">
+                                <a href="{{ url_for('tts_history_page') }}" class="btn btn-sm btn-outline-purple">View History</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Stats Dashboard Section -->
+    <div class="row">
+        <!-- Bot Stats Card -->
+        <div class="col-md-12 mb-4">
+            <div class="dashboard-card metrics-panel">
+                <div class="metrics-header">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h3 class="panel-title"><i class="fas fa-chart-line me-2"></i>Bot Analytics</h3>
+                        <a href="{{ url_for('stats_page') }}" class="btn btn-sm btn-outline-primary">Detailed Stats</a>
+                    </div>
+                </div>
+                
+                <div class="metrics-body">
+                    <div class="metrics-grid">
+                        <!-- Total Messages -->
+                        <div class="metric-card">
+                            <div class="metric-icon success-icon">
+                                <i class="fas fa-comments"></i>
+                            </div>
+                            <div class="metric-content">
+                                <div class="metric-title">Messages</div>
+                                <div id="totalMessages" class="metric-value">-</div>
+                                <div class="metric-detail">Total messages processed</div>
+                            </div>
+                        </div>
+                        
+                        <!-- TTS Generated -->
+                        <div class="metric-card">
+                            <div class="metric-icon purple-icon">
+                                <i class="fas fa-volume-up"></i>
+                            </div>
+                            <div class="metric-content">
+                                <div class="metric-title">TTS Generated</div>
+                                <div id="totalTTS" class="metric-value">-</div>
+                                <div class="metric-detail">Total audio clips</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Bot Responses -->
+                        <div class="metric-card">
+                            <div class="metric-icon info-icon">
+                                <i class="fas fa-robot"></i>
+                            </div>
+                            <div class="metric-content">
+                                <div class="metric-title">Bot Responses</div>
+                                <div id="totalResponses" class="metric-value">-</div>
+                                <div class="metric-detail">Messages sent by bot</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Active Since -->
+                        <div class="metric-card">
+                            <div class="metric-icon warning-icon">
+                                <i class="fas fa-calendar-alt"></i>
+                            </div>
+                            <div class="metric-content">
+                                <div class="metric-title">Active Since</div>
+                                <div id="activeSince" class="metric-value">-</div>
+                                <div class="metric-detail">Bot online duration</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!--
+Removed redundant JavaScript block.
+Functionality is handled by static/scripts/main_page.js,
+which is included in base.html.
+Styles moved to static/css/custom.css
+-->
+{% endblock %}

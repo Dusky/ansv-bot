@@ -1,0 +1,547 @@
+{% extends "beta/base.html" %}
+
+{% block title %}Settings - ANSV Bot Beta{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-4 py-3">
+    <!-- Settings Hero Section -->
+    <div class="hero-section mb-4">
+        <div class="hero-content">
+            <h1 class="hero-title">
+                <i class="fas fa-cog me-3"></i>
+                Bot Settings & Configuration
+            </h1>
+            <p class="hero-subtitle">Manage channels, configure bot behavior, and customize TTS settings</p>
+        </div>
+        <div class="hero-actions">
+            <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addChannelModal">
+                <i class="fas fa-plus me-2"></i>Add Channel
+            </button>
+            <button class="btn btn-outline-primary" id="saveAllBtn">
+                <i class="fas fa-save me-2"></i>Save All Changes
+            </button>
+        </div>
+    </div>
+
+    <!-- Channel Settings -->
+    <div class="row">
+            <div class="row">
+                <div class="col-12">
+                    <div class="settings-panel">
+                        <div class="panel-header">
+                            <h2 class="panel-title">
+                                <i class="fas fa-hashtag me-2"></i>
+                                Channel Configuration
+                            </h2>
+                            <div class="panel-controls">
+                                <div class="search-box">
+                                    <i class="fas fa-search"></i>
+                                    <input type="text" class="form-control" id="channelSearch" placeholder="Search channels...">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="panel-body">
+                            <!-- Channel Management Tools -->
+                            <div class="channel-management-toolbar mb-4">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="input-group">
+                                            <span class="input-group-text"><i class="fas fa-search"></i></span>
+                                            <input type="text" class="form-control" id="channelFilter" placeholder="Filter channels...">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="d-flex gap-2">
+                                            <button class="btn btn-outline-secondary btn-sm" onclick="expandAllChannels()">
+                                                <i class="fas fa-expand-alt me-1"></i>Expand All
+                                            </button>
+                                            <button class="btn btn-outline-secondary btn-sm" onclick="collapseAllChannels()">
+                                                <i class="fas fa-compress-alt me-1"></i>Collapse All
+                                            </button>
+                                            <button class="btn btn-outline-success btn-sm" onclick="bulkEnableChannels()">
+                                                <i class="fas fa-toggle-on me-1"></i>Enable All
+                                            </button>
+                                            <button class="btn btn-outline-warning btn-sm" onclick="bulkDisableChannels()">
+                                                <i class="fas fa-toggle-off me-1"></i>Disable All
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Channel List Table -->
+                            <div class="channels-table-container">
+                                <table class="table table-hover channels-table" id="channelsTable">
+                                    <thead>
+                                        <tr>
+                                            <th style="width: 30px;">
+                                                <input type="checkbox" id="selectAllChannels" onchange="toggleAllChannels()">
+                                            </th>
+                                            <th>Channel</th>
+                                            <th style="width: 100px;">Status</th>
+                                            <th style="width: 80px;">Auto-Join</th>
+                                            <th style="width: 80px;">TTS</th>
+                                            <th style="width: 80px;">Reply</th>
+                                            <th style="width: 120px;">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for channel in channels %}
+                                        <tr class="channel-row" data-channel="{{ channel.channel_name }}">
+                                            <td>
+                                                <input type="checkbox" class="channel-select" value="{{ channel.channel_name }}">
+                                            </td>
+                                            <td>
+                                                <div class="channel-info-cell">
+                                                    <div class="channel-name-display">
+                                                        <i class="fas fa-hashtag text-muted me-1"></i>
+                                                        <strong>{{ channel.channel_name }}</strong>
+                                                    </div>
+                                                    <small class="text-muted">Owner: {{ channel.owner or channel.channel_name }}</small>
+                                                </div>
+                                            </td>
+                                            <td>
+                                                {% if channel.currently_connected %}
+                                                    <span class="badge bg-success">
+                                                        <i class="fas fa-circle me-1"></i>Online
+                                                    </span>
+                                                {% else %}
+                                                    <span class="badge bg-secondary">
+                                                        <i class="fas fa-circle me-1"></i>Offline
+                                                    </span>
+                                                {% endif %}
+                                            </td>
+                                            <td>
+                                                <div class="form-check form-switch">
+                                                    <input class="form-check-input" type="checkbox" 
+                                                           {% if channel.join_channel %}checked{% endif %}
+                                                           onchange="updateChannelSetting('{{ channel.channel_name }}', 'join_channel', this.checked)">
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <div class="form-check form-switch">
+                                                    <input class="form-check-input" type="checkbox" 
+                                                           {% if channel.tts_enabled %}checked{% endif %}
+                                                           onchange="updateChannelSetting('{{ channel.channel_name }}', 'tts_enabled', this.checked)">
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <div class="form-check form-switch">
+                                                    <input class="form-check-input" type="checkbox" 
+                                                           {% if channel.voice_enabled %}checked{% endif %}
+                                                           onchange="updateChannelSetting('{{ channel.channel_name }}', 'voice_enabled', this.checked)">
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <div class="btn-group btn-group-sm" role="group">
+                                                    <button class="btn btn-outline-primary" 
+                                                            onclick="toggleChannelDetails('{{ channel.channel_name }}')"
+                                                            title="Configure">
+                                                        <i class="fas fa-cog"></i>
+                                                    </button>
+                                                    <a href="/beta/channel/{{ channel.channel_name }}" 
+                                                       class="btn btn-outline-info" title="View Channel">
+                                                        <i class="fas fa-eye"></i>
+                                                    </a>
+                                                    <button class="btn btn-outline-danger" 
+                                                            onclick="deleteChannel('{{ channel.channel_name }}')"
+                                                            title="Remove">
+                                                        <i class="fas fa-trash"></i>
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                        <tr class="channel-details-row" id="details-{{ channel.channel_name }}" style="display: none;">
+                                            <td colspan="7">
+                                                <div class="channel-details-panel">
+                                                    <div class="row">
+                                                        <div class="col-md-3">
+                                                            <div class="setting-group">
+                                                                <label class="form-label">Owner</label>
+                                                                <input type="text" class="form-control form-control-sm" 
+                                                                       value="{{ channel.owner or channel.channel_name }}"
+                                                                       onchange="updateChannelSetting('{{ channel.channel_name }}', 'owner', this.value)">
+                                                            </div>
+                                                        </div>
+                                                        <div class="col-md-3">
+                                                            <div class="setting-group">
+                                                                <label class="form-label">Lines Between Messages</label>
+                                                                <input type="number" class="form-control form-control-sm" 
+                                                                       value="{{ channel.lines_between_messages or 100 }}" min="1" max="1000"
+                                                                       onchange="updateChannelSetting('{{ channel.channel_name }}', 'lines_between_messages', parseInt(this.value))">
+                                                            </div>
+                                                        </div>
+                                                        <div class="col-md-3">
+                                                            <div class="setting-group">
+                                                                <label class="form-label">Time Between Messages (sec)</label>
+                                                                <input type="number" class="form-control form-control-sm" 
+                                                                       value="{{ channel.time_between_messages or 0 }}" min="0" max="3600"
+                                                                       onchange="updateChannelSetting('{{ channel.channel_name }}', 'time_between_messages', parseInt(this.value))">
+                                                            </div>
+                                                        </div>
+                                                        <div class="col-md-3">
+                                                            <div class="setting-group">
+                                                                <label class="form-label">Generation Length</label>
+                                                                <input type="number" class="form-control form-control-sm" 
+                                                                       value="{{ channel.generation_length or 100 }}" min="10" max="500"
+                                                                       onchange="updateChannelSetting('{{ channel.channel_name }}', 'generation_length', parseInt(this.value))">
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="row mt-3">
+                                                        <div class="col-md-4">
+                                                            <div class="setting-group">
+                                                                <label class="form-label">Voice Preset</label>
+                                                                <select class="form-select form-select-sm"
+                                                                        onchange="updateChannelSetting('{{ channel.channel_name }}', 'voice_preset', this.value)">
+                                                                    <option value="v2/en_speaker_0" {% if channel.voice_preset == 'v2/en_speaker_0' %}selected{% endif %}>English Speaker 0</option>
+                                                                    <option value="v2/en_speaker_1" {% if channel.voice_preset == 'v2/en_speaker_1' %}selected{% endif %}>English Speaker 1</option>
+                                                                    <option value="v2/en_speaker_2" {% if channel.voice_preset == 'v2/en_speaker_2' %}selected{% endif %}>English Speaker 2</option>
+                                                                    <option value="v2/en_speaker_3" {% if channel.voice_preset == 'v2/en_speaker_3' %}selected{% endif %}>English Speaker 3</option>
+                                                                </select>
+                                                            </div>
+                                                        </div>
+                                                        <div class="col-md-4">
+                                                            <div class="setting-group">
+                                                                <label class="form-label">Bark Model</label>
+                                                                <select class="form-select form-select-sm"
+                                                                        onchange="updateChannelSetting('{{ channel.channel_name }}', 'bark_model', this.value)">
+                                                                    <option value="bark-small" {% if channel.bark_model == 'bark-small' %}selected{% endif %}>Small (Fast)</option>
+                                                                    <option value="bark-regular" {% if channel.bark_model == 'bark-regular' %}selected{% endif %}>Regular (Balanced)</option>
+                                                                    <option value="bark-large" {% if channel.bark_model == 'bark-large' %}selected{% endif %}>Large (Quality)</option>
+                                                                </select>
+                                                            </div>
+                                                        </div>
+                                                        <div class="col-md-4">
+                                                            <div class="setting-group">
+                                                                <label class="form-label">Trusted Users</label>
+                                                                <input type="text" class="form-control form-control-sm" 
+                                                                       value="{{ channel.trusted_users or '' }}"
+                                                                       placeholder="comma,separated,usernames"
+                                                                       onchange="updateChannelSetting('{{ channel.channel_name }}', 'trusted_users', this.value)">
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bot Configuration Tab -->
+        <div class="tab-content" id="bot-tab">
+            <div class="row">
+                <div class="col-lg-6 mb-4">
+                    <div class="settings-panel">
+                        <div class="panel-header">
+                            <h2 class="panel-title">
+                                <i class="fas fa-robot me-2"></i>
+                                Bot Control
+                            </h2>
+                        </div>
+                        <div class="panel-body">
+                            <div class="bot-control-section">
+                                <div class="bot-status-display" id="botStatusDisplay">
+                                    <div class="status-icon" id="botStatusIcon">
+                                        <i class="fas fa-robot"></i>
+                                    </div>
+                                    <div class="status-content">
+                                        <h3 class="status-title" id="botStatusTitle">Bot Status</h3>
+                                        <p class="status-description" id="botStatusDesc">Checking status...</p>
+                                    </div>
+                                </div>
+                                
+                                <div class="bot-controls">
+                                    <button class="btn btn-lg btn-success" id="startBotBtn" style="display: none;">
+                                        <i class="fas fa-play me-2"></i>Start Bot
+                                    </button>
+                                    <button class="btn btn-lg btn-danger" id="stopBotBtn" style="display: none;">
+                                        <i class="fas fa-stop me-2"></i>Stop Bot
+                                    </button>
+                                    <button class="btn btn-lg btn-warning" id="restartBotBtn">
+                                        <i class="fas fa-redo me-2"></i>Restart Bot
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-lg-6 mb-4">
+                    <div class="settings-panel">
+                        <div class="panel-header">
+                            <h2 class="panel-title">
+                                <i class="fas fa-chart-line me-2"></i>
+                                Performance
+                            </h2>
+                        </div>
+                        <div class="panel-body">
+                            <div class="performance-metrics">
+                                <div class="metric-card">
+                                    <div class="metric-icon">
+                                        <i class="fas fa-clock"></i>
+                                    </div>
+                                    <div class="metric-content">
+                                        <h4 class="metric-value" id="botUptime">-</h4>
+                                        <p class="metric-label">Uptime</p>
+                                    </div>
+                                </div>
+                                
+                                <div class="metric-card">
+                                    <div class="metric-icon">
+                                        <i class="fas fa-hashtag"></i>
+                                    </div>
+                                    <div class="metric-content">
+                                        <h4 class="metric-value" id="connectedChannels">-</h4>
+                                        <p class="metric-label">Connected Channels</p>
+                                    </div>
+                                </div>
+                                
+                                <div class="metric-card">
+                                    <div class="metric-icon">
+                                        <i class="fas fa-memory"></i>
+                                    </div>
+                                    <div class="metric-content">
+                                        <h4 class="metric-value" id="memoryUsage">-</h4>
+                                        <p class="metric-label">Memory Usage</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TTS Settings Tab -->
+        <div class="tab-content" id="tts-tab">
+            <div class="row">
+                <div class="col-12">
+                    <div class="settings-panel">
+                        <div class="panel-header">
+                            <h2 class="panel-title">
+                                <i class="fas fa-volume-up me-2"></i>
+                                Global TTS Configuration
+                            </h2>
+                        </div>
+                        <div class="panel-body">
+                            <div class="tts-settings-grid">
+                                <div class="tts-setting-group">
+                                    <h3 class="setting-group-title">Default Voice Settings</h3>
+                                    <div class="settings-grid">
+                                        <div class="setting-group">
+                                            <label class="setting-label">Default Voice Preset</label>
+                                            <select class="form-select" id="defaultVoicePreset">
+                                                <option value="v2/en_speaker_0">English Speaker 0</option>
+                                                <option value="v2/en_speaker_1">English Speaker 1</option>
+                                                <option value="v2/en_speaker_2">English Speaker 2</option>
+                                                <option value="v2/en_speaker_3">English Speaker 3</option>
+                                            </select>
+                                        </div>
+                                        
+                                        <div class="setting-group">
+                                            <label class="setting-label">Default Bark Model</label>
+                                            <select class="form-select" id="defaultBarkModel">
+                                                <option value="bark-small">Small (Fast)</option>
+                                                <option value="bark-regular">Regular (Balanced)</option>
+                                                <option value="bark-large">Large (Quality)</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="tts-setting-group">
+                                    <h3 class="setting-group-title">TTS Limits & Quality</h3>
+                                    <div class="settings-grid">
+                                        <div class="setting-group">
+                                            <label class="setting-label">Max Characters per TTS</label>
+                                            <input type="number" class="form-control" id="maxTtsLength" value="500" min="50" max="1000">
+                                        </div>
+                                        
+                                        <div class="setting-group">
+                                            <label class="setting-label">Audio Quality</label>
+                                            <select class="form-select" id="audioQuality">
+                                                <option value="low">Low (Faster)</option>
+                                                <option value="medium" selected>Medium (Balanced)</option>
+                                                <option value="high">High (Slower)</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="tts-setting-group">
+                                    <h3 class="setting-group-title">TTS Test & Preview</h3>
+                                    <div class="tts-test-section">
+                                        <textarea class="form-control mb-3" id="ttsTestText" rows="3" 
+                                                  placeholder="Enter text to test TTS generation..." maxlength="500"></textarea>
+                                        <div class="d-flex justify-content-between align-items-center mb-3">
+                                            <small class="text-muted">Preview with current settings</small>
+                                            <small class="text-muted" id="testCharCount">0/500</small>
+                                        </div>
+                                        <button class="btn btn-primary" id="testTtsBtn">
+                                            <i class="fas fa-play me-2"></i>Test TTS
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Advanced Tab -->
+        <div class="tab-content" id="advanced-tab">
+            <div class="row">
+                <div class="col-lg-6 mb-4">
+                    <div class="settings-panel">
+                        <div class="panel-header">
+                            <h2 class="panel-title">
+                                <i class="fas fa-database me-2"></i>
+                                Data Management
+                            </h2>
+                        </div>
+                        <div class="panel-body">
+                            <div class="data-management-section">
+                                <div class="action-item">
+                                    <div class="action-content">
+                                        <h4 class="action-title">Rebuild All Models</h4>
+                                        <p class="action-description">Rebuild all channel AI models from chat logs</p>
+                                    </div>
+                                    <button class="btn btn-warning" id="rebuildAllBtn">
+                                        <i class="fas fa-sync-alt me-1"></i>Rebuild
+                                    </button>
+                                </div>
+                                
+                                <div class="action-item">
+                                    <div class="action-content">
+                                        <h4 class="action-title">Clear Cache</h4>
+                                        <p class="action-description">Clear all cached model data</p>
+                                    </div>
+                                    <button class="btn btn-outline-warning" id="clearCacheBtn">
+                                        <i class="fas fa-trash me-1"></i>Clear
+                                    </button>
+                                </div>
+                                
+                                <div class="action-item">
+                                    <div class="action-content">
+                                        <h4 class="action-title">Export Settings</h4>
+                                        <p class="action-description">Download current configuration as JSON</p>
+                                    </div>
+                                    <button class="btn btn-outline-info" id="exportSettingsBtn">
+                                        <i class="fas fa-download me-1"></i>Export
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-lg-6 mb-4">
+                    <div class="settings-panel">
+                        <div class="panel-header">
+                            <h2 class="panel-title">
+                                <i class="fas fa-shield-alt me-2"></i>
+                                Security & Logs
+                            </h2>
+                        </div>
+                        <div class="panel-body">
+                            <div class="security-section">
+                                <div class="action-item">
+                                    <div class="action-content">
+                                        <h4 class="action-title">View System Logs</h4>
+                                        <p class="action-description">Check bot activity and error logs</p>
+                                    </div>
+                                    <a href="/logs" class="btn btn-outline-primary">
+                                        <i class="fas fa-file-alt me-1"></i>View
+                                    </a>
+                                </div>
+                                
+                                <div class="action-item">
+                                    <div class="action-content">
+                                        <h4 class="action-title">Reset to Defaults</h4>
+                                        <p class="action-description">Reset all settings to default values</p>
+                                    </div>
+                                    <button class="btn btn-outline-danger" id="resetDefaultsBtn">
+                                        <i class="fas fa-undo me-1"></i>Reset
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Channel Modal -->
+<div class="modal fade" id="addChannelModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Add New Channel</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="addChannelForm">
+                    <div class="mb-3">
+                        <label class="form-label">Channel Name</label>
+                        <input type="text" class="form-control" id="newChannelName" 
+                               placeholder="channel_name" pattern="[a-zA-Z0-9_]+" required>
+                        <div class="form-text">Enter the Twitch channel name (without #)</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Owner</label>
+                        <input type="text" class="form-control" id="newChannelOwner" 
+                               placeholder="owner_username">
+                        <div class="form-text">Channel owner (defaults to channel name)</div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="newChannelJoin" checked>
+                                <label class="form-check-label" for="newChannelJoin">Auto-Join Channel</label>
+                            </div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="newChannelTts" checked>
+                                <label class="form-check-label" for="newChannelTts">Enable TTS</label>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="newChannelVoice" checked>
+                                <label class="form-check-label" for="newChannelVoice">Enable Auto-Reply</label>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="saveChannelBtn">
+                    <i class="fas fa-plus me-1"></i>Add Channel
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='scripts/beta-settings.js') }}"></script>
+{% endblock %}

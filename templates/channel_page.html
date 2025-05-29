@@ -1,0 +1,466 @@
+{% extends 'beta/base.html' %}
+
+{% block content %}
+<div class="container my-4">
+    <!-- Channel Header -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="dashboard-card">
+                <div class="status-panel-header">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div class="d-flex align-items-center">
+                            <h3 class="panel-title">
+                                <i class="fas fa-hashtag me-2"></i>
+                                {{ channel.name }}
+                            </h3>
+                            <span class="badge {% if channel.currently_connected %}bg-success{% else %}bg-secondary{% endif %} ms-3">
+                                <i class="fas fa-circle me-1" style="font-size: 0.7rem;"></i>
+                                {% if channel.currently_connected %}Connected{% else %}Disconnected{% endif %}
+                            </span>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <a href="https://twitch.tv/{{ channel.name }}" target="_blank" class="btn btn-sm btn-outline-purple">
+                                <i class="fab fa-twitch me-1"></i>
+                                Open on Twitch
+                            </a>
+                            <button class="btn btn-sm btn-outline-secondary" onclick="location.reload()">
+                                <i class="fas fa-sync-alt me-1"></i>
+                                Refresh
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Dashboard Row -->
+    <div class="row mb-4">
+        <!-- Channel Controls Panel -->
+        <div class="col-md-5 mb-3">
+            <div class="dashboard-card status-panel">
+                <div class="status-panel-header">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h3 class="panel-title"><i class="fas fa-sliders-h me-2"></i>Channel Controls</h3>
+                        <span class="timestamp text-muted" id="controlsLastUpdated">Ready</span>
+                    </div>
+                </div>
+                <div class="status-panel-body">
+                    <!-- Toggle Controls -->
+                    <div class="status-display mb-4">
+                        <div class="row">
+                            <div class="col-4">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" id="ttsToggle" 
+                                           {% if channel.tts_enabled %}checked{% endif %}>
+                                    <label class="form-check-label fw-medium" for="ttsToggle">
+                                        TTS Enabled
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="col-4">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" id="voiceToggle" 
+                                           {% if channel.voice_enabled %}checked{% endif %}>
+                                    <label class="form-check-label fw-medium" for="voiceToggle">
+                                        Auto Reply
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="col-4">
+                                <div class="connection-status-display text-center">
+                                    <small class="text-muted d-block">Connection</small>
+                                    <div id="channelConnectionStatus" class="connection-status {% if channel.currently_connected %}connected{% else %}disconnected{% endif %}">
+                                        <span class="connection-dot"></span>
+                                        <span class="fw-medium">{% if channel.currently_connected %}Connected{% else %}Disconnected{% endif %}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Message Generation Controls -->
+                    <div class="status-controls mb-4">
+                        <div class="row">
+                            <div class="col-md-6 mb-2">
+                                <button id="generateBtn" class="btn btn-outline-primary d-flex align-items-center w-100 justify-content-center btn-control">
+                                    <i class="fas fa-dice me-2"></i>Generate
+                                </button>
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <button id="generateSendBtn" class="btn btn-primary d-flex align-items-center w-100 justify-content-center btn-control">
+                                    <i class="fas fa-paper-plane me-2"></i>Generate & Send
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- Generated Message Display -->
+                        <div id="generatedMessage" class="mt-3 p-3 bg-light rounded d-none">
+                            <small class="text-muted">Generated message:</small>
+                            <div id="messageText" class="fw-medium mt-1"></div>
+                            <div class="mt-2">
+                                <button class="btn btn-sm btn-success me-2" id="sendGeneratedBtn">
+                                    <i class="fas fa-send me-1"></i>Send
+                                </button>
+                                <button class="btn btn-sm btn-outline-secondary" id="regenerateBtn">
+                                    <i class="fas fa-redo me-1"></i>Regenerate
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- TTS Controls -->
+                    <div id="ttsSection" {% if not channel.tts_enabled %}style="display: none;"{% endif %}>
+                        <div class="mb-3">
+                            <label class="form-label fw-medium">
+                                <i class="fas fa-microphone me-1"></i>
+                                Custom TTS
+                            </label>
+                            <textarea id="customTtsText" class="form-control" rows="2" 
+                                      placeholder="Enter text for TTS..." maxlength="500"></textarea>
+                            <div class="form-text d-flex justify-content-between">
+                                <span>Voice: <strong>{{ channel.voice_preset or 'v2/en_speaker_0' }}</strong></span>
+                                <span id="charCount">0/500</span>
+                            </div>
+                        </div>
+                        <button class="btn btn-success w-100 btn-control" id="generateTtsBtn">
+                            <i class="fas fa-volume-up me-2"></i>Generate TTS
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Channel Stats -->
+        <div class="col-md-7 mb-3">
+            <div class="row h-100">
+                <!-- Messages Stats -->
+                <div class="col-md-6 mb-3">
+                    <div class="dashboard-card stats-card h-100">
+                        <div class="stats-card-icon">
+                            <i class="fas fa-comments"></i>
+                        </div>
+                        <div class="stats-card-content">
+                            <h3 class="stats-card-title">Messages</h3>
+                            <div class="channel-count-display">
+                                <span id="totalMessagesCount" class="stat-value">-</span>
+                                <span class="stat-label">total</span>
+                            </div>
+                            <div class="text-center">
+                                <small class="text-muted">Today: <span id="todayMessages">-</span></small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- TTS Stats -->
+                <div class="col-md-6 mb-3">
+                    <div class="dashboard-card stats-card h-100">
+                        <div class="stats-card-icon">
+                            <i class="fas fa-volume-up"></i>
+                        </div>
+                        <div class="stats-card-content">
+                            <h3 class="stats-card-title">TTS Generated</h3>
+                            <div class="channel-count-display">
+                                <span id="ttsCount" class="stat-value">-</span>
+                                <span class="stat-label">clips</span>
+                            </div>
+                            <div class="text-center">
+                                <small class="text-muted">Bot responses: <span id="botResponses">-</span></small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Activity Dashboard Section -->
+    <div class="row">
+        <!-- Recent Activity Panel -->
+        <div class="col-md-12 mb-4">
+            <div class="dashboard-card activity-panel">
+                <div class="activity-panel-header">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h3 class="panel-title"><i class="fas fa-stream me-2"></i>Recent Activity</h3>
+                        <div class="panel-actions d-flex align-items-center">
+                            <!-- Activity Filter Buttons -->
+                            <div class="btn-group btn-group-sm me-3" role="group">
+                                <input type="radio" class="btn-check" name="activityFilter" id="filterAll" checked>
+                                <label class="btn btn-outline-secondary" for="filterAll">All</label>
+                                
+                                <input type="radio" class="btn-check" name="activityFilter" id="filterMessages">
+                                <label class="btn btn-outline-secondary" for="filterMessages">Chat</label>
+                                
+                                <input type="radio" class="btn-check" name="activityFilter" id="filterTts">
+                                <label class="btn btn-outline-secondary" for="filterTts">TTS</label>
+                            </div>
+                            <button class="btn btn-icon" id="refreshActivityBtn" title="Refresh activity">
+                                <i class="fas fa-sync-alt"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="activity-panel-body p-0">
+                    <!-- Loading State -->
+                    <div id="activityLoading" class="text-center py-4">
+                        <div class="spinner-border text-primary" role="status"></div>
+                        <p class="mt-3 mb-0">Loading activity...</p>
+                    </div>
+                    
+                    <!-- Activity List -->
+                    <div id="activityList" class="table-responsive" style="max-height: 400px; overflow-y: auto; display: none;">
+                        <table class="table table-hover activity-table mb-0">
+                            <thead>
+                                <tr>
+                                    <th style="width: 15%;">Type</th>
+                                    <th style="width: 20%;">User/Source</th>
+                                    <th style="width: 45%;">Message</th>
+                                    <th style="width: 15%;">Time</th>
+                                    <th style="width: 5%;">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="activityTableBody">
+                                <!-- Activity items will be populated here -->
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <!-- Empty State -->
+                    <div id="activityEmpty" class="empty-state" style="display: none;">
+                        <i class="fas fa-comments-alt-slash empty-state-icon"></i>
+                        <h4>No activity yet</h4>
+                        <p class="text-muted">Activity will appear here as chat messages and TTS are generated</p>
+                    </div>
+                </div>
+                
+                <div class="card-footer d-flex justify-content-between align-items-center">
+                    <small class="text-muted">
+                        <i class="fas fa-sync-alt me-1"></i>
+                        Last updated: <span id="lastUpdated">-</span>
+                    </small>
+                    <small class="text-muted">
+                        <i class="fas fa-info-circle me-1"></i>
+                        Live updates every 15 seconds
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Live Chat Stream Row -->
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <div class="dashboard-card">
+                <div class="activity-panel-header">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h3 class="panel-title"><i class="fas fa-comments me-2"></i>Live Chat Stream</h3>
+                        <div class="d-flex align-items-center gap-2">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="chatStreamToggle" checked>
+                                <label class="form-check-label" for="chatStreamToggle">
+                                    <small>Auto-scroll</small>
+                                </label>
+                            </div>
+                            <button class="btn btn-outline-primary btn-sm" id="clearChatBtn">
+                                <i class="fas fa-broom me-1"></i>Clear
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="activity-panel-body">
+                    <!-- Chat Messages Container -->
+                    <div id="chatMessagesContainer" class="chat-stream-container">
+                        <div id="chatMessagesLoading" class="text-center py-3">
+                            <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+                            <small class="d-block mt-2 text-muted">Loading recent messages...</small>
+                        </div>
+                        
+                        <div id="chatMessagesList" class="chat-messages-list" style="display: none;">
+                            <!-- Chat messages will be populated here -->
+                        </div>
+                        
+                        <div id="chatMessagesEmpty" class="empty-state" style="display: none;">
+                            <i class="fas fa-comment-slash empty-state-icon"></i>
+                            <h5>No messages yet</h5>
+                            <p class="text-muted">Chat messages will appear here in real-time</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card-footer d-flex justify-content-between align-items-center">
+                    <small class="text-muted">
+                        <i class="fas fa-eye me-1"></i>
+                        Showing last <span id="chatMessageCount">0</span> messages
+                    </small>
+                    <small class="text-muted">
+                        <i class="fas fa-satellite-dish me-1"></i>
+                        <span id="chatStreamStatus" class="text-success">Connected</span>
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TTS History Row -->
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <div class="dashboard-card">
+                <div class="activity-panel-header">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h3 class="panel-title"><i class="fas fa-volume-up me-2"></i>TTS History & Playback</h3>
+                        <div class="d-flex align-items-center gap-2">
+                            <select id="ttsVoiceFilter" class="form-select form-select-sm" style="width: auto;">
+                                <option value="">All Voices</option>
+                            </select>
+                            <button class="btn btn-outline-warning btn-sm" id="clearTtsHistoryBtn">
+                                <i class="fas fa-trash me-1"></i>Clear
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="activity-panel-body">
+                    <!-- TTS Controls -->
+                    <div id="ttsHistoryLoading" class="text-center py-3">
+                        <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+                        <small class="d-block mt-2 text-muted">Loading TTS history...</small>
+                    </div>
+                    
+                    <div id="ttsHistoryList" class="tts-history-container" style="display: none;">
+                        <!-- TTS history items will be populated here -->
+                    </div>
+                    
+                    <div id="ttsHistoryEmpty" class="empty-state" style="display: none;">
+                        <i class="fas fa-volume-mute empty-state-icon"></i>
+                        <h5>No TTS history</h5>
+                        <p class="text-muted">TTS messages will appear here with playback controls</p>
+                    </div>
+                </div>
+                
+                <div class="card-footer d-flex justify-content-between align-items-center">
+                    <small class="text-muted">
+                        <i class="fas fa-music me-1"></i>
+                        <span id="ttsHistoryCount">0</span> TTS entries
+                    </small>
+                    <div class="d-flex align-items-center gap-3">
+                        <small class="text-muted">
+                            <i class="fas fa-play-circle me-1"></i>
+                            Now playing: <span id="currentlyPlaying">None</span>
+                        </small>
+                        <audio id="ttsAudioPlayer" controls style="height: 32px; width: 200px;"></audio>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Model Information Row -->
+    <div class="row">
+        <div class="col-md-12">
+            <div class="dashboard-card">
+                <div class="status-panel-header">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h3 class="panel-title"><i class="fas fa-brain me-2"></i>Model & Settings</h3>
+                        <button class="btn btn-outline-warning btn-sm" id="rebuildModelBtn">
+                            <i class="fas fa-sync-alt me-1"></i>
+                            Rebuild Model
+                        </button>
+                    </div>
+                </div>
+                <div class="status-panel-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6 class="fw-semibold mb-3">Channel Settings</h6>
+                            <table class="table table-sm">
+                                <tr>
+                                    <td><strong>Voice Preset:</strong></td>
+                                    <td><code>{{ channel.voice_preset or 'v2/en_speaker_0' }}</code></td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Bark Model:</strong></td>
+                                    <td><code>{{ channel.bark_model or 'bark-small' }}</code></td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Lines Between:</strong></td>
+                                    <td>{{ channel.lines_between_messages or 5 }} messages</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Time Between:</strong></td>
+                                    <td>{{ channel.time_between_messages or 30 }} seconds</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Use General Model:</strong></td>
+                                    <td>{% if channel.use_general_model %}Yes{% else %}No{% endif %}</td>
+                                </tr>
+                            </table>
+                        </div>
+                        <div class="col-md-6">
+                            <h6 class="fw-semibold mb-3">Model Information</h6>
+                            <div id="modelInfo">
+                                <div class="text-center py-3">
+                                    <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+                                    <small class="d-block mt-2 text-muted">Loading model information...</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-12 mt-4">
+                            <h6 class="fw-semibold mb-3">Quick Settings</h6>
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label class="form-label fw-medium">
+                                        <i class="fas fa-clock me-1"></i>
+                                        Lines Between Messages
+                                    </label>
+                                    <div class="input-group">
+                                        <input type="number" class="form-control" id="linesBetweenInput" 
+                                               value="{{ channel.lines_between_messages or 100 }}" min="1" max="1000">
+                                        <button class="btn btn-outline-primary" id="updateLinesBtn">
+                                            <i class="fas fa-save"></i>
+                                        </button>
+                                    </div>
+                                    <small class="text-muted">Messages before bot can respond</small>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label fw-medium">
+                                        <i class="fas fa-stopwatch me-1"></i>
+                                        Time Between Messages
+                                    </label>
+                                    <div class="input-group">
+                                        <input type="number" class="form-control" id="timeBetweenInput" 
+                                               value="{{ channel.time_between_messages or 0 }}" min="0" max="3600">
+                                        <span class="input-group-text">sec</span>
+                                        <button class="btn btn-outline-primary" id="updateTimeBtn">
+                                            <i class="fas fa-save"></i>
+                                        </button>
+                                    </div>
+                                    <small class="text-muted">Seconds between bot responses</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Audio Player (Hidden) -->
+<audio id="channelAudioPlayer" style="display: none;" controls>
+    Your browser does not support the audio element.
+</audio>
+{% endblock %}
+
+{% block page_scripts %}
+<script>
+// Pass channel data to JavaScript
+window.channelData = {
+    name: "{{ channel.name }}",
+    tts_enabled: {{ channel.tts_enabled|tojson }},
+    voice_enabled: {{ channel.voice_enabled|tojson }},
+    currently_connected: {{ channel.currently_connected|tojson }},
+    bot_running: {{ channel.bot_running|tojson }}
+};
+</script>
+<script src="{{ url_for('static', filename='scripts/channel_page.js') }}"></script>
+{% endblock %}

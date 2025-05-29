@@ -1,318 +1,388 @@
-document.addEventListener("DOMContentLoaded", function () {
-  console.log("DOMContentLoaded event fired");
+/**
+ * event_listener.js - Centralized event system
+ * 
+ * This file provides a standardized way for different parts of the application
+ * to communicate with each other through events, reducing direct dependencies.
+ */
 
+// Initialize socket properly at the top (maintain existing functionality)
+const socket = io();
 
-  var mainTab = document.getElementById("mainTab");
-  var settingsTab = document.getElementById("settingsTab");
-  var mainContent = document.getElementById("mainContent");
-  var settingsContent = document.getElementById("settingsContent");
-
-  var modelSelector = document.getElementById("modelSelector");
-  if (modelSelector) {
-    fetchAvailableModels();
-  } else {
-  }
-  
-
-  
-  var channelSelect = document.getElementById("channelSelect");
-  if (channelSelect) {
-      channelSelect.addEventListener("change", function () {
-          checkForAddChannelOption(this);
-      });
-      fetchChannels(); // Populate the channels when the settings page loads
-  }
-
-  function updateButtonTheme() {
-    var currentTheme = document.documentElement.getAttribute("data-bs-theme");
-    if (currentTheme === "dark") {
-      themeToggle.className = "btn btn-light";
-      themeToggle.textContent = "Light";
-    } else {
-      themeToggle.className = "btn btn-dark";
-      themeToggle.textContent = "Dark";
+// Create global event bus if it doesn't exist
+window.EventBus = window.EventBus || {
+    // Event registry
+    listeners: {},
+    
+    // Subscribe to an event
+    on: function(event, callback) {
+        if (!this.listeners[event]) {
+            this.listeners[event] = [];
+        }
+        this.listeners[event].push(callback);
+        
+        return {
+            // Return an object with unsubscribe method
+            unsubscribe: () => {
+                this.off(event, callback);
+            }
+        };
+    },
+    
+    // Unsubscribe from an event
+    off: function(event, callback) {
+        if (!this.listeners[event]) return;
+        
+        const index = this.listeners[event].indexOf(callback);
+        if (index !== -1) {
+            this.listeners[event].splice(index, 1);
+        }
+    },
+    
+    // Trigger an event with data
+    emit: function(event, data) {
+        if (!this.listeners[event]) return;
+        
+        this.listeners[event].forEach(callback => {
+            try {
+                callback(data);
+            } catch (e) {
+                console.error(`Error in event listener for ${event}:`, e); // Keep console.error for actual errors
+            }
+        });
+    },
+    
+    // Clear all listeners for an event
+    clear: function(event) {
+        if (event) {
+            delete this.listeners[event];
+        } else {
+            this.listeners = {};
+        }
     }
-  }
+};
 
-  const autoplayElement = document.getElementById("autoplay");
-  const muteIcon = document.getElementById("muteIcon");
-  const unmuteIcon = document.getElementById("unmuteIcon");
+// Common events that can be used throughout the application
+window.AppEvents = {
+    // Bot status events
+    BOT_STATUS_CHANGED: 'bot:status-changed',
+    BOT_STARTED: 'bot:started',
+    BOT_STOPPED: 'bot:stopped',
+    BOT_ERROR: 'bot:error',
+    
+    // Channel events
+    CHANNELS_LOADED: 'channels:loaded',
+    CHANNEL_JOINED: 'channel:joined',
+    CHANNEL_LEFT: 'channel:left',
+    CHANNEL_SETTINGS_UPDATED: 'channel:settings-updated',
+    CHANNEL_ADDED: 'channel:added',
+    CHANNEL_DELETED: 'channel:deleted',
+    
+    // Message events
+    MESSAGE_GENERATED: 'message:generated',
+    MESSAGE_SENT: 'message:sent',
+    
+    // UI events
+    THEME_CHANGED: 'ui:theme-changed',
+    PAGE_LOADED: 'ui:page-loaded',
+    
+    // System events
+    SYSTEM_ERROR: 'system:error',
+    API_ERROR: 'system:api-error',
+    
+    // TTS events
+    TTS_NEW_ENTRY: 'tts:new-entry',
+    TTS_PLAYED: 'tts:played'
+};
 
-  // Set the UI based on stored preferences
-  const isMuted = localStorage.getItem('muteStatus') === 'true';
-  autoplayElement.checked = !isMuted;
-  updateIcons(isMuted);
+// Helper function for components to use events
+function useEvents() {
+    return {
+        on: window.EventBus.on.bind(window.EventBus),
+        off: window.EventBus.off.bind(window.EventBus),
+        emit: window.EventBus.emit.bind(window.EventBus),
+        events: window.AppEvents
+    };
+}
 
-  autoplayElement.addEventListener("change", function () {
-      const autoplayEnabled = this.checked;
-      updateIcons(!autoplayEnabled);
-      localStorage.setItem('muteStatus', !autoplayEnabled);
-  });
-
-  function updateIcons(isMuted) {
-      if (isMuted) {
-          muteIcon.classList.remove("d-none");
-          unmuteIcon.classList.add("d-none");
-      } else {
-          muteIcon.classList.add("d-none");
-          unmuteIcon.classList.remove("d-none");
-      }
-  }
-
-  themeToggle.addEventListener("click", function () {
-    var currentTheme = document.documentElement.getAttribute("data-bs-theme");
-
-    if (currentTheme === "dark") {
-      document.documentElement.setAttribute("data-bs-theme", "light");
-    } else {
-      document.documentElement.setAttribute("data-bs-theme", "dark");
+// Setup WebSocket connection with event dispatcher
+function setupWebSocket() {
+    try {
+        // Prevent duplicate event listeners by removing existing ones first
+        if (socket._eventsCount > 0) {
+            if (window.DEBUG_MODE) console.log("Removing existing socket listeners");
+            socket.off("refresh_table");
+            socket.off("new_tts_entry");
+            socket.off("bot_status_change");
+        }
+        
+        // Listen for refresh_table events
+        socket.on("refresh_table", function (data) {
+            if (window.DEBUG_MODE) console.log("Received refresh_table event:", data);
+            
+            // Call refreshTable in data_handler.js
+            if (window.refreshTable) {
+                window.refreshTable();
+            }
+            
+            // Emit to event bus for components that use events
+            window.EventBus.emit('table:refresh', data);
+        });
+        
+        // Listen for new_tts_entry events
+        socket.on("new_tts_entry", function (data) {
+            if (window.DEBUG_MODE) console.log("Received new_tts_entry event:", data);
+            
+            // Call refreshTable in data_handler.js
+            if (window.refreshTable) {
+                window.refreshTable();
+            }
+            
+            // Emit to event bus
+            window.EventBus.emit(window.AppEvents.TTS_NEW_ENTRY, data);
+            
+            // Notification is now handled by listeners of AppEvents.TTS_NEW_ENTRY (e.g., tts_history.js)
+            // to avoid duplicates.
+        });
+        
+        // Listen for bot status changes
+        socket.on("bot_status_change", function(data) {
+            // Update UI with centralized function if available
+            if (typeof updateBotStatusUI === 'function') {
+                updateBotStatusUI(data.status);
+            }
+            
+            // Emit to event bus for components that use events
+            window.EventBus.emit(window.AppEvents.BOT_STATUS_CHANGED, data);
+            
+            // Also emit specific events for started/stopped
+            if (data.status === 'running') {
+                window.EventBus.emit(window.AppEvents.BOT_STARTED, data);
+            } else {
+                window.EventBus.emit(window.AppEvents.BOT_STOPPED, data);
+            }
+        });
+        
+        // Mark socket as initialized
+        window._socketEventsInitialized = true;
+        
+        if (window.DEBUG_MODE) console.log("WebSocket listeners successfully set up");
+    } catch (error) {
+        if (window.DEBUG_MODE) console.warn("WebSocket setup error:", error);
+        window.EventBus.emit(window.AppEvents.SYSTEM_ERROR, {
+            source: 'websocket',
+            message: error.message,
+            error: error
+        });
     }
-    updateButtonTheme();
-  });
+}
 
-  // Initialize button theme on load
-  updateButtonTheme();
-
-  try {
-    var socket = io.connect(
-      location.protocol + "//" + document.domain + ":" + location.port
-    );
-
-    socket.on("connect", function () {
-      console.log("Websocket connected!");
-    });
-
-    socket.on("refresh_table", function () {
-      loadLatestData();
-    });
-
-  } catch (error) {
-    console.error("Error initializing WebSocket:", error);
-  }
-
-  var saveSettingsButton = document.getElementById("saveSettings");
-  if (saveSettingsButton) {
-      saveSettingsButton.addEventListener("click", function (event) {
-          event.preventDefault(); // Prevent the default form submission
-          saveChannelSettings(); // Call the saveChannelSettings function
-      });
-  } else {
-  }
-
-  var addChannelSaveButton = document.getElementById("addChannelSave");
-  if (addChannelSaveButton) {
-      addChannelSaveButton.addEventListener("click", function () {
-          var newChannelName = document.getElementById("newChannelName").value;
-          if (newChannelName) {
-              var newChannelData = {
-                  channel_name: newChannelName,
-                  tts_enabled: 0, // Default values for a new channel
-                  voice_enabled: 0,
-                  join_channel: 1,
-                  owner: newChannelName,
-                  trusted_users: "",
-                  ignored_users: "",
-                  use_general_model: 1,
-                  lines_between_messages: 100,
-                  time_between_messages: 0,
-              };
-              addNewChannel(newChannelData);
-          } else {
-              alert("Please enter a channel name.");
-          }
-      });
-  } else {
-  }
-  
-
-  if (mainTab && mainContent && settingsContent && settingsTab) {
-    mainTab.addEventListener("click", function () {
-        mainContent.style.display = "block";
-        settingsContent.style.display = "none";
-        mainTab.classList.add("active");
-        settingsTab.classList.remove("active");
+// Main initialization function
+function initializeApp() {
+    // Check if we've already initialized this page to avoid duplicate setup
+    if (window._pageInitialized) {
+        if (window.DEBUG_MODE) console.log("Page already initialized, skipping duplicate initialization");
+        return;
+    }
+    
+    // Mark the page as initialized
+    window._pageInitialized = true;
+    if (window.DEBUG_MODE) console.log("Initializing page components");
+    
+    // Check bot status first
+    if (typeof checkBotStatus === 'function') {
+        checkBotStatus();
+    } else if (window.BotStatus && typeof window.BotStatus.checkStatus === 'function') {
+        window.BotStatus.checkStatus();
+    }
+    
+    // Populate channel and model selectors for message generation
+    const channelForMessage = document.getElementById('channelForMessage');
+    if (channelForMessage) {
+        if (typeof populateMessageChannels === 'function') {
+            populateMessageChannels();
+        }
+    }
+    
+    // Also populate the models if modelSelector exists
+    const modelSelector = document.getElementById('modelSelector');
+    if (modelSelector) {
+        if (typeof populateModels === 'function') {
+            populateModels();
+        }
+    }
+    
+    // Populate channel settings dropdown
+    var channelSelect = document.getElementById("channelSelect");
+    if (channelSelect) {
+        channelSelect.addEventListener("change", function () {
+            if (typeof checkForAddChannelOption === 'function') {
+                checkForAddChannelOption(this);
+            }
+        });
+        
+        // Populate the channels when the settings page loads
+        if (typeof fetchChannels === 'function') {
+            fetchChannels();
+        } else if (window.ChannelManager && typeof window.ChannelManager.loadChannels === 'function') {
+            window.ChannelManager.loadChannels();
+        }
+    }
+    
+    // Set up button event listeners
+    if (typeof setupButtonListeners === 'function') {
+        setupButtonListeners();
+    }
+    
+    // Set up theme toggle
+    if (typeof setupThemeToggle === 'function') {
+        setupThemeToggle();
+    } else if (window.ThemeManager && typeof window.ThemeManager.init === 'function') {
+        window.ThemeManager.init();
+    }
+    
+    // Set up autoplay toggle
+    if (typeof setupAutoplayToggle === 'function') {
+        setupAutoplayToggle();
+    }
+    
+    // Set up WebSocket - only if not already set up
+    if (!window._socketEventsInitialized) {
+        setupWebSocket();
+    }
+    
+    // Load initial data for tables if needed
+    if (typeof refreshTable === 'function') {
+        refreshTable();
+    }
+    
+    // Add keyboard shortcuts
+    if (typeof setupKeyboardShortcuts === 'function') {
+        setupKeyboardShortcuts();
+    }
+    
+    // Emit page loaded event for any components listening
+    window.EventBus.emit(window.AppEvents.PAGE_LOADED, {
+        path: window.location.pathname,
+        query: window.location.search,
+        hash: window.location.hash
     });
 }
 
-// Event listener for settingsTab
-if (settingsTab && settingsContent && mainContent && mainTab) {
-    settingsTab.addEventListener("click", function () {
-        mainContent.style.display = "none";
-        settingsContent.style.display = "block";
-        settingsTab.classList.add("active");
-        mainTab.classList.remove("active");
+// Initialize the app when the DOM content is loaded
+document.addEventListener("DOMContentLoaded", initializeApp);
 
-        // Fetch channels only if channelSelect element is present
-        var channelSelect = document.getElementById("channelSelect");
-        if (channelSelect) {
-            fetchChannels();
+// Expose key functions to global scope for backward compatibility
+window.updateBotStatusUI = function(statusData) {
+    const botStatusIcon = document.getElementById('botStatusIcon');
+    const botStatusIndicator = document.getElementById('botStatusIndicator');
+    
+    if (botStatusIcon) {
+        if (statusData.status === 'running') {
+            botStatusIcon.className = 'bi bi-circle-fill text-success';
+        } else {
+            botStatusIcon.className = 'bi bi-circle-fill text-danger';
+        }
+    }
+    
+    if (botStatusIndicator) {
+        if (statusData.status === 'running') {
+            botStatusIndicator.innerHTML = '<span class="badge bg-success">Running</span>';
+        } else {
+            botStatusIndicator.innerHTML = '<span class="badge bg-danger">Stopped</span>';
+        }
+    }
+    
+    // Also update button states
+    if (typeof updateButtonStates === 'function') {
+        updateButtonStates(statusData.status === 'running');
+    } else if (window.BotStatus && typeof window.BotStatus.updateButtons === 'function') {
+        window.BotStatus.running = statusData.status === 'running';
+        window.BotStatus.updateButtons();
+    }
+};
+
+// Legacy compatibility for updateChannelCount
+window.updateChannelCount = function() {
+    const channelCountElement = document.getElementById('channelCount');
+    if (!channelCountElement) return;
+    
+    fetch("/get-stats")
+        .then(response => response.json())
+        .then(data => {
+            // Count channels but exclude the general model
+            const channelCount = data.filter(channel => 
+                channel.name !== 'general_markov' && 
+                channel.name !== 'General Model'
+            ).length;
+            
+            channelCountElement.textContent = channelCount;
+        })
+        .catch(error => {
+            console.error("Error updating channel count:", error);
+            channelCountElement.textContent = "?";
+        });
+};
+
+// Legacy compatibility for keyboard shortcuts
+function setupKeyboardShortcuts() {
+    document.addEventListener('keydown', function(event) {
+        // Ctrl+S to save settings
+        if (event.ctrlKey && event.key === 's') {
+            event.preventDefault();
+            const saveSettingsBtn = document.getElementById('saveSettings');
+            if (saveSettingsBtn && saveSettingsBtn.offsetParent !== null) {
+                saveSettingsBtn.click();
+            }
+        }
+        
+        // Ctrl+G to generate message
+        if (event.ctrlKey && event.key === 'g') {
+            event.preventDefault();
+            const generateMsgBtn = document.getElementById('generateMsgBtn');
+            if (generateMsgBtn && generateMsgBtn.offsetParent !== null) {
+                generateMsgBtn.click();
+            }
         }
     });
 }
 
-
-// var voicePreset = document.getElementById("voicePreset");
-// if (voicePreset) {
-//     voicePreset.addEventListener("change", function () {
-//         const customVoiceRow = document.getElementById("customVoiceRow");
-//         if (this.value === "custom") {
-//             if (customVoiceRow) {
-//                 customVoiceRow.style.display = "";
-//                 fetchAndShowCustomVoices(); 
-//             }
-//         } else {
-//             if (customVoiceRow) {
-//                 customVoiceRow.style.display = "none";
-//             }
-//         }
-//     });
-// } else {
-// }
-
-
-    var refreshTableButton = document.getElementById("refreshTable");
-    if (refreshTableButton) {
-        refreshTableButton.addEventListener("click", function () {
-            refreshTable();
-        });
-    } else {
-    }
-
-  var settingsTab = document.getElementById("settingsTab");
-
-  const loadMoreButton = document.getElementById("loadMore");
-  if (loadMoreButton) {
-    loadMoreButton.addEventListener("click", loadMoreData);
-  } else {
-  }
-
-  // Load initial data
-  //loadMoreData();
-  //loadLatestData();
-  var voicePresetSelect = document.getElementById("voicePresetSelect");
-  if (voicePresetSelect) {
-      handleVoicePresetChange();
-  }
-  refreshTable();
-  socket.on("refresh_table", function () {
-    addLatestRow();
-  });
-
-    var statsContainer = document.getElementById('statsContainer');
-    if (statsContainer) {
-        statsContainer.addEventListener('click', function(event) {
-            if (event.target && event.target.classList.contains('rebuild-cache-btn')) {
-                const channelName = event.target.getAttribute('data-channel');
-                if (channelName) {
-                    rebuildCacheForChannel(channelName);
-                }
-            }
-        });
-    }
-    if (statsContainer) {
-        loadStats();
-    }
-
-
+// Setup autoplay toggle with proper backward compatibility
+function setupAutoplayToggle() {
+    const autoplayElement = document.getElementById("autoplay");
+    if (!autoplayElement) return; // Exit if element doesn't exist
     
-    var rebuildAllCachesBtn = document.getElementById('rebuildAllCachesBtn');
-    if (rebuildAllCachesBtn) {
-        // If the button exists, add the event listener
-        rebuildAllCachesBtn.addEventListener('click', function() {
-            rebuildAllCaches();
-        });
+    const muteIcon = document.getElementById("muteIcon");
+    const unmuteIcon = document.getElementById("unmuteIcon");
+    if (!muteIcon || !unmuteIcon) return; // Exit if icons don't exist
+    
+    // Set the UI based on stored preferences
+    const isMuted = localStorage.getItem("muteStatus") === "true";
+    autoplayElement.checked = !isMuted;
+    
+    // Update the icons based on the current state
+    if (isMuted) {
+        muteIcon.classList.remove("d-none");
+        unmuteIcon.classList.add("d-none");
+    } else {
+        muteIcon.classList.add("d-none");
+        unmuteIcon.classList.remove("d-none");
     }
-    function loadStats() {
-      let statsContainer = document.getElementById('statsContainer');
-      if (!statsContainer) return;
-
-      let loadingIndicator = document.getElementById('loadingIndicator');
-      if (loadingIndicator) loadingIndicator.style.display = 'block';
-
-      fetch('/api/stats')
-        .then(response => response.json())
-        .then(data => {
-          statsContainer.innerHTML = '';
-
-          // Separate the general_markov stat from the others
-          let generalMarkovStat = data.find(stat => stat.channel === 'general_markov');
-          let otherStats = data.filter(stat => stat.channel !== 'general_markov');
-
-          // Function to create a row for a stat
-          const createStatRow = (stat) => {
-            let row = document.createElement('tr');
-          
-            // Check if this is the General Model row
-            if (stat.channel === 'General Model') {
-              row.classList.add('table-primary'); // Apply Bootstrap class for the General Model row
-            }
-          
-            let channelCell = document.createElement('th');
-            channelCell.scope = 'row';
-            channelCell.innerHTML = stat.channel === 'General Model' ? 'General Model' : `<a href="http://twitch.tv/${stat.channel}" target="_blank">${stat.channel}</a>`;
-          
-            let cacheCell = createCell(stat.cache);
-            let logCell = createCell(stat.log);
-            let cacheSizeCell = createCell(formatFileSize(stat.cache_size));
-            let lineCountCell = createCell(stat.line_count.toString());
-            let actionsCell = createCell(stat.channel === 'General Model' ? '' : createRebuildButton(stat.channel));
-          
-            row.append(channelCell, cacheCell, logCell, cacheSizeCell, lineCountCell, actionsCell);
-            return row;
-          }
-
-          // If the general_markov stat exists, create a row for it and append it first
-          if (generalMarkovStat) {
-            let row = createStatRow(generalMarkovStat);
-            statsContainer.appendChild(row);
-          }
-
-          // Create rows for the other stats
-          otherStats.forEach(stat => {
-            let row = createStatRow(stat);
-            statsContainer.appendChild(row);
-          });
-
-          if (loadingIndicator) loadingIndicator.style.display = 'none';
-        })
-        .catch(error => {
-          console.error('Error fetching stats:', error);
-          if (statsContainer) statsContainer.innerHTML = 'Failed to load data.';
-        });
-    }
-  
-  function createCell(content) {
-      let cell = document.createElement('td');
-      cell.innerHTML = content;
-      return cell;
-  }
-  
-  function createRebuildButton(channelName) {
-      let button = document.createElement('button');
-      button.classList.add('btn', 'btn-primary', 'rebuild-cache-btn');
-      button.setAttribute('data-channel', channelName);
-      button.textContent = 'Rebuild Cache';
-      button.addEventListener('click', function() {
-          rebuildCacheForChannel(channelName);
-      });
-      return button.outerHTML;
-  }
-  
-  function formatFileSize(bytes) {
-      if (bytes < 1024) return bytes + ' Bytes';
-      if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
-      if (bytes < 1073741824) return (bytes / 1048576).toFixed(1) + ' MB';
-      return (bytes / 1073741824).toFixed(1) + ' GB';
-  }
-  
-
-
-
-const rebuildGeneralCacheBtn = document.getElementById('rebuildGeneralCacheBtn');
-if (rebuildGeneralCacheBtn) {
-    // If the button exists, add the event listener
-    rebuildGeneralCacheBtn.addEventListener('click', function() {
-        rebuildGeneralCache();
+    
+    // Add listener
+    autoplayElement.addEventListener("change", function() {
+        const autoplayEnabled = this.checked;
+        const isMuted = !autoplayEnabled;
+        
+        // Update localStorage
+        localStorage.setItem("muteStatus", isMuted);
+        
+        // Update the UI
+        if (isMuted) {
+            muteIcon.classList.remove("d-none");
+            unmuteIcon.classList.add("d-none");
+        } else {
+            muteIcon.classList.add("d-none");
+            unmuteIcon.classList.remove("d-none");
+        }
     });
 }
-});

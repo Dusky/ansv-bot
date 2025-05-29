@@ -1,5 +1,7 @@
 <div class="card border-primary shadow mb-5 rounded">
-    <div class="card-header">Channel Settings</div>
+    <div class="card-header bg-primary text-white">
+      <h5 class="mb-0"><i class="fas fa-tv me-2"></i>Channel Settings</h5>
+    </div>
     <div class="card-body">
       <!-- Theme selection and other settings -->
       <label for="channelSelect"></label>
@@ -8,114 +10,131 @@
         <option value="add_channel">Add Channel</option>
     </select>
     <div id="addChannelDiv" style="display: none" class="pt-4">
-        <input type="text" id="newChannelName" placeholder="Enter new channel name" class="form-control" />
-        <button id="addChannelSave" class="btn btn-primary mt-4">Save New Channel</button>
+        <div class="form-group mb-3">
+            <label for="newChannelName" class="form-label">New Channel Name</label>
+            <input type="text" id="newChannelName" placeholder="Enter new channel name" class="form-control" />
+            <small class="text-muted">Name of the channel to add (without # prefix)</small>
+        </div>
+        <button id="addChannelSave" class="btn btn-primary mt-2 d-block w-100" onclick="saveChannelSettings()">Save New Channel</button>
     </div>
     
     <br />
     <form id="channelConfig" style="display: none" class="mt-3">
-      <table class="table table-borderless">
-        <tbody>
-          <tr>
-            <td>TTS Enabled:</td>
-            <td>
+      <div class="row">
+        <!-- Left Column -->
+        <div class="col-md-6">
+          <div class="mb-3">
+            <div class="form-check form-switch mb-2">
               <input type="checkbox" id="ttsEnabled" class="form-check-input" />
-            </td>
-          </tr>
-          <tr>
-            <td>Voice Enabled:</td>
-            <td>
+              <label for="ttsEnabled" class="form-check-label">TTS Enabled</label>
+            </div>
+            
+            <div class="form-check form-switch mb-2">
               <input type="checkbox" id="voiceEnabled" class="form-check-input" />
-            </td>
-          </tr>
-          <tr>
-            <td>Join Channel:</td>
-            <td>
+              <label for="voiceEnabled" class="form-check-label">Voice Enabled</label>
+            </div>
+            
+            <div class="form-check form-switch mb-2">
               <input type="checkbox" id="joinChannel" class="form-check-input" />
-            </td>
-          </tr>
-          <tr>
-            <td>Owner:</td>
-            <td>
+              <label for="joinChannel" class="form-check-label">Join Channel</label>
+            </div>
+            
+            <div class="form-check form-switch mb-4">
+              <input type="checkbox" id="useGeneralModel" class="form-check-input" />
+              <label for="useGeneralModel" class="form-check-label">Use General Model</label>
+            </div>
+            
+            <div class="mb-3">
+              <label for="owner" class="form-label">Owner:</label>
               <input type="text" id="owner" class="form-control" />
-            </td>
-          </tr>
-          <tr>
-            <td>Trusted Users:</td>
-            <td>
-              <textarea id="trustedUsers" class="form-control"></textarea>
-            </td>
-          </tr>
-          <tr>
-            <td>Ignored Users:</td>
-            <td>
-              <textarea id="ignoredUsers" class="form-control"></textarea>
-            </td>
-          </tr>
-          <tr>
-            <td>Use General Model:</td>
-            <td>
-              <input
-                type="checkbox"
-                id="useGeneralModel"
-                class="form-check-input"
-              />
-            </td>
-          </tr>
-          <tr>
-            <td>Lines Between Messages:</td>
-            <td>
-              <input
-                type="number"
-                id="linesBetweenMessages"
-                class="form-control"
-              />
-            </td>
-          </tr>
-          <tr>
-            <td>Time Between Messages:</td>
-            <td>
-              <input
-                type="number"
-                id="timeBetweenMessages"
-                class="form-control"
-              />
-            </td>
-          </tr>
-          <tr>
-            <td>Voice Preset:</td>
-            <td>
-              <select
-                id="voicePreset"
-                class="form-select"
-                onchange="handleVoicePresetChange()"
-              >
-                <option value="v2/en_speaker_0">English Speaker 0</option>
-                <option value="v2/en_speaker_1">English Speaker 1</option>
-                <option value="v2/en_speaker_2">English Speaker 2</option>
-                <option value="v2/en_speaker_3">English Speaker 3</option>
-                <option value="v2/en_speaker_4">English Speaker 4</option>
-                <option value="v2/en_speaker_5">English Speaker 5</option>
-                <option value="v2/en_speaker_6">English Speaker 6</option>
-                <option value="v2/en_speaker_7">English Speaker 7</option>
-                <option value="v2/en_speaker_8">English Speaker 8</option>
-                <option value="v2/en_speaker_9">English Speaker 9</option>
-                <option value="custom">Custom Voice</option>
-              </select>
-            </td>
-          </tr>
-          <tr id="customVoiceRow" style="display: none">
-            <td>Custom Voice:</td>
-            <td>
-              <select id="customVoiceSelect" class="form-select">
-                <!-- Options will be populated dynamically -->
-              </select>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-      <div class="text-end d-grid gap-2">
-        <button id="saveSettings" class="btn btn-lg btn-primary">Save</button>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Right Column -->
+        <div class="col-md-6">
+          <div class="mb-3">
+            <label for="linesBetweenMessages" class="form-label">Lines Between Messages:</label>
+            <input type="number" id="linesBetweenMessages" class="form-control" />
+          </div>
+          
+          <div class="mb-3">
+            <label for="timeBetweenMessages" class="form-label">Time Between Messages:</label>
+            <input type="number" id="timeBetweenMessages" class="form-control" />
+          </div>
+          
+          <div class="mb-3">
+            <label for="barkModel" class="form-label">Bark Model:</label>
+            <select id="barkModel" class="form-select">
+              <option value="bark-small">Bark Small (Default)</option>
+              <option value="bark">Bark Standard</option>
+              <option value="bark-large">Bark Large</option>
+            </select>
+            <small class="text-muted">Larger models have better quality but require more resources</small>
+          </div>
+
+          <div class="mb-3">
+            <label for="voicePreset" class="form-label">Voice Preset:</label>
+            <select id="voicePreset" class="form-select" onchange="if(typeof handleVoicePresetChange === 'function') handleVoicePresetChange()">
+              <option value="v2/en_speaker_0">English Speaker 0</option>
+              <option value="v2/en_speaker_1">English Speaker 1</option>
+              <option value="v2/en_speaker_2">English Speaker 2</option>
+              <option value="v2/en_speaker_3">English Speaker 3</option>
+              <option value="v2/en_speaker_4">English Speaker 4</option>
+              <option value="v2/en_speaker_5">English Speaker 5</option>
+              <option value="v2/en_speaker_6">English Speaker 6</option>
+              <option value="v2/en_speaker_7">English Speaker 7</option>
+              <option value="v2/en_speaker_8">English Speaker 8</option>
+              <option value="v2/en_speaker_9">English Speaker 9</option>
+              <option value="custom">Custom Voice</option>
+            </select>
+          </div>
+          
+          <div id="customVoiceRow" class="mb-3" style="display: none">
+            <label for="customVoiceSelect" class="form-label">Custom Voice:</label>
+            <select id="customVoiceSelect" class="form-select">
+              <!-- Options will be populated dynamically -->
+            </select>
+          </div>
+        </div>
+      </div>
+      
+      <div class="row mt-3">
+        <div class="col-md-6">
+          <div class="mb-3">
+            <label for="trustedUsers" class="form-label">Trusted Users:</label>
+            <textarea id="trustedUsers" class="form-control" rows="3"></textarea>
+            <small class="text-muted">Enter usernames separated by commas</small>
+          </div>
+        </div>
+        <div class="col-md-6">
+          <div class="mb-3">
+            <label for="ignoredUsers" class="form-label">Ignored Users:</label>
+            <textarea id="ignoredUsers" class="form-control" rows="3"></textarea>
+            <small class="text-muted">Enter usernames separated by commas</small>
+          </div>
+        </div>
+      </div>
+      <div class="row mt-4">
+        <div class="col-md-4">
+          <button id="deleteChannelBtn" class="btn btn-lg btn-danger w-100" style="display: none;" type="button" onclick="deleteChannel(this.getAttribute('data-channel'))">
+            <i class="fas fa-trash-alt me-1"></i>Delete Channel
+          </button>
+        </div>
+        <div class="col-md-4">
+          <button id="sendMessageBtn" class="btn btn-lg btn-success w-100" style="display: none;" type="button">
+            <i class="fas fa-comment-dots me-1"></i>Generate & Send
+          </button>
+        </div>
+        <div class="col-md-4">
+          <button id="saveSettings" class="btn btn-lg btn-primary w-100" type="button" onclick="saveChannelSettings()">
+            <i class="fas fa-save me-1"></i>Save Settings
+          </button>
+        </div>
       </div>
     </form>
+  </div>
+  <div class="card-footer d-flex justify-content-between align-items-center">
+    <small><i class="fas fa-info-circle me-1"></i> Changes are saved per channel</small>
+    <small><i class="fas fa-database me-1"></i> Settings are stored in the database</small>
   </div>

@@ -1,11 +1,87 @@
 <div class="card border-primary shadow mb-5 rounded">
   <div class="card-header">Generate Message</div>
   <div class="card-body text-center pt-3">
-    <select id="modelSelector" class="form-select mb-2"></select>
-    <button id="generateMsgBtn" class="btn btn-primary mb-3" onclick="generateMessage()">Generate Message</button>
-    <!-- Initially hide the message container -->
-    <div id="generatedMessageContainer" class="p-3 mb-3 bg-dark rounded d-none">
+    <!-- Channel selector -->
+    <div class="mb-3">
+      <label for="channelForMessage" class="form-label">Channel:</label>
+      <select id="channelForMessage" class="form-select">
+        <option value="general_markov">General Model</option>
+        <!-- Will be populated via JavaScript -->
+      </select>
+    </div>
+    <!-- Model selector -->
+    <div class="mb-3">
+      <label for="modelSelector" class="form-label">Model:</label>
+      <select id="modelSelector" class="form-select">
+        <option value="general_markov">General Model</option>
+        <!-- Will be populated via JavaScript -->
+      </select>
+    </div>
+    
+    <!-- Generate button with fallback - explicitly mark as ALWAYS enabled even if bot is not running -->
+    <button id="generateMsgBtn" class="btn btn-primary mb-3 generate-btn" 
+            onclick="typeof generateMessage === 'function' ? generateMessage() : alert('Generation function not available')" 
+            data-bot-action="generate" 
+            data-always-enabled="true">
+      <i class="fas fa-random me-1"></i>Generate Message
+    </button>
+    
+    <!-- Message container (initially hidden) -->
+    <div id="generatedMessageContainer" class="p-3 mb-3 rounded d-none" style="background-color: rgba(0,0,0,0.1);">
       <p id="generatedMessage" class="text-center mb-0">Generated message will appear here...</p>
+    </div>
+    
+    <!-- Status information (optional) -->
+    <div class="text-muted small mt-2">
+      <span>Generation works independently of bot status</span>
     </div>
   </div>
 </div>
+
+<!-- Script to fetch models and channels immediately -->
+<script>
+  // Ensure models are loaded as soon as possible
+  document.addEventListener('DOMContentLoaded', function() {
+    console.log("Initializing generate message block");
+    
+    // Fetch available models
+    fetch("/available-models")
+      .then(response => response.json())
+      .then(models => {
+        const modelSelector = document.getElementById("modelSelector");
+        if (modelSelector) {
+          // Clear existing options
+          modelSelector.innerHTML = '';
+          
+          // Add models to dropdown
+          models.forEach(model => {
+            const option = document.createElement("option");
+            option.value = model;
+            option.textContent = model === 'general_markov' ? 'General Model' : model;
+            modelSelector.appendChild(option);
+          });
+        }
+      })
+      .catch(error => console.error("Error fetching models:", error));
+    
+    // Also populate channels
+    fetch('/get-channels')
+      .then(response => response.json())
+      .then(channels => {
+        const selector = document.getElementById('channelForMessage');
+        if (selector) {
+          // Clear existing options except the first one
+          selector.innerHTML = '<option value="general_markov">General Model</option>';
+          
+          // Add channels to dropdown
+          channels.forEach(channel => {
+            const option = document.createElement('option');
+            option.value = channel.name || channel[0];
+            option.textContent = channel.name || channel[0];
+            selector.appendChild(option);
+          });
+        }
+      })
+      .catch(error => console.error('Error loading channels:', error));
+  });
+</script>
