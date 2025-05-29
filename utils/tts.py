@@ -2,6 +2,7 @@ import os
 import time
 import asyncio
 import logging
+import re
 from datetime import datetime
 import sqlite3
 import requests
@@ -11,8 +12,9 @@ from contextlib import contextmanager
 import nltk
 import numpy as np
 from nltk.tokenize import sent_tokenize
-
-import numpy as np
+from functools import lru_cache
+import weakref
+from concurrent.futures import ThreadPoolExecutor
 
 VOICES_DIRECTORY = './voices'
 db_file = 'messages.db'
@@ -24,6 +26,82 @@ original_stderr = sys.stderr
 # Add lock to prevent concurrent TTS processing for Bark model
 bark_tts_lock = threading.Lock() # For process_text_thread
 async_tts_lock = asyncio.Lock() # For async def process_text, renamed from tts_lock for clarity
+
+# PERFORMANCE: TTS Model Cache and Thread Pool
+class TTSModelCache:
+    """PERFORMANCE: Cache for TTS models to avoid repeated loading"""
+    def __init__(self, max_models=3):
+        self.cache = {}
+        self.max_models = max_models
+        self.last_used = {}
+        self.lock = threading.Lock()
+        
+    def get_model(self, model_path, device):
+        """Get cached model or load if not cached"""
+        cache_key = f"{model_path}_{device}"
+        
+        with self.lock:
+            if cache_key in self.cache:
+                # Update last used time
+                self.last_used[cache_key] = time.time()
+                logging.debug(f"TTS: Using cached model {model_path}")
+                return self.cache[cache_key]
+            
+            # Need to load model - check cache size
+            if len(self.cache) >= self.max_models:
+                # Remove least recently used model
+                oldest_key = min(self.last_used.keys(), key=lambda k: self.last_used[k])
+                del self.cache[oldest_key]
+                del self.last_used[oldest_key]
+                logging.info(f"TTS: Evicted model from cache: {oldest_key}")
+            
+            # Load the model
+            logging.info(f"TTS: Loading model into cache: {model_path}")
+            try:
+                from transformers import AutoProcessor, BarkModel
+                import torch
+                
+                processor = AutoProcessor.from_pretrained(model_path)
+                model = BarkModel.from_pretrained(model_path)
+                model = model.to(device)
+                
+                # Apply optimizations for CUDA
+                if device.type == "cuda":
+                    try:
+                        model.to_bettertransformer()
+                        model.enable_cpu_offload()
+                        logging.debug(f"TTS: Applied CUDA optimizations for {model_path}")
+                    except Exception as e:
+                        logging.warning(f"TTS: Could not apply CUDA optimizations: {e}")
+                
+                # Configure tokenizer
+                if processor.tokenizer.pad_token_id is None:
+                    if processor.tokenizer.eos_token_id is not None:
+                        processor.tokenizer.pad_token_id = processor.tokenizer.eos_token_id
+                    else:
+                        processor.tokenizer.pad_token_id = 10000
+                
+                cached_model = {'processor': processor, 'model': model}
+                self.cache[cache_key] = cached_model
+                self.last_used[cache_key] = time.time()
+                
+                logging.info(f"TTS: Successfully cached model {model_path}")
+                return cached_model
+                
+            except Exception as e:
+                logging.error(f"TTS: Failed to load model {model_path}: {e}")
+                return None
+    
+    def clear_cache(self):
+        """Clear all cached models"""
+        with self.lock:
+            self.cache.clear()
+            self.last_used.clear()
+            logging.info("TTS: Cleared model cache")
+
+# Global instances
+tts_model_cache = TTSModelCache()
+tts_thread_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="tts-worker")
 
 def fetch_latest_message():
     try:
@@ -39,38 +117,50 @@ def fetch_latest_message():
         logging.error(f"SQLite error in fetch_latest_message: {e}")
         raise
 
-def get_voice_preset(channel_name, db_file):
+@lru_cache(maxsize=100)
+def get_voice_preset_cached(channel_name, db_file_path):
+    """PERFORMANCE: Cached voice preset lookup to avoid repeated DB queries"""
     try:
         # Check for default preset from command line
         default_preset = os.environ.get("DEFAULT_VOICE_PRESET")
         if default_preset:
             return default_preset
         
-        conn = sqlite3.connect(db_file)
+        conn = sqlite3.connect(db_file_path)
         c = conn.cursor()
         c.execute("SELECT voice_preset FROM channel_configs WHERE channel_name = ?", (channel_name,))
         result = c.fetchone()
         return result[0] if result else 'v2/en_speaker_5'
     finally:
         conn.close()
+
+def get_voice_preset(channel_name, db_file):
+    """Get voice preset with caching for performance"""
+    return get_voice_preset_cached(channel_name, db_file)
         
-def get_bark_model_for_channel(channel_name, db_file):
+@lru_cache(maxsize=100)
+def get_bark_model_cached(channel_name, db_file_path):
+    """PERFORMANCE: Cached bark model lookup to avoid repeated DB queries"""
     try:
         # Check for default model from environment
         default_model = os.environ.get("DEFAULT_BARK_MODEL")
         if default_model:
             return default_model
         
-        conn = sqlite3.connect(db_file)
+        conn = sqlite3.connect(db_file_path)
         c = conn.cursor()
         c.execute("SELECT bark_model FROM channel_configs WHERE channel_name = ?", (channel_name,))
         result = c.fetchone()
         return result[0] if result else 'bark-small'
     except Exception as e:
-        print(f"Error getting bark model for channel {channel_name}: {e}")
+        logging.error(f"Error getting bark model for channel {channel_name}: {e}")
         return 'bark-small'
     finally:
         conn.close()
+
+def get_bark_model_for_channel(channel_name, db_file):
+    """Get bark model with caching for performance"""
+    return get_bark_model_cached(channel_name, db_file)
         
 
 def log_tts_file(message_id, channel_name, timestamp, file_path, voice_preset, input_text, db_file):
@@ -154,42 +244,26 @@ def process_text_thread(input_text, channel_name, db_file='./messages.db', full_
             logging.info(f"Using Bark model: {bark_model} for channel {channel_name}") # Keep as info
             model_path = f"suno/{bark_model}"
             
-            # Initialize TTS model
+            # PERFORMANCE: Use cached model loading
             device_type_str = "cuda" if torch.cuda.is_available() else "cpu"
             device = torch.device(device_type_str)
             
-            # This log will be silenced by silence_output() if logging to console, 
-            # but visible if logger is configured for files.
             logging.info(f"TTS: Attempting to use device: {device_type_str}")
 
-            processor = AutoProcessor.from_pretrained(model_path)
+            # PERFORMANCE: Get model from cache instead of loading each time
+            cached_model_data = tts_model_cache.get_model(model_path, device)
+            if not cached_model_data:
+                # Restore output for error logging if model loading fails
+                sys.stdout = original_stdout
+                sys.stderr = original_stderr
+                logging.error(f"[TTS THREAD FATAL ERROR] Failed to load or cache model: {model_path}")
+                raise RuntimeError(f"Model loading failed: {model_path}")
             
-            # Ensure the tokenizer has a pad_token_id. For Bark, this is often the eos_token_id.
-            if processor.tokenizer.pad_token_id is None:
-                if processor.tokenizer.eos_token_id is not None:
-                    processor.tokenizer.pad_token_id = processor.tokenizer.eos_token_id
-                    logging.info(f"Set processor.tokenizer.pad_token_id to eos_token_id: {processor.tokenizer.eos_token_id}")
-                else:
-                    # Fallback if eos_token_id is also None (highly unlikely for Bark)
-                    processor.tokenizer.pad_token_id = 10000 # Bark's EOS token ID
-                    logging.warning(f"processor.tokenizer.eos_token_id is None. Set pad_token_id to fallback: 10000")
-
-            # The error "module 'torch' has no attribute 'get_default_device'" typically occurs
-            # if the PyTorch version is older than 1.9, as this function was introduced then.
-            # The 'transformers' library's from_pretrained method seems to internally call this.
-            # The best fix is to ensure PyTorch is v1.9+ and transformers is compatible.
-            # The following code attempts to load the model, but may still hit the error if versions are mismatched.
+            processor = cached_model_data['processor']
+            model = cached_model_data['model']
 
             try:
-                # Load model to CPU first by default with from_pretrained, then move to target device
-                model = BarkModel.from_pretrained(model_path)
-                model = model.to(device) 
-
-                if device_type_str == "cuda":
-                    logging.info("TTS: Applying CUDA specific optimizations (to_bettertransformer, enable_cpu_offload).")
-                    # These operations are for CUDA and require appropriate library versions.
-                    model.to_bettertransformer()
-                    model.enable_cpu_offload() # Requires 'accelerate' library
+                pass  # Model loading is now handled by cache
             except AttributeError as ae:
                 if 'get_default_device' in str(ae):
                     # Restore stdout/stderr to ensure this critical message is visible via standard print/logging
@@ -342,12 +416,11 @@ def process_text_thread(input_text, channel_name, db_file='./messages.db', full_
             sys.stderr = original_stderr
             logging.info(f"[TTS THREAD] Released Bark TTS lock for message_id: {message_id}")
 
-def load_custom_voice(voice_preset):
-    """Load a custom voice file if it exists"""
+@lru_cache(maxsize=20)
+def load_custom_voice_cached(voice_preset):
+    """PERFORMANCE: Cached custom voice loading to avoid repeated file I/O"""
     # If no voice_preset is provided, it's not a custom voice.
     if voice_preset is None:
-        # This print will be silenced if called from process_text_thread during normal operation,
-        # but visible if stdout/stderr are restored or if called directly.
         logging.debug("No voice preset provided to load_custom_voice, assuming default will be used by caller.")
         return None
 
@@ -357,21 +430,65 @@ def load_custom_voice(voice_preset):
         logging.debug(f"Using built-in Bark voice preset: {voice_preset}")
         return None
     
+    # SECURITY FIX: Validate voice_preset to prevent directory traversal
+    # Only allow alphanumeric characters, underscores, and hyphens
+    if not re.match(r'^[a-zA-Z0-9_-]+$', voice_preset):
+        logging.warning(f"Invalid voice preset name: {voice_preset}")
+        return None
+    
+    # Additional check: prevent excessively long names
+    if len(voice_preset) > 50:
+        logging.warning(f"Voice preset name too long: {voice_preset}")
+        return None
+    
     # For custom voices, check file existence
     voice_file = os.path.join(VOICES_DIRECTORY, f"{voice_preset}.npz")
+    
+    # SECURITY: Ensure the resolved path is within the voices directory
+    resolved_voice_file = os.path.abspath(voice_file)
+    resolved_voices_dir = os.path.abspath(VOICES_DIRECTORY)
+    if not resolved_voice_file.startswith(resolved_voices_dir + os.sep):
+        logging.warning(f"Path traversal attempt detected: {voice_preset}")
+        return None
     if not os.path.exists(voice_file):
         logging.warning(f"Custom voice file not found: {voice_file}")
         # Fall back to default
         return None
     
     try:
-        # Load custom voice data
-        voice_data = np.load(voice_file, allow_pickle=True)
-        weights = {k: torch.tensor(v) for k, v in voice_data.items()}
+        # SECURITY FIX: Load custom voice data WITHOUT allow_pickle to prevent code execution
+        # This prevents arbitrary code execution from malicious .npz files
+        voice_data = np.load(voice_file, allow_pickle=False)
+        
+        # Validate that the loaded data contains expected keys for voice weights
+        expected_keys = ['semantic_prompt', 'coarse_prompt', 'fine_prompt']
+        if not all(key in voice_data.files for key in expected_keys):
+            logging.warning(f"Custom voice file {voice_file} missing expected keys: {expected_keys}")
+            return None
+            
+        # Convert numpy arrays to torch tensors safely
+        import torch
+        weights = {}
+        for key in expected_keys:
+            if key in voice_data:
+                array = voice_data[key]
+                # Validate array properties for safety
+                if array.dtype not in [np.float32, np.float64, np.int32, np.int64]:
+                    logging.warning(f"Invalid data type in voice file: {array.dtype}")
+                    return None
+                if array.size > 1000000:  # Reasonable size limit
+                    logging.warning(f"Voice data too large: {array.size} elements")
+                    return None
+                weights[key] = torch.tensor(array)
+        
         return {'weights': weights}
     except Exception as e:
         logging.error(f"Error loading custom voice {voice_preset}: {e}")
         return None
+
+def load_custom_voice(voice_preset):
+    """Load a custom voice file with caching for performance"""
+    return load_custom_voice_cached(voice_preset)
 
 def ensure_nltk_resources():
     """Ensure NLTK resources are downloaded"""

@@ -1,231 +1,305 @@
 # ANSV Bot
 
-![ANSV Bot Banner](docs/images/banner.png)
+A sophisticated Twitch chat bot with AI-powered text generation using Markov chains, advanced text-to-speech capabilities, and a comprehensive web management interface.
 
-A Twitch bot that learns from chat messages and responds with AI-generated text using Markov chains and text-to-speech capabilities.
+## Overview
 
-## ✨ Features
+ANSV Bot is a Python-based Twitch chat bot that learns from channel conversations and generates contextually relevant responses. It features real-time TTS synthesis, multi-channel management, and a modern web interface for monitoring and control.
 
-- 🤖 Learns from chat messages using Markov chain models
-- 🔊 Text-to-speech capabilities with multiple voice options
-- 🌐 Web interface for monitoring and control
-- 📊 Channel-specific settings and voice configurations
-- 🎛️ Custom TTS message generation through web interface
-- 🚀 Easy setup with an interactive launcher
+## Key Features
 
-## 🔧 Installation
+- **AI Text Generation**: Markov chain-based message generation trained on channel history
+- **Text-to-Speech**: Bark model integration with multiple voice presets and custom voices
+- **Multi-User Management**: Role-based access control with admin, streamer, and viewer roles
+- **Web Interface**: Modern beta dashboard with real-time monitoring and configuration
+- **Multi-Channel Support**: Per-channel settings, voice presets, and model training
+- **Authentication System**: Secure user accounts with session management and audit logging
+- **Theme System**: 15+ UI themes with dark/light variants and auto-detection
+- **Real-Time Monitoring**: WebSocket-based status updates and live activity feeds
 
-### Prerequisites
+## Requirements
 
 - Python 3.11+
-- ffmpeg (for TTS audio processing)
+- FFmpeg (for audio processing)
 - Twitch API credentials
+- SQLite database support
 
-### Quick Start
+## Quick Start
+
+### Installation
 
 ```bash
 # Clone the repository
 git clone https://github.com/yourusername/ansv-bot.git
 cd ansv-bot
 
-# Run the launcher
+# Run the interactive setup
 ./launch.sh
-
-# Pre-download TTS models (optional but recommended)
-./launch.sh --download-models
 ```
 
-## ⚙️ Configuration
+The launcher will guide you through:
+- Virtual environment setup
+- Dependency installation
+- Configuration file creation
+- TTS model downloads (optional)
 
-1. Copy `settings.example.conf` to `settings.conf` (done automatically on first run)
-2. Edit `settings.conf` with your Twitch credentials:
+### Configuration
+
+1. Copy the example configuration:
+   ```bash
+   cp settings.example.conf settings.conf
    ```
+
+2. Edit `settings.conf` with your Twitch credentials:
+   ```ini
    [auth]
    tmi_token = oauth:your_token_here
    client_id = your_client_id_here
    nickname = your_bot_name
    owner = your_twitch_username
-   
+
    [channels]
    channels = channel1, channel2
    ```
 
-3. Run the setup wizard with `./launch.sh`
+3. Get Twitch credentials:
+   - Visit [Twitch Developer Console](https://dev.twitch.tv/console)
+   - Create an application to get your Client ID
+   - Generate an OAuth token for the bot account
 
-## 🎤 Text-to-Speech
+4. Initialize the user management system:
+   ```bash
+   # Run migration to set up user accounts
+   python utils/migrate_to_users.py --db ansv_bot.db
+   ```
+   
+   This creates the default admin account with your current admin password.
 
-ANSV Bot includes advanced text-to-speech capabilities:
+### Running the Bot
 
-### Voice Options
-
-- Built-in voices: v2/en_speaker_0 through v2/en_speaker_9
-- Custom voices: Place `.npz` files in the `voices/` directory
-
-### Using TTS
-
-1. **Launch with TTS**: `./launch.sh --tts`
-2. **Specify a voice**: `./launch.sh --tts --voice-preset v2/en_speaker_6`
-3. **Web Interface**: Send custom TTS messages through the web panel
-
-### Managing TTS
-
-- **Download models**: `./launch.sh --download-models`
-- **Enable per channel**: Toggle TTS in channel settings
-- **Audio files**: Stored in `static/outputs/<channel>/`
-
-## 🖥️ Web Interface
-
-The bot includes a web interface for management:
-
-1. Start with `./launch.sh --web --tts`
-2. Access at `http://localhost:5001`
-
-### Web Features
-
-- Monitor bot status and connected channels
-- Send custom TTS messages
-- View TTS message history with playback
-- Configure channel settings
-
-## 📋 Command-Line Options
-
-```
-./launch.sh [options]
+**Interactive Mode:**
+```bash
+./launch.sh
 ```
 
-Options:
-- `--web`: Enable web interface
-- `--tts`: Enable text-to-speech
-- `--voice-preset PRESET`: Use specific voice preset
-- `--download-models`: Pre-download TTS models
-- `--rebuild`: Rebuild Markov cache
-- `--dev`: Start in development mode
-- `--web-only`: Start web interface without bot
-- `--clean`: Perform fresh install
+**Command Line Options:**
+```bash
+# Bot with web interface and TTS
+./launch.sh --web --tts
 
-## 🔍 Troubleshooting
+# Development mode with hot reload
+./launch.sh --dev
 
-### TTS Issues
+# Web interface only
+./launch.sh --web-only
 
-- **Missing models**: Run `./launch.sh --download-models`
-- **Audio not playing**: Ensure ffmpeg is installed
-- **Slow generation**: TTS works best with GPU (CUDA)
+# Pre-download TTS models
+./launch.sh --download-models
 
-### Bot Connection Issues
+# Clean installation
+./launch.sh --clean
+```
 
-- Check your Twitch token validity
-- Ensure channel names are correctly specified
+## Usage
 
-## 📦 Directory Structure
+### Web Interface
 
-- `/static/outputs/`: TTS audio files
-- `/voices/`: Custom voice presets
-- `/models/tts/`: Cached TTS models
-- `/cache/`: Markov chain models
+Access the web dashboard at `http://localhost:5001` when running with `--web`:
 
-## 🤝 Contributing
+**Authentication Required**: Login with your user account to access the beta interface.
 
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## 📄 License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-**Web Interface** (Port 5001)
-- `http://localhost:5001` - Main dashboard
-- `http://localhost:5001/stats` - Model statistics
-- `http://localhost:5001/tts` - TTS management
+- **Dashboard**: Bot status, channel activity, quick actions
+- **Channel Management**: Per-channel settings, voice presets, model training
+- **Settings**: Global configuration, theme selection, system preferences
+- **Analytics**: Model performance, message statistics, usage trends
+- **TTS History**: Audio playback, voice management, generation queue
+- **Logs**: Chat history with filtering, search, and export
+- **User Management** (Admin only): Create users, assign roles, manage permissions
 
 ### Bot Commands
-| Command | Description | Example |
-|---------|-------------|---------|
-| `!ansv speak` | Generate message | `!ansv speak` |
-| `!ansv trust <user>` | Manage trusted users | `!ansv trust nightbot` |
-| `!ansv config <setting>` | Modify channel settings | `!ansv config lines 50` |
-| `!ansv tts <on/off>` | Toggle TTS | `!ansv tts on` |
-| `!ansv join/part` | Channel management | `!ansv join new_channel` |
 
-## Web Interface Features 🌐
+| Command | Description | Usage |
+|---------|-------------|-------|
+| `!ansv speak` | Generate and send message | `!ansv speak` |
+| `!ansv tts <text>` | Generate TTS audio | `!ansv tts Hello world` |
+| `!ansv config <setting> <value>` | Modify settings | `!ansv config lines 50` |
+| `!ansv trust <user>` | Manage trusted users | `!ansv trust moderator_name` |
+| `!ansv join <channel>` | Join new channel | `!ansv join new_channel` |
+| `!ansv part <channel>` | Leave channel | `!ansv part old_channel` |
 
-**Dashboard**
-- Real-time message statistics
-- Model performance metrics
-- Channel configuration management
+## Development
 
-**Model Management**
-- Cache rebuilding
-- Model version control
-- Training data inspection
+### Project Structure
 
-**TTS System**
-- Voice preset selection
-- Audio file management
-- Synthesis history
-
-## Troubleshooting 🔧
-
-**Common Issues**
-1. **TTS Failures**
-   - Verify NVIDIA drivers are up-to-date
-   - Check free disk space (>5GB recommended)
-   - Run `python -m bark_hubert_quantizer` to initialize Bark model
-
-2. **Database Errors**
-   ```bash
-   rm messages.db  # WARNING: Deletes all data
-   python utils/db_setup.py
-   ```
-
-3. **Cache Issues**
-   ```bash
-   python ansv.py --rebuild-cache
-   ```
-
-## License 📄
-MIT License - See [LICENSE](LICENSE) for details
-
-## Contributing 🤝
-Pull requests welcome! Please follow our [contribution guidelines](CONTRIBUTING.md).
-
----
-
-> **Note**: Requires Twitch developer account. TTS functionality needs substantial system resources.
-
-# Installation
-
-## Core System
-```bash
-python -m pip install -r requirements.txt
-python -m spacy download en_core_web_sm  # For NLTK integration
+```
+ansv-bot/
+├── ansv.py                   # Main application entry point
+├── webapp.py                # Flask web interface with authentication
+├── twitchio_bot.py          # Bot implementation stub
+├── launch.sh                # Interactive launcher script
+├── utils/                   # Core utilities
+│   ├── bot.py              # TwitchIO bot implementation
+│   ├── user_db.py          # User management and authentication
+│   ├── auth.py             # Authentication decorators and utilities
+│   ├── markov_handler.py   # Text generation system
+│   ├── tts.py              # Text-to-speech processing
+│   ├── db_setup.py         # Database schema and setup
+│   ├── migrate_to_users.py # User system migration script
+│   └── logger.py           # Logging configuration
+├── commands/               # Bot command handlers
+│   └── ansv_command.py     # Main command processor
+├── static/                 # Web interface assets
+│   ├── scripts/            # JavaScript modules and beta components
+│   ├── css/                # Stylesheets and beta themes
+│   └── outputs/            # Generated TTS audio files
+├── templates/              # Jinja2 templates
+│   ├── beta/               # Modern authenticated UI templates
+│   ├── login.html          # Authentication interface
+│   ├── profile.html        # User profile management
+│   ├── admin_users.html    # Admin user management
+│   └── *.html              # Legacy and error page templates
+└── voices/                 # Custom voice presets (.npz files)
 ```
 
-## TTS Support (macOS)
-```bash
-# Install system dependencies first
-brew install portaudio ffmpeg
+### Architecture
 
-# Install Python packages
-python -m pip install -r requirements-tts.txt
+**Core Components:**
+- **Bot Core**: TwitchIO-based chat bot with async event handling
+- **Authentication System**: Role-based access control with secure session management
+- **User Management**: Multi-user support with admin, streamer, and viewer roles
+- **Markov Engine**: Text corpus analysis and message generation
+- **TTS System**: Bark model integration with voice management
+- **Web API**: RESTful endpoints with authentication and real-time WebSocket updates
+- **Database Layer**: SQLite with proper schema, migrations, and audit logging
+
+**Key Design Patterns:**
+- Async/await for I/O operations
+- Thread-safe TTS processing
+- Component-based frontend architecture
+- Configuration-driven behavior
+- Graceful error handling and recovery
+
+### Development Setup
+
+```bash
+# Install development dependencies
+pip install -r requirements.txt
+pip install -r requirements-tts.txt
+
+# Run in development mode
+./launch.sh --dev
+
+# Run tests (if available)
+python -m pytest
+
+# Database operations
+python utils/db_setup.py  # Initialize database
 ```
 
-### Configuration
-1. Copy the example configuration:
-```bash
-cp settings.example.conf settings.conf
-```
+## Configuration Options
 
-2. Edit settings.conf with your Twitch credentials:
+### Bot Settings
+
 ```ini
 [auth]
-tmi_token = oauth:your_actual_token  # From Twitch console
-client_id = your_client_id           # Twitch application ID
-nickname = YourBotName                # Bot's username
-owner = YourUsername                 # Your Twitch username
+tmi_token = oauth:token      # Twitch OAuth token
+client_id = client_id        # Twitch application ID
+nickname = bot_name          # Bot username
+owner = your_username        # Owner username
+
+[channels]
+channels = channel1,channel2 # Comma-separated channel list
+
+[settings]
+verbose_logs = false         # Enable detailed logging
+lines_between_messages = 100 # Messages to learn before speaking
+time_between_messages = 0    # Minimum seconds between responses
 ```
 
-3. Initialize database:
+### Channel-Specific Configuration
+
+Each channel supports individual settings:
+- TTS enabled/disabled
+- Voice preset selection
+- Trusted user management
+- Message frequency controls
+- Model training preferences
+
+### TTS Configuration
+
+- **Voice Presets**: Built-in speaker models (v2/en_speaker_0 through v2/en_speaker_9)
+- **Custom Voices**: Place `.npz` files in `voices/` directory
+- **Audio Output**: Files saved to `static/outputs/<channel>/`
+- **Model Caching**: Automatic model download and caching
+
+## Deployment
+
+### Docker
+
 ```bash
-python utils/db_setup.py
+# Build image
+docker build -t ansv-bot .
+
+# Run with docker-compose
+docker-compose up -d
 ```
 
-> **Warning**: Never commit settings.conf! It contains sensitive credentials. We've added it to .gitignore for you.
+### Production Considerations
+
+- Use a production WSGI server (Gunicorn, uWSGI)
+- Configure reverse proxy (nginx, Apache)
+- Set up log rotation and monitoring
+- Secure sensitive configuration files
+- Regular database backups
+
+## Troubleshooting
+
+### Common Issues
+
+**TTS Not Working:**
+- Ensure FFmpeg is installed
+- Check TTS model downloads: `./launch.sh --download-models`
+- Verify sufficient disk space (2GB+ for models)
+
+**Bot Not Connecting:**
+- Validate Twitch OAuth token
+- Check channel names in configuration
+- Verify network connectivity
+
+**Web Interface Issues:**
+- Confirm port 5001 is available
+- Check browser console for JavaScript errors
+- Verify WebSocket connections
+
+**Performance Issues:**
+- Monitor memory usage with large message histories
+- Consider GPU acceleration for TTS
+- Optimize database queries for large datasets
+
+### Logs
+
+- **Application logs**: `app.log`
+- **Bot status**: Check web interface dashboard
+- **TTS processing**: Monitor console output
+- **Database operations**: Enable verbose logging
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes with tests
+4. Submit a pull request
+
+Please follow the existing code style and include appropriate documentation.
+
+## License
+
+This project is licensed under the MIT License. See the LICENSE file for details.
+
+## Acknowledgments
+
+- TwitchIO library for Twitch chat integration
+- Bark by Suno AI for text-to-speech synthesis
+- Bootstrap and community themes for UI components
+- NLTK for natural language processing
+- Flask and SocketIO for web interface

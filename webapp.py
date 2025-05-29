@@ -9,18 +9,33 @@ import json
 import random
 import traceback
 import signal # Added import for signal
-from flask import Flask, render_template, request, jsonify, redirect, url_for, send_from_directory, make_response
+from flask import Flask, render_template, request, jsonify, redirect, url_for, send_from_directory, make_response, session
 from flask_socketio import SocketIO # Import SocketIO
 from datetime import datetime, timedelta
 import configparser
+import hashlib
+import secrets
+from functools import wraps
 from utils.markov_handler import MarkovHandler
 from utils.logger import Logger
 from utils.tts import start_tts_processing # Import for TTS generation
 from utils.db_setup import ensure_db_setup
+from utils.db_manager import get_db_manager, execute_query_sync, execute_update_sync
+from utils.user_db import UserDatabase
+from utils.auth import (
+    init_auth, require_auth, require_permission, require_role,
+    login_user, logout_user, is_authenticated, get_current_user,
+    auth_context_processor, Permissions, Roles
+)
 
 # Initialize application components
 app = Flask(__name__)
 app.config['JSON_SORT_KEYS'] = False
+
+# SECURITY: Generate a secret key for session management
+# In production, this should be set via environment variable
+app.secret_key = os.environ.get('FLASK_SECRET_KEY', secrets.token_hex(32))
+
 socketio = SocketIO(app) # Initialize SocketIO with the Flask app
 
 # Setup logging
@@ -31,6 +46,24 @@ app.logger.setLevel(logging.INFO) # Use app.logger for Flask's internal logging
 # Set up database
 db_file = "messages.db"
 ensure_db_setup(db_file)
+
+# Add custom Jinja2 filters
+def strftime_filter(datetime_obj, fmt='%Y-%m-%d %H:%M'):
+    """Custom strftime filter for Jinja2."""
+    if datetime_obj is None:
+        return ""
+    if isinstance(datetime_obj, str):
+        try:
+            datetime_obj = datetime.fromisoformat(datetime_obj.replace('Z', '+00:00'))
+        except ValueError:
+            return datetime_obj
+    return datetime_obj.strftime(fmt)
+
+app.jinja_env.filters['strftime'] = strftime_filter
+
+# Initialize user database and authentication system
+user_db = UserDatabase(db_file)
+init_auth(user_db)
 
 # Initialize Markov handler
 markov_handler = MarkovHandler(cache_directory="cache")
@@ -45,6 +78,59 @@ config.read("settings.conf")
 # Cache variable for join status
 channel_join_status = {}
 last_status_check = 0
+
+# Security: Input validation functions
+def validate_channel_config_fields(fields):
+    """Validate channel configuration field values to prevent injection attacks."""
+    for field, value in fields.items():
+        # Boolean fields
+        if field in ['tts_enabled', 'voice_enabled', 'join_channel', 'use_general_model']:
+            if not isinstance(value, bool):
+                return f"Field '{field}' must be a boolean (true/false)"
+                
+        # Integer fields
+        elif field in ['lines_between_messages', 'time_between_messages']:
+            if not isinstance(value, int) or value < 0:
+                return f"Field '{field}' must be a non-negative integer"
+            if field == 'lines_between_messages' and value > 10000:
+                return f"Field '{field}' cannot exceed 10000"
+            if field == 'time_between_messages' and value > 3600:
+                return f"Field '{field}' cannot exceed 3600 seconds (1 hour)"
+                
+        # Text fields with length limits
+        elif field in ['owner', 'trusted_users', 'ignored_users']:
+            if value is not None:
+                if not isinstance(value, str):
+                    return f"Field '{field}' must be a string"
+                if len(value) > 1000:
+                    return f"Field '{field}' cannot exceed 1000 characters"
+                # Basic sanitization - remove potentially dangerous characters
+                if re.search(r'[<>"\'\\\\\\x00-\\x1f]', value):
+                    return f"Field '{field}' contains invalid characters"
+                    
+        # Voice preset validation
+        elif field == 'voice_preset':
+            if value is not None:
+                if not isinstance(value, str):
+                    return f"Field '{field}' must be a string"
+                if len(value) > 100:
+                    return f"Field '{field}' cannot exceed 100 characters"
+                # Allow alphanumeric, slash, underscore, dash
+                if not re.match(r'^[a-zA-Z0-9/_-]+$', value):
+                    return f"Field '{field}' contains invalid characters"
+                    
+        # Bark model validation
+        elif field == 'bark_model':
+            if value is not None:
+                if not isinstance(value, str):
+                    return f"Field '{field}' must be a string"
+                allowed_models = ['regular', 'small', 'large']
+                if value not in allowed_models:
+                    return f"Field '{field}' must be one of: {', '.join(allowed_models)}"
+    
+    return None  # All validations passed
+
+# Old authentication functions removed - now using utils/auth.py
 
 # Helper functions for is_bot_actually_running
 def _check_pid_file(verbose_logging):
@@ -124,6 +210,11 @@ def inject_theme():
     """Injects theme information into the template context."""
     theme = request.cookies.get('theme', 'darkly') # Default to 'darkly'
     return dict(theme=theme)
+
+@app.context_processor  
+def inject_auth():
+    """Inject authentication context into templates."""
+    return auth_context_processor()
 
 def set_enable_tts(status: bool):
     """Allows ansv.py to set the TTS status for the webapp."""
@@ -326,7 +417,407 @@ def send_markov_message(channel_name):
         app.logger.error(traceback.format_exc())
         return jsonify({'success': False, 'error': str(e), 'message': "Server error during message generation/send."}), 500
 
+# Authentication routes
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    """Login page and authentication handler with multi-user support."""
+    # If already authenticated, redirect to beta dashboard
+    if is_authenticated():
+        return redirect('/beta')
+    
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '').strip()
+        remember_me = request.form.get('remember_me') == 'on'
+        
+        # Input validation
+        if not username and not password:
+            # Fallback for old single-password mode (for migration compatibility)
+            password = request.form.get('password', '').strip()
+            if password:
+                username = 'admin'  # Default admin username
+        
+        if not username:
+            app.logger.warning(f"Empty username login attempt from {request.remote_addr}")
+            return render_template('login.html', error='Username is required')
+            
+        if not password:
+            app.logger.warning(f"Empty password login attempt from {request.remote_addr}")
+            return render_template('login.html', error='Password is required')
+        
+        if len(password) > 1000:  # Prevent extremely long passwords
+            app.logger.warning(f"Oversized login attempt from {request.remote_addr}")
+            return render_template('login.html', error='Invalid credentials')
+        
+        # Authenticate using new user system
+        success, error_message, user_data = login_user(
+            username, 
+            password, 
+            request.remote_addr, 
+            request.headers.get('User-Agent', 'Unknown'),
+            remember_me
+        )
+        
+        if success:
+            # Redirect to the page they were trying to access, or beta dashboard
+            next_page = request.args.get('next', '/beta')
+            
+            # Security: Validate redirect URL to prevent open redirects
+            if next_page and not next_page.startswith('/'):
+                next_page = '/beta'
+            
+            return redirect(next_page)
+        else:
+            # Failed login
+            return render_template('login.html', error=error_message or 'Invalid credentials')
+    
+    # GET request - show login form
+    return render_template('login.html')
+
+@app.route('/logout')
+def logout():
+    """Logout and clear session."""
+    logout_user(request.remote_addr, request.headers.get('User-Agent', 'Unknown'))
+    return redirect(url_for('login'))
+
+# User Profile Management Routes
+@app.route('/profile')
+@require_auth
+def profile():
+    """User profile management page."""
+    user = get_current_user()
+    if not user:
+        return redirect(url_for('login'))
+    
+    return render_template('profile.html', user=user)
+
+@app.route('/profile/change-password', methods=['POST'])
+@require_auth
+def change_password():
+    """Change user password."""
+    user = get_current_user()
+    if not user:
+        return jsonify({'success': False, 'error': 'Not authenticated'}), 401
+    
+    try:
+        current_password = request.form.get('current_password', '').strip()
+        new_password = request.form.get('new_password', '').strip()
+        confirm_password = request.form.get('confirm_password', '').strip()
+        
+        if not all([current_password, new_password, confirm_password]):
+            return jsonify({'success': False, 'error': 'All fields are required'}), 400
+            
+        if new_password != confirm_password:
+            return jsonify({'success': False, 'error': 'New passwords do not match'}), 400
+            
+        if len(new_password) < 6:
+            return jsonify({'success': False, 'error': 'Password must be at least 6 characters'}), 400
+        
+        # Verify current password
+        conn = user_db.get_connection()
+        try:
+            current_user_data = conn.execute(
+                "SELECT password_hash FROM users WHERE id = ?", (user['user_id'],)
+            ).fetchone()
+            
+            if not current_user_data or not user_db.verify_password(current_password, current_user_data['password_hash']):
+                return jsonify({'success': False, 'error': 'Current password is incorrect'}), 400
+                
+            # Update password
+            new_password_hash = user_db.hash_password(new_password)
+            conn.execute("""
+                UPDATE users 
+                SET password_hash = ?, password_changed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            """, (new_password_hash, user['user_id']))
+            conn.commit()
+            
+            # Log password change
+            user_db.log_action(
+                user['user_id'], 'user.password_changed', 'user', str(user['user_id']),
+                {'username': user['username']},
+                request.remote_addr, request.headers.get('User-Agent', 'Unknown')
+            )
+            
+            return jsonify({'success': True, 'message': 'Password changed successfully'})
+            
+        finally:
+            conn.close()
+            
+    except Exception as e:
+        app.logger.error(f"Error changing password for user {user['username']}: {e}")
+        return jsonify({'success': False, 'error': 'Error changing password'}), 500
+
+@app.route('/profile/change-email', methods=['POST'])
+@require_auth
+def change_email():
+    """Change user email."""
+    user = get_current_user()
+    if not user:
+        return jsonify({'success': False, 'error': 'Not authenticated'}), 401
+    
+    try:
+        new_email = request.form.get('new_email', '').strip()
+        password = request.form.get('password', '').strip()
+        
+        if not all([new_email, password]):
+            return jsonify({'success': False, 'error': 'Email and password are required'}), 400
+            
+        # Basic email validation
+        import re
+        if not re.match(r'^[^@]+@[^@]+\.[^@]+$', new_email):
+            return jsonify({'success': False, 'error': 'Invalid email format'}), 400
+        
+        # Verify password
+        conn = user_db.get_connection()
+        try:
+            current_user_data = conn.execute(
+                "SELECT password_hash FROM users WHERE id = ?", (user['user_id'],)
+            ).fetchone()
+            
+            if not current_user_data or not user_db.verify_password(password, current_user_data['password_hash']):
+                return jsonify({'success': False, 'error': 'Password is incorrect'}), 400
+                
+            # Check if email is already in use
+            existing_email = conn.execute(
+                "SELECT id FROM users WHERE email = ? AND id != ?", (new_email, user['user_id'])
+            ).fetchone()
+            
+            if existing_email:
+                return jsonify({'success': False, 'error': 'Email is already in use'}), 400
+                
+            # Update email
+            conn.execute("""
+                UPDATE users 
+                SET email = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            """, (new_email, user['user_id']))
+            conn.commit()
+            
+            # Log email change
+            user_db.log_action(
+                user['user_id'], 'user.email_changed', 'user', str(user['user_id']),
+                {'username': user['username'], 'new_email': new_email},
+                request.remote_addr, request.headers.get('User-Agent', 'Unknown')
+            )
+            
+            return jsonify({'success': True, 'message': 'Email changed successfully'})
+            
+        finally:
+            conn.close()
+            
+    except Exception as e:
+        app.logger.error(f"Error changing email for user {user['username']}: {e}")
+        return jsonify({'success': False, 'error': 'Error changing email'}), 500
+
+##############################
+# Admin User Management Routes
+##############################
+
+@app.route('/admin/users')
+@require_role('admin')
+def admin_users():
+    """Admin user management page with table view"""
+    try:
+        users = user_db.get_all_users()
+        roles = user_db.get_all_roles()
+        return render_template('admin_users.html', users=users, roles=roles)
+    except Exception as e:
+        app.logger.error(f"Error loading admin users page: {e}")
+        return render_template("500.html", error_message=f"Error loading users: {str(e)}"), 500
+
+@app.route('/admin/users/create', methods=['POST'])
+@require_role('admin')
+def admin_create_user():
+    """Create a new user account"""
+    try:
+        data = request.get_json()
+        username = data.get('username', '').strip()
+        email = data.get('email', '').strip()
+        password = data.get('password', '').strip()
+        role_id = data.get('role_id', 2)  # Default to viewer
+        
+        # Get role name from role_id
+        roles = user_db.get_all_roles()
+        role_name = None
+        for role in roles:
+            if role['id'] == role_id:
+                role_name = role['name']
+                break
+        
+        if not role_name:
+            return jsonify({'success': False, 'error': 'Invalid role selected'}), 400
+        
+        # Validation
+        if not username or not email or not password:
+            return jsonify({'success': False, 'error': 'Username, email, and password are required'}), 400
+            
+        if len(username) < 3:
+            return jsonify({'success': False, 'error': 'Username must be at least 3 characters'}), 400
+            
+        if len(password) < 6:
+            return jsonify({'success': False, 'error': 'Password must be at least 6 characters'}), 400
+            
+        # Check if username or email already exists
+        existing_user = user_db.get_user_by_username(username)
+        if existing_user:
+            return jsonify({'success': False, 'error': 'Username already exists'}), 400
+            
+        existing_email = user_db.get_user_by_email(email)
+        if existing_email:
+            return jsonify({'success': False, 'error': 'Email already exists'}), 400
+        
+        # Create user
+        user_id = user_db.create_user(username, password, role_name, email)
+        if user_id:
+            # Log user creation
+            current_user = get_current_user()
+            user_db.log_action(
+                current_user['user_id'], 'user.created', 'user', str(user_id),
+                {'created_username': username, 'created_email': email, 'role_id': role_id},
+                request.remote_addr, request.headers.get('User-Agent', 'Unknown')
+            )
+            return jsonify({'success': True, 'message': f'User {username} created successfully', 'user_id': user_id})
+        else:
+            return jsonify({'success': False, 'error': 'Failed to create user'}), 500
+            
+    except Exception as e:
+        app.logger.error(f"Error creating user: {e}")
+        return jsonify({'success': False, 'error': 'Error creating user'}), 500
+
+@app.route('/admin/users/<int:user_id>/edit', methods=['POST'])
+@require_role('admin')
+def admin_edit_user(user_id):
+    """Edit user account details"""
+    try:
+        data = request.get_json()
+        username = data.get('username', '').strip()
+        email = data.get('email', '').strip()
+        role_id = data.get('role_id')
+        
+        # Get current user data
+        user = user_db.get_user_by_id(user_id)
+        if not user:
+            return jsonify({'success': False, 'error': 'User not found'}), 404
+            
+        # Validation
+        if not username or not email:
+            return jsonify({'success': False, 'error': 'Username and email are required'}), 400
+            
+        if len(username) < 3:
+            return jsonify({'success': False, 'error': 'Username must be at least 3 characters'}), 400
+            
+        # Check if username/email conflicts with other users
+        existing_user = user_db.get_user_by_username(username)
+        if existing_user and existing_user['user_id'] != user_id:
+            return jsonify({'success': False, 'error': 'Username already exists'}), 400
+            
+        existing_email = user_db.get_user_by_email(email)
+        if existing_email and existing_email['user_id'] != user_id:
+            return jsonify({'success': False, 'error': 'Email already exists'}), 400
+        
+        # Update user
+        success = user_db.update_user(user_id, username=username, email=email, role_id=role_id)
+        if success:
+            # Log user update
+            current_user = get_current_user()
+            changes = {}
+            if username != user['username']:
+                changes['username'] = {'old': user['username'], 'new': username}
+            if email != user['email']:
+                changes['email'] = {'old': user['email'], 'new': email}
+            if role_id != user['role_id']:
+                changes['role_id'] = {'old': user['role_id'], 'new': role_id}
+                
+            user_db.log_action(
+                current_user['user_id'], 'user.updated', 'user', str(user_id),
+                {'target_username': username, 'changes': changes},
+                request.remote_addr, request.headers.get('User-Agent', 'Unknown')
+            )
+            return jsonify({'success': True, 'message': f'User {username} updated successfully'})
+        else:
+            return jsonify({'success': False, 'error': 'Failed to update user'}), 500
+            
+    except Exception as e:
+        app.logger.error(f"Error updating user {user_id}: {e}")
+        return jsonify({'success': False, 'error': 'Error updating user'}), 500
+
+@app.route('/admin/users/<int:user_id>/delete', methods=['POST'])
+@require_role('admin')
+def admin_delete_user(user_id):
+    """Delete/deactivate user account"""
+    try:
+        # Get current user data
+        user = user_db.get_user_by_id(user_id)
+        if not user:
+            return jsonify({'success': False, 'error': 'User not found'}), 404
+            
+        # Don't allow deleting yourself
+        current_user = get_current_user()
+        if current_user['user_id'] == user_id:
+            return jsonify({'success': False, 'error': 'Cannot delete your own account'}), 400
+            
+        # Delete user
+        success = user_db.delete_user(user_id)
+        if success:
+            # Log user deletion
+            user_db.log_action(
+                current_user['user_id'], 'user.deleted', 'user', str(user_id),
+                {'deleted_username': user['username'], 'deleted_email': user['email']},
+                request.remote_addr, request.headers.get('User-Agent', 'Unknown')
+            )
+            return jsonify({'success': True, 'message': f'User {user["username"]} deleted successfully'})
+        else:
+            return jsonify({'success': False, 'error': 'Failed to delete user'}), 500
+            
+    except Exception as e:
+        app.logger.error(f"Error deleting user {user_id}: {e}")
+        return jsonify({'success': False, 'error': 'Error deleting user'}), 500
+
+@app.route('/admin/users/<int:user_id>/assign-channels', methods=['POST'])
+@require_role('admin')
+def admin_assign_channels(user_id):
+    """Assign channels to a user"""
+    try:
+        data = request.get_json()
+        channel_names = data.get('channels', [])
+        
+        # Get user data
+        user = user_db.get_user_by_id(user_id)
+        if not user:
+            return jsonify({'success': False, 'error': 'User not found'}), 404
+        
+        # Clear existing assignments and assign new channels
+        success = user_db.assign_channels_to_user(user_id, channel_names)
+        if success:
+            # Log channel assignment
+            current_user = get_current_user()
+            user_db.log_action(
+                current_user['user_id'], 'user.channels_assigned', 'user', str(user_id),
+                {'target_username': user['username'], 'assigned_channels': channel_names},
+                request.remote_addr, request.headers.get('User-Agent', 'Unknown')
+            )
+            return jsonify({'success': True, 'message': f'Channels assigned to {user["username"]} successfully'})
+        else:
+            return jsonify({'success': False, 'error': 'Failed to assign channels'}), 500
+            
+    except Exception as e:
+        app.logger.error(f"Error assigning channels to user {user_id}: {e}")
+        return jsonify({'success': False, 'error': 'Error assigning channels'}), 500
+
+@app.route('/api/user/<int:user_id>/channels')
+@require_role('admin')
+def api_user_channels(user_id):
+    """Get channels assigned to a specific user"""
+    try:
+        channels = user_db.get_user_channels_from_db(user_id)
+        return jsonify({'success': True, 'channels': channels})
+    except Exception as e:
+        app.logger.error(f"Error getting channels for user {user_id}: {e}")
+        return jsonify({'success': False, 'error': 'Error getting user channels'}), 500
+
 @app.route('/')
+@require_auth
 def main():
     # Theme is now injected by context_processor, but can be accessed here if needed
     # theme = request.cookies.get("theme", "darkly") 
@@ -422,18 +913,36 @@ def rebuild_all_caches():
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
 
-@app.route('/start_bot', methods=['POST']) 
+@app.route('/start_bot', methods=['POST'])
+@require_permission(Permissions.BOT_START)
 def start_bot_route():
     if is_bot_actually_running():
         return jsonify({"success": False, "message": "Bot is already running"}), 400
     try:
         import subprocess
         subprocess.Popen(["./launch.sh", "--web", "--tts"], creationflags=subprocess.DETACHED_PROCESS if os.name == 'nt' else 0)
+        
+        # PERFORMANCE: Broadcast real-time status update instead of requiring polling
+        events.bot_status_changed({
+            'running': True,
+            'status': 'starting',
+            'timestamp': time.time(),
+            'message': 'Bot start command issued'
+        })
+        
         return jsonify({"success": True, "message": "Bot start command issued."})
     except Exception as e:
+        # Broadcast failure event
+        events.bot_status_changed({
+            'running': False,
+            'status': 'error',
+            'timestamp': time.time(),
+            'message': f"Error starting bot: {str(e)}"
+        })
         return jsonify({"success": False, "message": f"Error starting bot: {str(e)}"}), 500
 
-@app.route('/stop_bot', methods=['POST']) 
+@app.route('/stop_bot', methods=['POST'])
+@require_permission(Permissions.BOT_STOP)
 def stop_bot_route():
     if not is_bot_actually_running():
         return jsonify({"success": False, "message": "Bot is not running"}), 400
@@ -446,12 +955,39 @@ def stop_bot_route():
                 time.sleep(1) 
                 if psutil.pid_exists(pid): 
                     os.kill(pid, signal.SIGKILL)
+                
+                # PERFORMANCE: Broadcast real-time status update
+                events.bot_status_changed({
+                    'running': False,
+                    'status': 'stopped',
+                    'timestamp': time.time(),
+                    'message': 'Bot stopped successfully'
+                })
+                
                 return jsonify({"success": True, "message": "Bot stop command issued."})
             else:
+                events.bot_status_changed({
+                    'running': False,
+                    'status': 'error',
+                    'timestamp': time.time(),
+                    'message': 'Bot PID found but process does not exist'
+                })
                 return jsonify({"success": False, "message": "Bot PID found but process does not exist."}), 404
         else:
+            events.bot_status_changed({
+                'running': False,
+                'status': 'error',
+                'timestamp': time.time(),
+                'message': 'Bot PID file not found'
+            })
             return jsonify({"success": False, "message": "Bot PID file not found."}), 404
     except Exception as e:
+        events.bot_status_changed({
+            'running': False,
+            'status': 'error',
+            'timestamp': time.time(),
+            'message': f"Error stopping bot: {str(e)}"
+        })
         return jsonify({"success": False, "message": f"Error stopping bot: {str(e)}"}), 500
 
 @app.route('/api/bot-status')
@@ -520,6 +1056,7 @@ def api_bot_status():
     return jsonify(status_details)
 
 @app.route('/settings')
+@require_permission(Permissions.SYSTEM_SETTINGS)
 def settings_page(): 
     # theme = request.cookies.get("theme", "darkly") # Theme is now injected by context_processor
     bot_running = is_bot_actually_running()
@@ -537,11 +1074,13 @@ def settings_page():
     return render_template("settings.html", channels=channels_data, bot_running=bot_running) # No need to pass theme
 
 @app.route('/stats')
+@require_permission(Permissions.DASHBOARD_STATS)
 def stats_page(): 
     # theme = request.cookies.get("theme", "darkly") # Theme is now injected by context_processor
     return render_template("stats.html") # No need to pass theme
 
 @app.route('/bot-control', endpoint='bot_control_page') # Corrected endpoint name based on previous fixes
+@require_permission(Permissions.BOT_START)
 def bot_control_page(): 
     """Render the bot control page."""
     # theme = request.cookies.get("theme", "darkly") # Theme is now injected by context_processor
@@ -549,16 +1088,19 @@ def bot_control_page():
     return render_template("bot_control.html", bot_status={'running': bot_running_status}) # No need to pass theme
 
 @app.route('/tts-history')
+@require_permission(Permissions.TTS_HISTORY)
 def tts_history_page():
     """Render the TTS history page."""
     return render_template("tts_history.html")
 
 @app.route('/logs')
+@require_permission(Permissions.SYSTEM_LOGS)
 def logs_page():
     """Render the chat logs page."""
     return render_template("logs.html")
 
 @app.route('/channel/<channel_name>')
+@require_permission(Permissions.CHANNELS_VIEW)
 def channel_page(channel_name):
     """Render the channel-specific dashboard page."""
     # Validate channel exists in our database
@@ -603,19 +1145,35 @@ def channel_page(channel_name):
         return render_template("500.html", error_message=f"Error loading channel data: {str(e)}"), 500
 
 @app.route('/api/channels')
+@require_auth
 def api_channels_list(): 
     try:
-        conn = sqlite3.connect(db_file)
-        conn.row_factory = sqlite3.Row
-        c = conn.cursor()
-        c.execute("SELECT * FROM channel_configs")
-        raw_channels_data = [dict(row) for row in c.fetchall()] 
-        conn.close()
+        # PERFORMANCE OPTIMIZATION: Use optimized database queries with connection pooling
+        # Single query to get both channel configs and last activity in one operation
+        optimized_query = """
+        SELECT 
+            cc.*,
+            COALESCE(msg_stats.last_activity_ts, NULL) as last_activity,
+            COALESCE(msg_stats.message_count, 0) as message_count
+        FROM channel_configs cc
+        LEFT JOIN (
+            SELECT 
+                channel,
+                MAX(timestamp) as last_activity_ts,
+                COUNT(*) as message_count
+            FROM messages 
+            GROUP BY channel
+        ) msg_stats ON cc.channel_name = msg_stats.channel
+        ORDER BY cc.channel_name
+        """
+        
+        # Use pooled connection for better performance
+        raw_channels_data = execute_query_sync(optimized_query, (), db_file)
 
+        # Get heartbeat data (file I/O optimization can be added later)
         heartbeat_joined_channels = []
-        bot_is_running_for_heartbeat = is_bot_actually_running() # Check if bot is running to trust heartbeat
+        bot_is_running_for_heartbeat = is_bot_actually_running()
 
-        heartbeat_joined_channels = []
         if bot_is_running_for_heartbeat and os.path.exists("bot_heartbeat.json"):
             try:
                 with open("bot_heartbeat.json", "r") as f:
@@ -629,43 +1187,47 @@ def api_channels_list():
         elif bot_is_running_for_heartbeat:
             app.logger.warning("Bot is running but bot_heartbeat.json not found for /api/channels.")
 
-        # Fetch model details (includes line_count)
+        # Fetch model details (includes line_count) - cached for better performance
         model_details_list = markov_handler.get_available_models()
         model_info_map = {model['name']: model for model in model_details_list if isinstance(model, dict) and 'name' in model}
 
-        # Fetch last activity timestamps
-        conn_msg = sqlite3.connect(db_file)
-        conn_msg.row_factory = sqlite3.Row
-        c_msg = conn_msg.cursor()
-        c_msg.execute("SELECT channel, MAX(timestamp) as last_activity_ts FROM messages GROUP BY channel")
-        last_activities_rows = c_msg.fetchall()
-        conn_msg.close()
-        last_activities = {row['channel']: row['last_activity_ts'] for row in last_activities_rows}
-
+        # PERFORMANCE OPTIMIZATION: Streamlined data processing
         channels_data_adapted = []
         for raw_channel_config in raw_channels_data:
             channel_item = dict(raw_channel_config)
             db_channel_name = raw_channel_config.get('channel_name')
 
+            # Set channel name
             if db_channel_name and 'name' not in channel_item:
                 channel_item['name'] = db_channel_name
             elif 'name' not in channel_item and not db_channel_name:
                 channel_item['name'] = 'Unknown Channel'
                 app.logger.warning(f"Channel config row missing 'channel_name': {raw_channel_config}")
 
+            # Set join configuration
             join_channel_val = raw_channel_config.get('join_channel', 0)
             channel_item['configured_to_join'] = bool(join_channel_val)
         
+            # Check current connection status
             current_channel_name_for_check = channel_item.get('name', '').lstrip('#')
             channel_item['currently_connected'] = current_channel_name_for_check in heartbeat_joined_channels
         
+            # Set TTS status
             if 'tts_enabled' in raw_channel_config:
-                 channel_item['tts_enabled'] = bool(raw_channel_config.get('tts_enabled',0))
+                 channel_item['tts_enabled'] = bool(raw_channel_config.get('tts_enabled', 0))
 
-            # Add messages_sent (line_count) and last_activity
+            # PERFORMANCE: Use optimized data from JOIN query instead of separate lookups
+            # Message count from database (more accurate than model line count)
+            channel_item['messages_sent'] = raw_channel_config.get('message_count', 0)
+            
+            # Last activity already included in query result
+            channel_item['last_activity'] = raw_channel_config.get('last_activity')
+            
+            # Supplement with model data if available (for line count comparison)
             model_data = model_info_map.get(current_channel_name_for_check, {})
-            channel_item['messages_sent'] = model_data.get('line_count', 0)
-            channel_item['last_activity'] = last_activities.get(current_channel_name_for_check, None)
+            if model_data.get('line_count', 0) > channel_item['messages_sent']:
+                # Use model line count if it's higher (more recent)
+                channel_item['messages_sent'] = model_data.get('line_count', 0)
         
             channels_data_adapted.append(channel_item)
         
@@ -674,6 +1236,7 @@ def api_channels_list():
         return jsonify({"error": str(e)}), 500
 
 @app.route('/get-channel-settings/<channel_name>')
+@require_permission(Permissions.CHANNELS_VIEW)
 def get_channel_settings_route(channel_name): 
     try:
         conn = sqlite3.connect(db_file)
@@ -690,26 +1253,61 @@ def get_channel_settings_route(channel_name):
         return jsonify({"error": str(e)}), 500
 
 @app.route('/update-channel-settings', methods=['POST'])
+@require_permission(Permissions.CHANNELS_EDIT)
 def update_channel_settings_route(): 
     try:
         data = request.json
         channel_name = data.get('channel_name')
-        if not channel_name: return jsonify({"success": False, "message": "Channel name required"}), 400
+        if not channel_name: 
+            return jsonify({"success": False, "message": "Channel name required"}), 400
         
-        fields_to_update = {k: v for k, v in data.items() if k != 'channel_name'}
-        if not fields_to_update: return jsonify({"success": False, "message": "No fields to update"}), 400
+        # SECURITY FIX: Whitelist allowed column names to prevent SQL injection
+        ALLOWED_COLUMNS = {
+            'tts_enabled', 'voice_enabled', 'join_channel', 'owner', 
+            'trusted_users', 'ignored_users', 'use_general_model',
+            'lines_between_messages', 'time_between_messages', 
+            'voice_preset', 'bark_model'
+        }
+        
+        # Filter and validate input fields
+        fields_to_update = {}
+        for k, v in data.items():
+            if k != 'channel_name':
+                if k not in ALLOWED_COLUMNS:
+                    return jsonify({
+                        "success": False, 
+                        "message": f"Invalid field: {k}. Allowed fields: {', '.join(sorted(ALLOWED_COLUMNS))}"
+                    }), 400
+                fields_to_update[k] = v
+        
+        if not fields_to_update: 
+            return jsonify({"success": False, "message": "No valid fields to update"}), 400
 
+        # Additional input validation
+        validation_error = validate_channel_config_fields(fields_to_update)
+        if validation_error:
+            return jsonify({"success": False, "message": validation_error}), 400
+
+        # Safe to build query now since column names are validated
         set_clause = ", ".join([f"{key} = ?" for key in fields_to_update.keys()])
         params = list(fields_to_update.values()) + [channel_name]
         
         conn = sqlite3.connect(db_file)
         c = conn.cursor()
         c.execute(f"UPDATE channel_configs SET {set_clause} WHERE channel_name = ?", params)
+        
+        if c.rowcount == 0:
+            conn.close()
+            return jsonify({"success": False, "message": "Channel not found"}), 404
+            
         conn.commit()
         conn.close()
-        return jsonify({"success": True, "message": "Settings updated."})
+        return jsonify({"success": True, "message": "Settings updated successfully."})
+        
+    except sqlite3.Error as e:
+        return jsonify({"success": False, "message": f"Database error: {str(e)}"}), 500
     except Exception as e:
-        return jsonify({"success": False, "message": str(e)}), 500
+        return jsonify({"success": False, "message": f"Server error: {str(e)}"}), 500
 
 @app.route('/add-channel', methods=['POST'])
 def add_channel_route(): 
@@ -828,6 +1426,7 @@ def server_error_handler(e):
     return render_template('500.html', error_message="500: Internal Server Error"), 500 # No need to pass theme
 
 @app.route('/api/recent-tts')
+@require_auth
 def api_recent_tts():
     try:
         conn = sqlite3.connect(db_file)
@@ -860,6 +1459,7 @@ def api_recent_tts():
         return jsonify({"error": str(e), "files": []}), 500
 
 @app.route('/api/tts-stats')
+@require_auth
 def api_tts_stats():
     try:
         conn = sqlite3.connect(db_file)
@@ -897,6 +1497,7 @@ def api_tts_stats():
         return jsonify({"error": str(e), "today": 0, "week": 0, "total": 0}), 500
 
 @app.route('/api/tts-logs')
+@require_auth
 def api_tts_logs():
     try:
         page = request.args.get('page', 1, type=int)
@@ -958,14 +1559,34 @@ def api_tts_logs():
             sort_clause += " COLLATE NOCASE"
         sort_clause += f" {sort_order}"
 
-        data_query = f"""
-            SELECT message_id, channel, file_path, message, timestamp, voice_preset 
-            FROM tts_logs 
-            {where_sql}
-            {sort_clause}
-            LIMIT ? OFFSET ?
-        """
-        final_query_params = tuple(query_params) + (per_page, offset)
+        # PERFORMANCE: Use cursor-based pagination instead of OFFSET for better performance
+        cursor_value = request.args.get('cursor')
+        
+        if cursor_value and sort_column in ['message_id', 'timestamp']:
+            # Cursor-based pagination for indexed columns
+            if sort_order.upper() == 'DESC':
+                cursor_condition = f"AND {sort_column} < ?"
+            else:
+                cursor_condition = f"AND {sort_column} > ?"
+            
+            data_query = f"""
+                SELECT message_id, channel, file_path, message, timestamp, voice_preset 
+                FROM tts_logs 
+                {where_sql} {cursor_condition}
+                {sort_clause}
+                LIMIT ?
+            """
+            final_query_params = tuple(query_params) + (cursor_value, per_page)
+        else:
+            # Fallback to OFFSET for non-indexed sorts or first page
+            data_query = f"""
+                SELECT message_id, channel, file_path, message, timestamp, voice_preset 
+                FROM tts_logs 
+                {where_sql}
+                {sort_clause}
+                LIMIT ? OFFSET ?
+            """
+            final_query_params = tuple(query_params) + (per_page, offset)
         
         app.logger.debug(f"[api_tts_logs] Executing query: {data_query} with params {final_query_params}")
         c.execute(data_query, final_query_params)
@@ -982,18 +1603,30 @@ def api_tts_logs():
             "voice_preset": row["voice_preset"]
         } for row in rows]
         
-        return jsonify({
+        # PERFORMANCE: Include cursor information for efficient pagination
+        response_data = {
             "logs": logs_data,
             "page": page,
             "per_page": per_page,
             "total_items": total_items,
             "total_pages": total_pages
-        })
+        }
+        
+        # Add cursor for next page if using cursor-based pagination
+        if logs_data and sort_column in ['message_id', 'timestamp']:
+            last_row = logs_data[-1]
+            if sort_column == 'message_id':
+                response_data["next_cursor"] = last_row["id"]
+            elif sort_column == 'timestamp':
+                response_data["next_cursor"] = last_row["timestamp"]
+        
+        return jsonify(response_data)
     except Exception as e:
         app.logger.error(f"Error in /api/tts-logs: {e}", exc_info=True)
         return jsonify({"error": str(e), "logs": [], "total_pages": 0, "total_items": 0}), 500
 
 @app.route('/get-stats')
+@require_auth
 def get_stats_route():
     try:
         app.logger.debug("Attempting to connect to database for /get-stats")
@@ -1243,6 +1876,7 @@ def toggle_channel_tts_route(channel_name):
         return jsonify({"success": False, "message": str(e)}), 500
 
 @app.route('/api/system-logs')
+@require_permission(Permissions.SYSTEM_LOGS)
 def api_system_logs():
     try:
         log_file_path = logger.APP_LOG_FILE # Use the path from the logger instance
@@ -1261,6 +1895,7 @@ def api_system_logs():
         return jsonify({"logs": [f"Error reading logs: {str(e)}"]}), 500
 
 @app.route('/api/chat-logs')
+@require_auth
 def api_chat_logs():
     try:
         page = request.args.get('page', 1, type=int)
@@ -1294,21 +1929,40 @@ def api_chat_logs():
             total_items = c.fetchone()[0]
             total_pages = (total_items + per_page - 1) // per_page if per_page > 0 else 0
 
-            # Get paginated data
-            # Ensure ordering is consistent, e.g., by timestamp descending
-            c.execute(data_query + base_query + " ORDER BY timestamp DESC LIMIT ? OFFSET ?", tuple(params) + (per_page, offset))
+            # PERFORMANCE: Use cursor-based pagination for better performance
+            cursor_value = request.args.get('cursor')
+            order_clause = " ORDER BY timestamp DESC"
+            
+            if cursor_value:
+                # Cursor-based pagination using timestamp
+                cursor_condition = " AND timestamp < ?"
+                final_query = data_query + base_query + cursor_condition + order_clause + " LIMIT ?"
+                final_params = tuple(params) + (cursor_value, per_page)
+            else:
+                # Fallback to OFFSET for first page
+                final_query = data_query + base_query + order_clause + " LIMIT ? OFFSET ?"
+                final_params = tuple(params) + (per_page, offset)
+            
+            c.execute(final_query, final_params)
             log_rows = c.fetchall()
             conn.close()
 
             logs_data = [dict(row) for row in log_rows]
             
-            return jsonify({
+            # PERFORMANCE: Include cursor for efficient pagination
+            response_data = {
                 "logs": logs_data,
                 "page": page,
                 "per_page": per_page,
                 "total_items": total_items,
                 "total_pages": total_pages
-            })
+            }
+            
+            # Add cursor for next page
+            if logs_data:
+                response_data["next_cursor"] = logs_data[-1]["timestamp"]
+            
+            return jsonify(response_data)
         except sqlite3.OperationalError as oe:
             app.logger.error(f"Database schema error for chat logs: {oe}. The 'messages' table might be missing an 'author_name' column or 'message_authors' table, or 'is_bot_response'.")
             return jsonify({
@@ -1340,6 +1994,7 @@ def new_audio_notification():
         return jsonify({"success": False, "message": "Missing channel_name or message_id"}), 400
 
 @app.route('/api/channel/<channel_name>/stats')
+@require_auth
 def api_channel_stats(channel_name):
     """Get channel-specific statistics."""
     try:
@@ -1402,6 +2057,7 @@ def api_channel_stats(channel_name):
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/channel/<channel_name>/activity')
+@require_auth
 def api_channel_activity(channel_name):
     """Get recent activity for a specific channel."""
     try:
@@ -1506,6 +2162,7 @@ def api_channel_generate_message(channel_name):
         return jsonify({"error": str(e)}), 500
 
 @app.route('/beta')
+@require_permission(Permissions.DASHBOARD_VIEW)
 def beta_dashboard():
     """Render the redesigned beta dashboard."""
     try:
@@ -1533,6 +2190,7 @@ def beta_dashboard():
         return render_template("500.html", error_message=f"Error loading beta dashboard: {str(e)}"), 500
 
 @app.route('/beta/stats')
+@require_permission(Permissions.DASHBOARD_STATS)
 def beta_stats_page():
     """Render the redesigned beta stats page."""
     try:
@@ -1578,6 +2236,7 @@ def beta_stats_page():
         return render_template("500.html", error_message=f"Error loading stats: {str(e)}"), 500
 
 @app.route('/beta/settings')
+@require_permission(Permissions.SYSTEM_SETTINGS)
 def beta_settings_page():
     """Render the redesigned beta settings page."""
     try:
@@ -1618,6 +2277,7 @@ def beta_settings_page():
         return render_template("500.html", error_message=f"Error loading settings: {str(e)}"), 500
 
 @app.route('/beta/channel/<channel_name>')
+@require_permission(Permissions.CHANNELS_VIEW)
 def beta_channel_page(channel_name):
     """Render the redesigned beta channel page."""
     try:
@@ -1717,6 +2377,87 @@ def api_channel_tts(channel_name):
     except Exception as e:
         app.logger.error(f"Error in channel TTS for {channel_name}: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
+
+# PERFORMANCE OPTIMIZATION: Real-time WebSocket Events
+# Replace polling with event-driven updates for better performance
+
+class EventBroadcaster:
+    """Centralized event broadcasting for real-time updates."""
+    
+    @staticmethod
+    def bot_status_changed(status_data):
+        """Broadcast bot status changes to all clients."""
+        socketio.emit('bot_status_update', status_data)
+        logging.debug(f"Broadcasted bot status update: {status_data}")
+    
+    @staticmethod
+    def channel_updated(channel_name, update_data):
+        """Broadcast channel-specific updates."""
+        socketio.emit('channel_update', {
+            'channel': channel_name,
+            'data': update_data
+        })
+        logging.debug(f"Broadcasted channel update for {channel_name}")
+    
+    @staticmethod
+    def new_message(channel_name, message_data):
+        """Broadcast new messages to channel subscribers."""
+        socketio.emit('new_message', {
+            'channel': channel_name,
+            'message': message_data
+        })
+    
+    @staticmethod
+    def model_rebuilt(channel_name, model_stats):
+        """Broadcast Markov model rebuild completion."""
+        socketio.emit('model_rebuilt', {
+            'channel': channel_name,
+            'stats': model_stats
+        })
+        logging.info(f"Broadcasted model rebuild completion for {channel_name}")
+
+# Global event broadcaster instance
+events = EventBroadcaster()
+
+# SocketIO Event Handlers
+@socketio.on('connect')
+def handle_connect():
+    """Handle client connection."""
+    logging.info(f"Client connected: {request.sid}")
+    # Send current bot status to newly connected client
+    try:
+        status = {
+            'running': is_bot_actually_running(),
+            'timestamp': time.time()
+        }
+        socketio.emit('bot_status_update', status, room=request.sid)
+    except Exception as e:
+        logging.error(f"Error sending initial status to client: {e}")
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    """Handle client disconnection."""
+    logging.debug(f"Client disconnected: {request.sid}")
+
+@socketio.on('subscribe_channel')
+def handle_channel_subscription(data):
+    """Handle client subscribing to channel-specific updates."""
+    channel_name = data.get('channel')
+    if channel_name:
+        socketio.join_room(f"channel_{channel_name}")
+        logging.debug(f"Client {request.sid} subscribed to channel {channel_name}")
+
+@socketio.on('request_status')
+def handle_status_request():
+    """Handle explicit status request from client."""
+    try:
+        status = {
+            'running': is_bot_actually_running(),
+            'timestamp': time.time()
+        }
+        socketio.emit('bot_status_update', status, room=request.sid)
+    except Exception as e:
+        logging.error(f"Error handling status request: {e}")
 
 if __name__ == "__main__":
     markov_handler.load_models()

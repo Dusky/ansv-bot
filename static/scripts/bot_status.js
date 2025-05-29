@@ -20,11 +20,15 @@ window.BotStatus = window.BotStatus || {
   init: function() {
     console.log("BotStatus initializing");
     
+    // PERFORMANCE: Use WebSocket by default, fallback to polling
+    this.useWebSocket = true;
+    this.pollingInterval = null;
+    
     // Do initial check
     this.checkStatus();
     
-    // Set up periodic checking
-    setInterval(() => this.checkStatus(), 10000); // Check every 10 seconds
+    // Set up WebSocket or polling based on availability
+    this.initializeUpdates();
     
     // Listen for events from the EventBus if available
     if (window.EventBus) {
@@ -35,6 +39,63 @@ window.BotStatus = window.BotStatus || {
     
     // Return self for chaining
     return this;
+  },
+  
+  // PERFORMANCE: Initialize WebSocket or polling updates
+  initializeUpdates: function() {
+    if (this.useWebSocket && window.wsClient) {
+      // Use WebSocket for real-time updates
+      console.log("BotStatus using WebSocket for real-time updates");
+      window.wsClient.on('bot_status_update', (data) => {
+        this.updateFromWebSocket(data);
+      });
+    } else {
+      // Fallback to polling
+      this.enablePolling();
+    }
+  },
+  
+  // Enable polling mode (fallback)
+  enablePolling: function() {
+    console.log("BotStatus enabling polling mode");
+    this.useWebSocket = false;
+    
+    // Clear any existing interval
+    if (this.pollingInterval) {
+      clearInterval(this.pollingInterval);
+    }
+    
+    // Set up periodic checking with longer intervals to reduce load
+    this.pollingInterval = setInterval(() => this.checkStatus(), 15000); // Check every 15 seconds
+  },
+  
+  // Disable polling (when WebSocket is working)
+  disablePolling: function() {
+    if (this.pollingInterval) {
+      clearInterval(this.pollingInterval);
+      this.pollingInterval = null;
+    }
+  },
+  
+  // Update status from WebSocket event
+  updateFromWebSocket: function(data) {
+    console.log("BotStatus received WebSocket update:", data);
+    
+    // Update internal state
+    this.running = data.running || false;
+    this.connected = data.connected || false;
+    this.tts_enabled = data.tts_enabled || false;
+    this.last_checked = new Date();
+    
+    if (data.uptime !== undefined) {
+      this.uptime = data.uptime;
+    }
+    
+    // Update UI immediately
+    this.updateDisplay();
+    
+    // Disable polling since WebSocket is working
+    this.disablePolling();
   },
   
   // Check bot status from server

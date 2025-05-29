@@ -68,16 +68,33 @@ window.BotController = window.BotController || {
     
     // Start the bot with optional TTS support
     startBot: function() {
+        // Show enhanced loading notification with progress tracking
+        const loadingToastId = window.showLoading('Starting bot... This may take 30-60 seconds');
+        
         // Disable buttons during operation
         document.getElementById('startBotBtn').disabled = true;
         document.getElementById('stopBotBtn').disabled = true;
         
-        // Update UI to show starting state
+        // Update UI to show starting state with progress indicator
         const startBtn = document.getElementById('startBotBtn');
+        const originalStartText = startBtn.innerHTML;
         startBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Starting...';
         
-        // Show a loading notification
-        window.notificationSystem.showToast('Starting bot...', 'info');
+        // Show progress steps to user
+        const progressSteps = [
+            'Initializing bot service...',
+            'Loading configuration...',
+            'Connecting to Twitch...',
+            'Starting web interface...'
+        ];
+        
+        let currentStep = 0;
+        const progressInterval = setInterval(() => {
+            if (currentStep < progressSteps.length) {
+                startBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>${progressSteps[currentStep]}`;
+                currentStep++;
+            }
+        }, 3000); // Update every 3 seconds
         
         // Get TTS status with better validation
         const ttsElement = document.getElementById('enable_tts');
@@ -116,20 +133,35 @@ window.BotController = window.BotController || {
         .then(data => {
             console.log('Bot start response:', data);
             
+            // Clear progress interval
+            clearInterval(progressInterval);
+            
             if (data.success) {
-                window.notificationSystem.showToast('Bot started successfully', 'success');
+                // Complete loading notification successfully
+                window.completeLoading(loadingToastId, '🤖 Bot started successfully! Ready to chat.', 'success');
                 
-                // Reset the button text immediately for successful start
-                startBtn.innerHTML = '<i class="fas fa-play me-2"></i>Start Bot';
+                // Reset the button text with success state
+                startBtn.innerHTML = '<i class="fas fa-check me-2"></i>Started';
+                startBtn.className = startBtn.className.replace('btn-primary', 'btn-success');
+                
+                // Auto-reset button appearance after 3 seconds
+                setTimeout(() => {
+                    startBtn.innerHTML = '<i class="fas fa-play me-2"></i>Start Bot';
+                    startBtn.className = startBtn.className.replace('btn-success', 'btn-primary');
+                }, 3000);
+                
             } else {
-                window.notificationSystem.showToast(`Failed to start bot: ${data.message || 'Unknown error'}`, 'error');
+                // Complete loading notification with error
+                window.completeLoading(loadingToastId, `❌ Failed to start bot: ${data.message || 'Unknown error'}`, 'error');
                 
-                // Show detailed error information
+                // Use enhanced error handling
+                window.handleError(data.message || 'Bot start failed', 'bot_control');
+                
+                // Show detailed error information in expandable section
                 if (errorDisplay) {
-                    // Format the log output for better readability
                     let errorContent = data.message || 'Unknown error';
                     if (data.log) {
-                        errorContent += '\n\nLog output:\n' + data.log;
+                        errorContent += '\n\nTechnical Details:\n' + data.log;
                     }
                     
                     errorDisplay.textContent = errorContent;
@@ -138,56 +170,90 @@ window.BotController = window.BotController || {
                 
                 console.error('Bot start failed:', data.log || data.message);
                 
-                // Reset the button state for failed start
-                startBtn.innerHTML = '<i class="fas fa-play me-2"></i>Start Bot';
-                document.getElementById('startBotBtn').disabled = false;
-                document.getElementById('stopBotBtn').disabled = false;
+                // Reset button state for failed start
+                this.resetButtonStates();
             }
         })
         .catch(error => {
             console.error('Error starting bot:', error);
-            window.notificationSystem.showToast(`Error starting bot: ${error.message}`, 'error');
             
-            // Show the error in the UI
+            // Clear progress interval
+            clearInterval(progressInterval);
+            
+            // Complete loading with error and use enhanced error handling
+            window.completeLoading(loadingToastId, 'Failed to start bot', 'error');
+            window.handleError(error, 'bot_control');
+            
+            // Show the error in the UI with helpful context
             if (errorDisplay) {
-                errorDisplay.textContent = error.message;
+                errorDisplay.textContent = `Connection Error: ${error.message}\n\nThis might be a network issue or the server might be down.`;
                 errorDisplay.style.display = 'block';
             }
             
-            // Reset the button state on error
-            startBtn.innerHTML = '<i class="fas fa-play me-2"></i>Start Bot';
-            document.getElementById('startBotBtn').disabled = false;
-            document.getElementById('stopBotBtn').disabled = false;
+            // Reset button state on error
+            this.resetButtonStates();
         })
         .finally(() => {
-            // Refresh status after a short delay
+            // Clear progress interval if still running
+            clearInterval(progressInterval);
+            
+            // Refresh status after a short delay to verify state
             setTimeout(() => {
                 if (window.BotStatus) {
                     window.BotStatus.checkStatus();
                 }
-            }, 3000);
+            }, 2000);
         });
     },
     
     // Stop the bot
     stopBot: function() {
         if (confirm('Are you sure you want to stop the bot?')) {
-            // Disable buttons during operation
-            document.getElementById('startBotBtn').disabled = true;
-            document.getElementById('stopBotBtn').disabled = true;
+            // Show enhanced loading notification
+            const loadingToastId = window.showLoading('Stopping bot... This may take a few seconds');
             
-            // Show a loading notification
-            window.notificationSystem.showToast('Stopping bot...', 'info');
+            // Disable buttons during operation
+            const startBtn = document.getElementById('startBotBtn');
+            const stopBtn = document.getElementById('stopBotBtn');
+            
+            if (startBtn) startBtn.disabled = true;
+            if (stopBtn) {
+                stopBtn.disabled = true;
+                const originalStopText = stopBtn.innerHTML;
+                stopBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Stopping...';
+            }
             
             fetch('/stop_bot', {
                 method: 'POST'
             })
-            .then(response => response.json())
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+                }
+                return response.json();
+            })
             .then(data => {
                 if (data.success) {
-                    window.notificationSystem.showToast('Bot stopped successfully', 'success');
+                    // Complete loading notification successfully
+                    window.completeLoading(loadingToastId, '⏹️ Bot stopped successfully', 'success');
+                    
+                    // Reset the stop button with success state
+                    if (stopBtn) {
+                        stopBtn.innerHTML = '<i class="fas fa-check me-2"></i>Stopped';
+                        stopBtn.className = stopBtn.className.replace('btn-danger', 'btn-success');
+                        
+                        // Auto-reset button appearance after 3 seconds
+                        setTimeout(() => {
+                            stopBtn.innerHTML = '<i class="fas fa-stop me-2"></i>Stop Bot';
+                            stopBtn.className = stopBtn.className.replace('btn-success', 'btn-danger');
+                        }, 3000);
+                    }
                 } else {
-                    window.notificationSystem.showToast(`Failed to stop bot: ${data.message}`, 'error');
+                    // Complete loading notification with error
+                    window.completeLoading(loadingToastId, `❌ Failed to stop bot: ${data.message}`, 'error');
+                    
+                    // Use enhanced error handling
+                    window.handleError(data.message || 'Bot stop failed', 'bot_control');
                 }
                 
                 // Update status immediately
@@ -197,11 +263,17 @@ window.BotController = window.BotController || {
             })
             .catch(error => {
                 console.error('Error stopping bot:', error);
-                window.notificationSystem.showToast('Error stopping bot', 'error');
+                
+                // Complete loading with error and use enhanced error handling
+                window.completeLoading(loadingToastId, 'Failed to stop bot', 'error');
+                window.handleError(error, 'bot_control');
                 
                 // Restore button states based on last known status
-                document.getElementById('startBotBtn').disabled = false;
-                document.getElementById('stopBotBtn').disabled = false;
+                if (startBtn) startBtn.disabled = false;
+                if (stopBtn) {
+                    stopBtn.disabled = false;
+                    stopBtn.innerHTML = '<i class="fas fa-stop me-2"></i>Stop Bot';
+                }
             });
         }
     },
@@ -499,6 +571,24 @@ window.BotController = window.BotController || {
             .replace(/>/g, "&gt;")
             .replace(/"/g, "&quot;")
             .replace(/'/g, "&#039;");
+    },
+    
+    // Reset button states to their default enabled/disabled states
+    resetButtonStates: function() {
+        const startBtn = document.getElementById('startBotBtn');
+        const stopBtn = document.getElementById('stopBotBtn');
+        
+        if (startBtn) {
+            startBtn.disabled = false;
+            startBtn.innerHTML = '<i class="fas fa-play me-2"></i>Start Bot';
+            startBtn.className = startBtn.className.replace('btn-success', 'btn-primary');
+        }
+        
+        if (stopBtn) {
+            stopBtn.disabled = true;
+            stopBtn.innerHTML = '<i class="fas fa-stop me-2"></i>Stop Bot';
+            stopBtn.className = stopBtn.className.replace('btn-success', 'btn-danger');
+        }
     }
 };
 

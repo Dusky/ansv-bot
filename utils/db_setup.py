@@ -166,6 +166,43 @@ def ensure_db_setup(db_file):
             c.execute('ALTER TABLE channel_configs ADD COLUMN bark_model TEXT DEFAULT \'regular\'')
             logging.info("Column 'bark_model' added to 'channel_configs'.")
 
+        # PERFORMANCE OPTIMIZATION: Add indexes for frequently queried columns
+        # These indexes will significantly improve query performance
+        performance_indexes = [
+            # Messages table indexes
+            "CREATE INDEX IF NOT EXISTS idx_messages_channel ON messages(channel)",
+            "CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp)",
+            "CREATE INDEX IF NOT EXISTS idx_messages_author ON messages(author_name)",
+            "CREATE INDEX IF NOT EXISTS idx_messages_channel_timestamp ON messages(channel, timestamp)",
+            "CREATE INDEX IF NOT EXISTS idx_messages_twitch_id ON messages(twitch_message_id)",
+            
+            # Channel configs indexes  
+            "CREATE INDEX IF NOT EXISTS idx_channel_configs_join ON channel_configs(join_channel)",
+            "CREATE INDEX IF NOT EXISTS idx_channel_configs_tts ON channel_configs(tts_enabled)",
+            
+            # TTS logs indexes
+            "CREATE INDEX IF NOT EXISTS idx_tts_logs_channel ON tts_logs(channel)",
+            "CREATE INDEX IF NOT EXISTS idx_tts_logs_timestamp ON tts_logs(timestamp)",
+            "CREATE INDEX IF NOT EXISTS idx_tts_logs_channel_timestamp ON tts_logs(channel, timestamp)",
+            
+            # Bot status indexes
+            "CREATE INDEX IF NOT EXISTS idx_bot_status_key ON bot_status(key)",
+            "CREATE INDEX IF NOT EXISTS idx_bot_status_timestamp ON bot_status(timestamp)",
+            
+            # User colors indexes
+            "CREATE INDEX IF NOT EXISTS idx_user_colors_username ON user_colors(username)"
+        ]
+        
+        for index_sql in performance_indexes:
+            try:
+                c.execute(index_sql)
+                logging.debug(f"Created index: {index_sql}")
+            except sqlite3.Error as e:
+                logging.warning(f"Failed to create index: {index_sql} - {e}")
+        
+        conn.commit()
+        logging.info("Database setup completed successfully with performance indexes.")
+
         # Further code for initializing channels and handling settings...
 
     except sqlite3.Error as e:

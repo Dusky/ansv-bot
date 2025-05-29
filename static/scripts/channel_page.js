@@ -328,10 +328,28 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
         
+        // Show enhanced loading notification with progress tracking
+        const loadingToastId = window.showLoading(`Generating TTS audio... This may take 30-60 seconds`);
+        
         const button = elements.generateTtsBtn;
         const originalText = button.innerHTML;
         button.disabled = true;
-        button.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Generating...';
+        
+        // Show progress steps to user
+        const progressSteps = [
+            'Loading TTS model...',
+            'Processing text input...',
+            'Generating speech audio...',
+            'Saving audio file...'
+        ];
+        
+        let currentStep = 0;
+        const progressInterval = setInterval(() => {
+            if (currentStep < progressSteps.length) {
+                button.innerHTML = `<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>${progressSteps[currentStep]}`;
+                currentStep++;
+            }
+        }, 8000); // Update every 8 seconds for TTS process
         
         try {
             const response = await fetch(`/api/channel/${channelName}/tts`, {
@@ -344,10 +362,28 @@ document.addEventListener('DOMContentLoaded', function() {
                 })
             });
             
+            if (!response.ok) {
+                throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+            }
+            
             const data = await response.json();
             
-            if (response.ok) {
-                showNotification('TTS generated successfully!', 'success');
+            // Clear progress interval
+            clearInterval(progressInterval);
+            
+            if (data.success !== false) {
+                // Complete loading notification successfully
+                window.completeLoading(loadingToastId, '🔊 TTS audio generated successfully! Playing now.', 'success');
+                
+                // Reset the button with success state
+                button.innerHTML = '<i class="fas fa-check me-2"></i>Generated';
+                button.className = button.className.replace('btn-primary', 'btn-success');
+                
+                // Auto-reset button appearance after 3 seconds
+                setTimeout(() => {
+                    button.innerHTML = originalText;
+                    button.className = button.className.replace('btn-success', 'btn-primary');
+                }, 3000);
                 
                 // Play the audio if available
                 if (data.file_path && elements.audioPlayer) {
@@ -355,6 +391,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     elements.audioPlayer.src = audioUrl;
                     elements.audioPlayer.play().catch(e => {
                         console.warn('Autoplay prevented:', e);
+                        showNotification('Audio generated! Click to play manually.', 'info');
                     });
                 }
                 
@@ -365,14 +402,29 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Refresh activity
                 setTimeout(() => loadChannelActivity(), 1000);
             } else {
-                showNotification(data.error || 'Failed to generate TTS', 'error');
+                // Complete loading notification with error
+                window.completeLoading(loadingToastId, `❌ Failed to generate TTS: ${data.error || 'Unknown error'}`, 'error');
+                
+                // Use enhanced error handling
+                window.handleError(data.error || 'TTS generation failed', 'tts_generation');
             }
         } catch (error) {
             console.error('Error generating TTS:', error);
-            showNotification('Error generating TTS', 'error');
+            
+            // Clear progress interval
+            clearInterval(progressInterval);
+            
+            // Complete loading with error and use enhanced error handling
+            window.completeLoading(loadingToastId, 'Failed to generate TTS audio', 'error');
+            window.handleError(error, 'tts_generation');
         } finally {
+            // Clear progress interval if still running
+            clearInterval(progressInterval);
+            
             button.disabled = false;
-            button.innerHTML = originalText;
+            if (!button.innerHTML.includes('Generated')) {
+                button.innerHTML = originalText;
+            }
         }
     }
     

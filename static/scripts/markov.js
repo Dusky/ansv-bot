@@ -113,20 +113,47 @@ window.MessageManager = window.MessageManager || {
                 const message = data.message || '';
                 if (config.sendToTwitch) {
                     if (data.sent === true) {
-                        this.showNotification(`Message sent to ${config.channel}: "${message}"`, 'success');
+                        // Enhanced success feedback with emojis
+                        this.showNotification(`💬 Message sent to #${config.channel}: "${message}"`, 'success');
+                        
+                        // Show success state on button temporarily
+                        if (config.button) {
+                            config.button.innerHTML = '<i class="fas fa-check me-2"></i>Sent!';
+                            config.button.className = config.button.className.replace('btn-primary', 'btn-success');
+                            
+                            setTimeout(() => {
+                                if (config.button.dataset.originalContent) {
+                                    config.button.innerHTML = config.button.dataset.originalContent;
+                                    config.button.className = config.button.className.replace('btn-success', 'btn-primary');
+                                }
+                            }, 2000);
+                        }
                     } else {
                         if (message === null || message === "null" || !message) {
-                            this.showNotification("Failed to generate message for sending.", 'error');
+                            window.handleError("Failed to generate message for sending", 'markov_generation');
                         } else {
-                            this.showNotification(`Generated: "${message}" (not sent: ${data.error || 'see console'})`, 'warning');
+                            this.showNotification(`💡 Generated: "${message}" (not sent: ${data.error || 'see console'})`, 'warning');
                         }
                         console.warn("Message was not sent:", data.error || "Unknown reason. Bot running:", data.server_verified);
                     }
                 } else {
                      if (message === null || message === "null" || !message) {
-                        this.showNotification("Failed to generate message.", 'error');
+                        window.handleError("Failed to generate message", 'markov_generation');
                      } else {
-                        this.showNotification(`Generated message: "${message}"`, 'success');
+                        this.showNotification(`🎯 Generated message: "${message}"`, 'success');
+                        
+                        // Show success state on button temporarily
+                        if (config.button) {
+                            config.button.innerHTML = '<i class="fas fa-check me-2"></i>Generated!';
+                            config.button.className = config.button.className.replace('btn-primary', 'btn-success');
+                            
+                            setTimeout(() => {
+                                if (config.button.dataset.originalContent) {
+                                    config.button.innerHTML = config.button.dataset.originalContent;
+                                    config.button.className = config.button.className.replace('btn-success', 'btn-primary');
+                                }
+                            }, 2000);
+                        }
                      }
                 }
                 if (typeof config.callback === 'function') {
@@ -135,13 +162,15 @@ window.MessageManager = window.MessageManager || {
                 return message;
             } else {
                 const errorMsg = data.message || data.error || 'Failed to process request';
-                this.showNotification(errorMsg, 'error');
+                window.handleError(errorMsg, 'markov_generation');
                 throw new Error(errorMsg);
             }
         })
         .catch(error => {
             console.error('Error in MessageManager.generateMessage:', error);
-            this.showNotification(`Error: ${error.message}`, 'error');
+            
+            // Use enhanced error handling with context
+            window.handleError(error, 'markov_generation');
             throw error; // Re-throw for further handling if needed
         })
         .finally(() => {
@@ -159,7 +188,13 @@ window.MessageManager = window.MessageManager || {
         if (isLoading) {
             button.dataset.originalContent = button.innerHTML;
             button.disabled = true;
-            button.innerHTML = `<i class="fas fa-spinner fa-spin me-1"></i>${actionText}...`;
+            
+            // Enhanced loading state with progress indication
+            if (isSending) {
+                button.innerHTML = `<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Sending to chat...`;
+            } else {
+                button.innerHTML = `<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Generating message...`;
+            }
         } else {
             if (button.dataset.originalContent) {
                 button.innerHTML = button.dataset.originalContent;
@@ -194,51 +229,90 @@ function rebuildCacheForChannel(channelName) {
   const button = document.querySelector(`button[data-channel="${channelName}"][data-action="rebuild"]`);
   let originalHTML = null;
   
+  // Show enhanced loading notification with progress tracking
+  const loadingToastId = window.showLoading(`Rebuilding Markov model for ${channelName}... This may take 1-2 minutes`);
+  
   if (button) {
     originalHTML = button.innerHTML;
-    button.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Building...';
     button.disabled = true;
-  } else {
-    if (window.notificationSystem && typeof window.notificationSystem.showToast === 'function') {
-        window.notificationSystem.showToast(`Rebuilding cache for ${channelName}...`, 'info');
-    } else {
-        alert(`Rebuilding cache for ${channelName}...`);
-    }
   }
+  
+  // Show progress steps to user
+  const progressSteps = [
+    'Analyzing chat history...',
+    'Building text corpus...',
+    'Training Markov chains...',
+    'Saving model cache...'
+  ];
+  
+  let currentStep = 0;
+  const progressInterval = setInterval(() => {
+    if (currentStep < progressSteps.length) {
+      if (button) {
+        button.innerHTML = `<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>${progressSteps[currentStep]}`;
+      }
+      currentStep++;
+    }
+  }, 5000); // Update every 5 seconds for longer process
   
   fetch(`/rebuild-cache/${channelName}`, {
     method: 'POST'
   })
-    .then(response => response.json())
+    .then(response => {
+      if (!response.ok) {
+        throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+      }
+      return response.json();
+    })
     .then(data => {
+      // Clear progress interval
+      clearInterval(progressInterval);
+      
       if (data.success) {
-        if (window.notificationSystem && typeof window.notificationSystem.showToast === 'function') {
-            window.notificationSystem.showToast(`Model for ${channelName} rebuilt successfully`, 'success');
-        } else {
-            alert(`Model for ${channelName} rebuilt successfully`);
+        // Complete loading notification successfully
+        window.completeLoading(loadingToastId, `🧠 Model for ${channelName} rebuilt successfully! Ready for better responses.`, 'success');
+        
+        // Reset the button with success state
+        if (button) {
+          button.innerHTML = '<i class="fas fa-check me-2"></i>Rebuilt';
+          button.className = button.className.replace('btn-outline-secondary', 'btn-success');
+          
+          // Auto-reset button appearance after 3 seconds
+          setTimeout(() => {
+            button.innerHTML = '<i class="fas fa-tools me-1"></i>Rebuild';
+            button.className = button.className.replace('btn-success', 'btn-outline-secondary');
+          }, 3000);
         }
+        
         if (typeof window.loadStatistics === 'function') {
           window.loadStatistics(); // Refresh stats table
         }
       } else {
-        if (window.notificationSystem && typeof window.notificationSystem.showToast === 'function') {
-            window.notificationSystem.showToast(`Failed to rebuild model for ${channelName}: ${data.message || 'Unknown error'}`, 'error');
-        } else {
-            alert(`Failed to rebuild model for ${channelName}: ${data.message || 'Unknown error'}`);
-        }
+        // Complete loading notification with error
+        window.completeLoading(loadingToastId, `❌ Failed to rebuild model for ${channelName}: ${data.message || 'Unknown error'}`, 'error');
+        
+        // Use enhanced error handling
+        window.handleError(data.message || 'Model rebuild failed', 'markov_generation');
       }
     })
     .catch(error => {
       console.error('Error rebuilding cache for:', channelName, error);
-      if (window.notificationSystem && typeof window.notificationSystem.showToast === 'function') {
-        window.notificationSystem.showToast(`Error rebuilding model for ${channelName}: ${error.message}`, 'error');
-      } else {
-        alert(`Error rebuilding model for ${channelName}: ${error.message}`);
-      }
+      
+      // Clear progress interval
+      clearInterval(progressInterval);
+      
+      // Complete loading with error and use enhanced error handling
+      window.completeLoading(loadingToastId, 'Failed to rebuild model', 'error');
+      window.handleError(error, 'markov_generation');
     })
     .finally(() => {
+      // Clear progress interval if still running
+      clearInterval(progressInterval);
+      
       if (button) {
-        button.innerHTML = originalHTML || '<i class="fas fa-tools me-1"></i>Rebuild';
+        if (!button.innerHTML.includes('Rebuilt')) {
+          button.innerHTML = originalHTML || '<i class="fas fa-tools me-1"></i>Rebuild';
+        }
         button.disabled = false;
       }
     });
