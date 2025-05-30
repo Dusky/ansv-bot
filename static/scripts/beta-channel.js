@@ -89,6 +89,9 @@ function initializeControls() {
         ttsDelayToggle.addEventListener('change', handleTTSDelayToggle);
     }
     
+    // Initialize Model Selector
+    initializeModelSelector();
+    
     // Initialize trusted users management
     initializeTrustedUsers();
     
@@ -234,17 +237,27 @@ async function generateMessage(sendToChat = false) {
     btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Generating...';
     
     try {
+        // Get current model selection
+        const modelSelector = document.getElementById('modelSelector');
+        const modelType = modelSelector ? modelSelector.value : (window.channelData.use_general_model ? 'general' : 'channel');
+        
         const response = await betaUtils.apiRequest(`/api/channel/${channelName}/generate`, {
             method: 'POST',
-            body: JSON.stringify({ send_to_chat: sendToChat })
+            body: JSON.stringify({ 
+                send_to_chat: sendToChat,
+                model_override: modelType
+            })
         });
         
         if (sendToChat && response.sent_to_chat) {
-            showToast(`Message sent to #${channelName}!`, 'success');
+            showToast(`Message sent to #${channelName}! (${response.model_used} model)`, 'success');
             setTimeout(loadChatMessages, 1000);
         } else if (!sendToChat) {
             currentMessage = response.message;
             showGeneratedMessage(response.message);
+            if (response.model_used) {
+                console.log(`[Beta Channel] Generated using ${response.model_used} model`);
+            }
         }
         
     } catch (error) {
@@ -1099,6 +1112,146 @@ function initializeTrustedUsers() {
                 addTrustedUser();
             }
         });
+    }
+}
+
+// ====================================================================
+// Model Selector
+// ====================================================================
+
+function initializeModelSelector() {
+    const selector = document.getElementById('modelSelector');
+    const btn = document.getElementById('modelSwitchBtn');
+    
+    if (selector && btn) {
+        // Set initial state
+        const useGeneral = window.channelData.use_general_model;
+        selector.value = useGeneral ? 'general' : 'channel';
+        
+        // Add event listeners
+        btn.addEventListener('click', handleModelSwitch);
+        
+        // Handle selector change to show apply button
+        selector.addEventListener('change', () => {
+            const currentSetting = window.channelData.use_general_model;
+            const newSetting = selector.value === 'general';
+            
+            if (currentSetting !== newSetting) {
+                btn.disabled = false;
+                btn.classList.remove('btn-outline-primary');
+                btn.classList.add('btn-warning');
+                btn.innerHTML = '<i class="fas fa-save me-1"></i>Apply';
+                btn.title = 'Click to apply model selection';
+            } else {
+                resetModelSwitchButton();
+            }
+        });
+        
+        console.log('[Beta Channel] Model selector initialized');
+    }
+}
+
+async function handleModelSwitch() {
+    const selector = document.getElementById('modelSelector');
+    const btn = document.getElementById('modelSwitchBtn');
+    const channelName = window.channelData.name;
+    
+    if (!selector || !btn) return;
+    
+    const useGeneral = selector.value === 'general';
+    const originalBtnText = btn.innerHTML;
+    
+    // Update UI state
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Switching...';
+    
+    // Add updating animation to indicators
+    const indicators = document.querySelectorAll('.model-selector-indicator');
+    indicators.forEach(indicator => indicator.classList.add('updating'));
+    
+    const selectorGroup = document.querySelector('.model-selector-group');
+    if (selectorGroup) {
+        selectorGroup.classList.remove('success');
+    }
+    
+    try {
+        const response = await betaUtils.apiRequest('/update-channel-settings', {
+            method: 'POST',
+            body: JSON.stringify({
+                channel_name: channelName,
+                use_general_model: useGeneral ? 1 : 0
+            })
+        });
+        
+        // Update channel data
+        window.channelData.use_general_model = useGeneral;
+        
+        // Update visual indicators
+        updateModelIndicators(useGeneral);
+        
+        // Show success state
+        if (selectorGroup) {
+            selectorGroup.classList.add('success');
+            setTimeout(() => selectorGroup.classList.remove('success'), 3000);
+        }
+        
+        showToast(
+            `Switched to ${useGeneral ? 'General' : 'Channel'} model for #${channelName}`, 
+            'success'
+        );
+        
+        // Refresh model info if visible
+        setTimeout(loadChannelStats, 1000);
+        
+        console.log(`[Beta Channel] Model switched to: ${useGeneral ? 'general' : 'channel'}`);
+        
+    } catch (error) {
+        console.error('[Beta Channel] Error switching model:', error);
+        showToast('Failed to switch model', 'error');
+        
+        // Revert selector
+        selector.value = useGeneral ? 'channel' : 'general';
+    } finally {
+        // Reset button state
+        resetModelSwitchButton();
+        
+        // Remove updating animations
+        indicators.forEach(indicator => indicator.classList.remove('updating'));
+    }
+}
+
+function updateModelIndicators(useGeneral) {
+    const indicators = document.querySelectorAll('.model-selector-indicator');
+    indicators.forEach(indicator => {
+        // Update classes
+        indicator.className = `model-selector-indicator ${useGeneral ? 'model-indicator-general' : 'model-indicator-channel'}`;
+        
+        // Update content
+        const icon = indicator.querySelector('i');
+        const textNode = indicator.childNodes[indicator.childNodes.length - 1];
+        
+        if (icon) {
+            icon.className = `fas fa-${useGeneral ? 'globe' : 'hashtag'} me-1`;
+        }
+        
+        if (textNode && textNode.nodeType === Node.TEXT_NODE) {
+            textNode.textContent = useGeneral ? 'General Model' : 'Channel Model';
+        } else {
+            // Fallback: replace entire text content while preserving icon
+            const iconHtml = icon ? icon.outerHTML : '';
+            indicator.innerHTML = iconHtml + (useGeneral ? 'General Model' : 'Channel Model');
+        }
+    });
+}
+
+function resetModelSwitchButton() {
+    const btn = document.getElementById('modelSwitchBtn');
+    if (btn) {
+        btn.disabled = false;
+        btn.classList.remove('btn-warning');
+        btn.classList.add('btn-outline-primary');
+        btn.innerHTML = '<i class="fas fa-sync-alt"></i>';
+        btn.title = 'Apply model selection';
     }
 }
 

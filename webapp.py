@@ -2325,6 +2325,7 @@ def api_channel_generate_message(channel_name):
         data = request.get_json() or {}
         send_to_chat = data.get('send_to_chat', False)
         use_general_model = data.get('use_general_model', False)
+        model_override = data.get('model_override')  # New parameter for explicit model selection
         
         # Check if channel exists
         conn = sqlite3.connect(db_file)
@@ -2337,8 +2338,16 @@ def api_channel_generate_message(channel_name):
         if not channel_config:
             return jsonify({"error": "Channel not found"}), 404
         
-        # Determine which model to use
-        model_name = "general" if use_general_model or channel_config['use_general_model'] else channel_name
+        # Determine which model to use - priority: override > use_general_model param > config setting > default to channel
+        if model_override:
+            model_name = "general" if model_override == "general" else channel_name
+            app.logger.info(f"Using model override: {model_name} for channel {channel_name}")
+        elif use_general_model:
+            model_name = "general"
+        elif channel_config['use_general_model']:
+            model_name = "general" 
+        else:
+            model_name = channel_name
         
         # Generate message using markov handler
         try:
@@ -2363,6 +2372,7 @@ def api_channel_generate_message(channel_name):
                 app.logger.error(f"Error sending message to {channel_name}: {e}")
         
         return jsonify({
+            "success": True,
             "channel_name": channel_name,
             "message": generated_message,
             "sent_to_chat": sent_to_chat,

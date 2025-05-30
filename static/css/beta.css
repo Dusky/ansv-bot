@@ -1929,6 +1929,153 @@ body {
 }
 
 /* ====================================================================
+   Model Selector Component
+   ================================================================== */
+
+.model-selector-group {
+  background: var(--beta-surface-color);
+  border: 1px solid var(--beta-border-color);
+  border-radius: var(--beta-border-radius-sm);
+  padding: var(--beta-spacing-lg);
+  margin-bottom: var(--beta-spacing-lg);
+  transition: var(--beta-transition);
+}
+
+.model-selector-group:hover {
+  border-color: var(--beta-primary);
+  box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.1);
+}
+
+.model-selector-group .form-label {
+  color: var(--beta-text-primary);
+  font-weight: 600;
+  margin-bottom: var(--beta-spacing-sm);
+  display: flex;
+  align-items: center;
+  gap: var(--beta-spacing-xs);
+}
+
+.model-selector-group .form-select {
+  border-color: var(--beta-border-color);
+  border-radius: var(--beta-border-radius-xs);
+  transition: var(--beta-transition);
+}
+
+.model-selector-group .form-select:focus {
+  border-color: var(--beta-primary);
+  box-shadow: 0 0 0 0.2rem rgba(99, 102, 241, 0.25);
+}
+
+.model-selector-group .btn {
+  border-color: var(--beta-border-color);
+  transition: var(--beta-transition);
+}
+
+.model-selector-group .btn:hover {
+  background: var(--beta-primary);
+  border-color: var(--beta-primary);
+  color: white;
+  transform: translateY(-1px);
+}
+
+.model-selector-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--beta-spacing-xs);
+  font-size: var(--beta-font-size-xs);
+  padding: var(--beta-spacing-xs) var(--beta-spacing-sm);
+  border-radius: var(--beta-border-radius-xs);
+  font-weight: 500;
+  transition: var(--beta-transition);
+}
+
+.model-indicator-channel {
+  background: var(--beta-info-light);
+  color: var(--beta-info);
+  border: 1px solid rgba(6, 182, 212, 0.2);
+}
+
+.model-indicator-general {
+  background: var(--beta-success-light);
+  color: var(--beta-success);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+[data-bs-theme="dark"] .model-indicator-channel {
+  background: rgba(6, 182, 212, 0.15);
+  border-color: rgba(6, 182, 212, 0.3);
+}
+
+[data-bs-theme="dark"] .model-indicator-general {
+  background: rgba(16, 185, 129, 0.15);
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
+/* Model selector button states */
+.model-selector-group .btn-warning {
+  background: var(--beta-warning);
+  border-color: var(--beta-warning);
+  color: white;
+}
+
+.model-selector-group .btn-warning:hover {
+  background: var(--beta-warning-hover);
+  border-color: var(--beta-warning-hover);
+}
+
+/* Model selector responsive design */
+@media (max-width: 768px) {
+  .model-selector-group {
+    padding: var(--beta-spacing-md);
+  }
+  
+  .model-selector-group .input-group {
+    flex-direction: column;
+    gap: var(--beta-spacing-sm);
+  }
+  
+  .model-selector-group .input-group .btn {
+    width: 100%;
+    justify-content: center;
+  }
+  
+  .model-selector-indicator {
+    font-size: var(--beta-font-size-xs);
+    padding: var(--beta-spacing-xs);
+  }
+}
+
+/* Model indicator animations */
+.model-selector-indicator.updating {
+  animation: modelSelectorPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes modelSelectorPulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.02);
+  }
+}
+
+/* Success state for model switching */
+.model-selector-group.success {
+  border-color: var(--beta-success);
+  background: var(--beta-success-light);
+}
+
+[data-bs-theme="dark"] .model-selector-group.success {
+  background: rgba(16, 185, 129, 0.1);
+}
+
+.model-selector-group.success .form-label {
+  color: var(--beta-success);
+}
+
+/* ====================================================================
    Utility Classes
    ================================================================== */
 
