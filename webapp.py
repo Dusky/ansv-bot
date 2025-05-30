@@ -125,7 +125,7 @@ def validate_channel_config_fields(fields):
     """Validate channel configuration field values to prevent injection attacks."""
     for field, value in fields.items():
         # Boolean fields
-        if field in ['tts_enabled', 'voice_enabled', 'join_channel', 'use_general_model']:
+        if field in ['tts_enabled', 'voice_enabled', 'join_channel', 'use_general_model', 'tts_delay_enabled']:
             if not isinstance(value, bool):
                 return f"Field '{field}' must be a boolean (true/false)"
                 

@@ -122,9 +122,12 @@ async function handleTTSToggle() {
     const channelName = window.channelData.name;
     
     try {
-        const response = await betaUtils.apiRequest(`/api/channel/${channelName}/toggle-tts`, {
+        const response = await betaUtils.apiRequest('/update-channel-settings', {
             method: 'POST',
-            body: JSON.stringify({ enable_tts: enabled })
+            body: JSON.stringify({ 
+                channel_name: channelName,
+                tts_enabled: enabled
+            })
         });
         
         showToast(`TTS ${enabled ? 'enabled' : 'disabled'} for #${channelName}`, 'success');
@@ -204,7 +207,7 @@ async function handleTTSDelayToggle() {
             method: 'POST',
             body: JSON.stringify({ 
                 channel_name: channelName,
-                tts_delay_enabled: enabled ? 1 : 0
+                tts_delay_enabled: enabled
             })
         });
         
