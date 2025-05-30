@@ -22,12 +22,9 @@ This guide explains how to run ANSV Bot using Docker.
    docker-compose up -d
    ```
 
-4. Initialize the user management system:
-   ```
-   docker-compose exec ansv-bot python utils/migrate_to_users.py --db ansv_bot.db
-   ```
-
-5. Access the web interface at http://localhost:5001 and login with admin credentials
+4. Access the web interface at http://localhost:5001 and login with admin credentials
+   - Default admin login: admin / admin123
+   - The user management system is automatically initialized on first run
 
 ## Container Management
 
@@ -74,7 +71,8 @@ You can set these in the `docker-compose.yml` file:
 
 The following data is persisted through Docker volumes:
 
-- `/app/messages.db`: SQLite database
+- `/app/messages.db`: Chat messages and channel configs database
+- `/app/users.db`: User accounts and authentication database
 - `/app/cache`: Markov model cache
 - `/app/logs`: Application logs
 - `/app/static/outputs`: Generated outputs
@@ -119,7 +117,8 @@ For better performance, you may want to adjust the volume configuration in `dock
 
 ```yaml
 volumes:
-  - ./data/db:/app/messages.db
+  - ./data/messages.db:/app/messages.db
+  - ./data/users.db:/app/users.db
   - ./data/cache:/app/cache
   - ./data/logs:/app/logs
   - ./data/outputs:/app/static/outputs

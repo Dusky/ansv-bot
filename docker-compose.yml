@@ -12,6 +12,7 @@ services:
     volumes:
       - ./settings.conf:/app/settings.conf:ro
       - ansv-db:/app/messages.db
+      - ansv-users-db:/app/users.db
       - ansv-cache:/app/cache
       - ansv-logs:/app/logs
       - ansv-outputs:/app/static/outputs
@@ -43,6 +44,7 @@ services:
 
 volumes:
   ansv-db:
+  ansv-users-db:
   ansv-cache:
   ansv-logs:
   ansv-outputs:

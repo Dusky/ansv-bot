@@ -1073,12 +1073,25 @@ class UserDatabase:
         """Delete user account and related data."""
         conn = self.get_connection()
         try:
+            # Check if this is a protected admin user
+            user = conn.execute("""
+                SELECT u.username, r.name as role_name 
+                FROM users u 
+                JOIN roles r ON u.role_id = r.id 
+                WHERE u.id = ?
+            """, (user_id,)).fetchone()
+            
+            if user and user['role_name'] in ['super_admin', 'admin'] and user['username'] in ['admin']:
+                logger.error(f"Attempted to delete protected admin user: {user['username']} (id: {user_id})")
+                raise ValueError(f"Cannot delete protected admin user: {user['username']}")
+            
             # Delete in order due to foreign key constraints
             conn.execute("DELETE FROM user_channels WHERE user_id = ?", (user_id,))
             conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
             conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
             
             conn.commit()
+            logger.info(f"Deleted user {user['username'] if user else user_id} (id: {user_id})")
             return conn.total_changes > 0
             
         except Exception as e:

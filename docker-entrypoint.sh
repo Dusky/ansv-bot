@@ -8,6 +8,13 @@ if [ ! -f "/app/settings.conf" ]; then
   # Add environment variable substitution here if needed
 fi
 
+# Check if user management system needs to be initialized
+if [ ! -f "/app/users.db" ]; then
+  echo "⚠️  No users.db found. User management system needs initialization."
+  echo "⚠️  Run 'python3 utils/migrate_to_users.py' to set up users."
+  echo "⚠️  Or run 'python3 create_admin.py' for emergency admin creation."
+fi
+
 # Download TTS models if enabled
 if [ "$TTS_ENABLED" = true ] && [ "$1" = "--tts" ] || [[ "$*" == *"--download-models"* ]]; then
   echo "Checking TTS models..."
