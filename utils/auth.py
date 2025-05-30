@@ -26,6 +26,7 @@ def get_current_user() -> Optional[Dict[str, Any]]:
         return None
     
     session_id = session.get('session_id')
+    
     if not session_id:
         return None
     
@@ -253,9 +254,15 @@ def require_channel_access(channel_param: str = 'channel', action: str = 'view')
     def decorator(f):
         @wraps(f)
         def decorated_function(*args, **kwargs):
-            # Get channel name from request parameters
+            # Get channel name from request parameters, args, form data, or JSON
             from flask import request
-            channel_name = request.view_args.get(channel_param) or request.args.get(channel_param)
+            channel_name = (request.view_args.get(channel_param) or 
+                           request.args.get(channel_param) or
+                           request.form.get(channel_param))
+            
+            # Also check JSON data for POST requests
+            if not channel_name and request.is_json and request.json:
+                channel_name = request.json.get(channel_param)
             
             if not channel_name:
                 logger.warning("Channel access check failed: no channel specified")

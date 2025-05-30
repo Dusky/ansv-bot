@@ -306,13 +306,36 @@ function hideLoading(element) {
 // API Helpers
 // ====================================================================
 
+function getCsrfTokenFromCookie() {
+    const cookies = document.cookie.split(';');
+    for (let cookie of cookies) {
+        const [name, value] = cookie.trim().split('=');
+        if (name === 'csrf_token') {
+            return value;
+        }
+    }
+    return null;
+}
+
 async function apiRequest(url, options = {}) {
     try {
+        // Get CSRF token from meta tag or generate if needed
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') ||
+                         window.csrfToken ||
+                         getCsrfTokenFromCookie();
+        
+        const headers = {
+            'Content-Type': 'application/json',
+            ...options.headers
+        };
+        
+        // Add CSRF token for POST requests
+        if (options.method === 'POST' && csrfToken) {
+            headers['X-CSRF-Token'] = csrfToken;
+        }
+        
         const response = await fetch(url, {
-            headers: {
-                'Content-Type': 'application/json',
-                ...options.headers
-            },
+            headers,
             ...options
         });
         

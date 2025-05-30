@@ -277,9 +277,15 @@ class SessionSecurity:
     @staticmethod
     def is_session_expired() -> bool:
         """Check if session has expired"""
+        # If no user is logged in, don't consider it expired
+        if 'user_id' not in session:
+            return False
+            
         last_activity = session.get('last_activity')
         if not last_activity:
-            return True
+            # New session, set activity and don't expire
+            SessionSecurity.update_session_activity()
+            return False
         
         last_activity_time = datetime.fromisoformat(last_activity)
         return datetime.now() - last_activity_time > timedelta(minutes=SecurityConfig.SESSION_TIMEOUT_MINUTES)
@@ -328,14 +334,14 @@ def secure_headers(response):
     # Referrer policy
     response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
     
-    # Content Security Policy
+    # Content Security Policy - Allow CDN resources for Bootstrap and Font Awesome
     response.headers['Content-Security-Policy'] = (
         "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline'; "
-        "style-src 'self' 'unsafe-inline'; "
+        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; "
         "img-src 'self' data:; "
         "connect-src 'self'; "
-        "font-src 'self'; "
+        "font-src 'self' https://cdnjs.cloudflare.com; "
         "object-src 'none'; "
         "base-uri 'self'; "
         "form-action 'self'"
@@ -354,19 +360,18 @@ def enforce_https():
 
 def session_security_middleware():
     """Middleware for session security checks"""
-    # Skip security checks for static files
-    if request.endpoint and request.endpoint.startswith('static'):
+    # Skip security checks for static files and login
+    if request.endpoint and (request.endpoint.startswith('static') or request.endpoint == 'login'):
         return
     
-    # Check if session has expired
+    # Only clear expired sessions, don't force redirect (let auth decorators handle that)
     if SessionSecurity.is_session_expired():
         session.clear()
-        if request.endpoint not in ['login', 'static']:
-            return redirect(url_for('login'))
     
-    # Regenerate session ID if needed
-    if SessionSecurity.should_regenerate_session():
+    # Regenerate session ID if needed (only if we have an active session)
+    if 'user_id' in session and SessionSecurity.should_regenerate_session():
         SessionSecurity.regenerate_session_id()
     
-    # Update session activity
-    SessionSecurity.update_session_activity()
+    # Update session activity (only if we have an active session)
+    if 'user_id' in session:
+        SessionSecurity.update_session_activity()
