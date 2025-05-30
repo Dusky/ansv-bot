@@ -77,11 +77,20 @@ function initializeControls() {
         autoReplyToggle.addEventListener('change', handleAutoReplyToggle);
     }
     
+    // Join Channel Toggle
+    const joinChannelToggle = document.getElementById('joinChannelToggle');
+    if (joinChannelToggle) {
+        joinChannelToggle.addEventListener('change', handleJoinChannelToggle);
+    }
+    
     // TTS Delay Toggle
     const ttsDelayToggle = document.getElementById('ttsDelayToggle');
     if (ttsDelayToggle) {
         ttsDelayToggle.addEventListener('change', handleTTSDelayToggle);
     }
+    
+    // Initialize trusted users management
+    initializeTrustedUsers();
     
     // Message Generation
     const generateBtn = document.getElementById('generateMessageBtn');
@@ -139,20 +148,49 @@ async function handleAutoReplyToggle() {
     const channelName = window.channelData.name;
     
     try {
-        await betaUtils.apiRequest(`/api/channel/${channelName}/toggle-join`, {
+        await betaUtils.apiRequest('/update-channel-settings', {
             method: 'POST',
-            body: JSON.stringify({ join_channel: enabled })
+            body: JSON.stringify({ 
+                channel_name: channelName,
+                voice_enabled: enabled
+            })
         });
         
-        showToast(`Auto-reply ${enabled ? 'enabled' : 'disabled'} for #${channelName}`, 'success');
+        showToast(`Voice/Bot speaking ${enabled ? 'enabled' : 'disabled'} for #${channelName}`, 'success');
         
         // Update connection status
         setTimeout(updateConnectionStatus, 1000);
         
     } catch (error) {
-        console.error('[Beta Channel] Error toggling auto-reply:', error);
+        console.error('[Beta Channel] Error toggling voice/bot speaking:', error);
         toggle.checked = !enabled; // Revert
-        showToast('Failed to toggle auto-reply', 'error');
+        showToast('Failed to toggle voice/bot speaking', 'error');
+    }
+}
+
+async function handleJoinChannelToggle() {
+    const toggle = document.getElementById('joinChannelToggle');
+    const enabled = toggle.checked;
+    const channelName = window.channelData.name;
+    
+    try {
+        await betaUtils.apiRequest('/update-channel-settings', {
+            method: 'POST',
+            body: JSON.stringify({ 
+                channel_name: channelName,
+                join_channel: enabled
+            })
+        });
+        
+        showToast(`Bot will ${enabled ? 'join' : 'leave'} #${channelName} on next restart`, 'success');
+        
+        // Update connection status
+        setTimeout(updateConnectionStatus, 1000);
+        
+    } catch (error) {
+        console.error('[Beta Channel] Error toggling join channel:', error);
+        toggle.checked = !enabled; // Revert
+        showToast('Failed to toggle join channel', 'error');
     }
 }
 
@@ -934,6 +972,125 @@ async function updateConnectionStatus() {
     }
 }
 
-// Make functions available globally for error retry buttons
+// ====================================================================
+// Trusted Users Management
+// ====================================================================
+
+async function addTrustedUser() {
+    const input = document.getElementById('newTrustedUserInput');
+    const username = input.value.trim();
+    
+    if (!username) {
+        showToast('Please enter a username', 'warning');
+        return;
+    }
+    
+    // Basic username validation
+    if (!/^[a-zA-Z0-9_-]+$/.test(username)) {
+        showToast('Username can only contain letters, numbers, underscores, and hyphens', 'error');
+        return;
+    }
+    
+    const channelName = window.channelData.name;
+    
+    try {
+        const response = await betaUtils.apiRequest('/api/channel/trusted-users', {
+            method: 'POST',
+            body: JSON.stringify({
+                channel_name: channelName,
+                username: username,
+                action: 'add'
+            })
+        });
+        
+        // Add the user to the UI
+        addTrustedUserToUI(username);
+        input.value = '';
+        showToast(`Added ${username} as trusted user`, 'success');
+        
+    } catch (error) {
+        console.error('[Beta Channel] Error adding trusted user:', error);
+        showToast(`Failed to add trusted user: ${error.message}`, 'error');
+    }
+}
+
+async function removeTrustedUser(username) {
+    const channelName = window.channelData.name;
+    
+    try {
+        const response = await betaUtils.apiRequest('/api/channel/trusted-users', {
+            method: 'POST',
+            body: JSON.stringify({
+                channel_name: channelName,
+                username: username,
+                action: 'remove'
+            })
+        });
+        
+        // Remove the user from the UI
+        removeTrustedUserFromUI(username);
+        showToast(`Removed ${username} from trusted users`, 'success');
+        
+    } catch (error) {
+        console.error('[Beta Channel] Error removing trusted user:', error);
+        showToast(`Failed to remove trusted user: ${error.message}`, 'error');
+    }
+}
+
+function addTrustedUserToUI(username) {
+    const usersList = document.getElementById('trustedUsersList');
+    const noUsersText = document.getElementById('noTrustedUsers');
+    
+    if (noUsersText) {
+        noUsersText.style.display = 'none';
+    }
+    
+    const badge = document.createElement('span');
+    badge.className = 'badge bg-primary me-1 mb-1 trusted-user-badge';
+    badge.dataset.username = username;
+    badge.innerHTML = `
+        ${username}
+        <button type="button" class="btn-close btn-close-white ms-1" 
+                onclick="removeTrustedUser('${username}')" 
+                style="font-size: 0.6em;"></button>
+    `;
+    
+    usersList.appendChild(badge);
+}
+
+function removeTrustedUserFromUI(username) {
+    const badge = document.querySelector(`[data-username="${username}"]`);
+    if (badge) {
+        badge.remove();
+    }
+    
+    // Check if no users remain
+    const remainingUsers = document.querySelectorAll('.trusted-user-badge');
+    if (remainingUsers.length === 0) {
+        const usersList = document.getElementById('trustedUsersList');
+        usersList.innerHTML = '<span class="text-muted" id="noTrustedUsers">No trusted users</span>';
+    }
+}
+
+function initializeTrustedUsers() {
+    // Add trusted user button
+    const addBtn = document.getElementById('addTrustedUserBtn');
+    if (addBtn) {
+        addBtn.addEventListener('click', addTrustedUser);
+    }
+    
+    // Enter key on input
+    const input = document.getElementById('newTrustedUserInput');
+    if (input) {
+        input.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                addTrustedUser();
+            }
+        });
+    }
+}
+
+// Make functions available globally for inline onclick handlers
+window.removeTrustedUser = removeTrustedUser;
 window.loadChatMessages = loadChatMessages;
 window.loadTTSHistory = loadTTSHistory;

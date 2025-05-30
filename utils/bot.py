@@ -1653,7 +1653,36 @@ class Bot(commands.Bot):
                         if success:
                             self.logger.info(f"{GREEN}Message request processed successfully{RESET}: Sent to {PURPLE}{channel}{RESET}")
                             # Save message to logs
-                            self.my_logger.log_message(channel.lstrip('#'), self.nick, message)
+                            channel_clean = channel.lstrip('#')
+                            self.my_logger.log_message(channel_clean, self.nick, message)
+                            
+                            # Generate TTS if enabled for this channel
+                            try:
+                                # Fetch channel settings to check if TTS is enabled
+                                lines_between, time_between, tts_enabled, voice_enabled = self.fetch_channel_settings(channel_clean)
+                                
+                                if self.enable_tts and tts_enabled:
+                                    # Generate a unique message ID for TTS processing
+                                    import time
+                                    message_id = int(time.time() * 1000)  # Use timestamp as message ID
+                                    timestamp_str = datetime.now().isoformat()
+                                    
+                                    # Get voice preset for this channel
+                                    voice_preset_for_tts = self.channel_settings.get(channel_clean, {}).get('voice_preset', 'v2/en_speaker_0')
+                                    
+                                    self.logger.info(f"Starting TTS processing for generated message. Channel: {channel_clean}, Text: '{message[:30]}...'")
+                                    start_tts_processing(
+                                        input_text=message,
+                                        channel_name=channel_clean,
+                                        message_id=message_id,
+                                        timestamp_str=timestamp_str,
+                                        voice_preset_override=voice_preset_for_tts,
+                                        db_file=self.db_file
+                                    )
+                                    self.logger.info("TTS processing initiated for generated message.")
+                                    
+                            except Exception as tts_error:
+                                self.logger.error(f"Error starting TTS for generated message in {channel_clean}: {tts_error}")
                         else:
                             self.logger.error(f"{RED}Failed to send message to {channel} after all attempts{RESET}")
                             

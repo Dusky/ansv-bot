@@ -30,6 +30,9 @@
             <button class="btn btn-outline-primary" onclick="history.back()">
                 <i class="fas fa-arrow-left me-2"></i>Back
             </button>
+            <button class="btn btn-outline-success" onclick="openTTSPopup('{{ channel.name }}')" title="Open TTS popup for stream capture">
+                <i class="fas fa-external-link-alt me-2"></i>TTS Popup
+            </button>
             <a href="/channel/{{ channel.name }}" class="btn btn-outline-secondary">
                 <i class="fas fa-cog me-2"></i>Legacy View
             </a>
@@ -57,8 +60,19 @@
                             <input class="form-check-input" type="checkbox" id="autoReplyToggle" 
                                    {% if channel.voice_enabled %}checked{% endif %}>
                             <label class="form-check-label" for="autoReplyToggle">
-                                <i class="fas fa-robot me-1"></i>
-                                Auto-Reply
+                                <i class="fas fa-microphone me-1"></i>
+                                Voice/Bot Speaking
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div class="control-item">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="joinChannelToggle" 
+                                   {% if channel.join_channel %}checked{% endif %}>
+                            <label class="form-check-label" for="joinChannelToggle">
+                                <i class="fas fa-sign-in-alt me-1"></i>
+                                Bot Join Channel
                             </label>
                         </div>
                     </div>
@@ -304,6 +318,41 @@
                                 </button>
                             </div>
                         </div>
+                        
+                        <!-- Trusted Users Management -->
+                        <div class="mb-3">
+                            <label class="form-label">
+                                <i class="fas fa-users me-1"></i>Trusted Users
+                                <small class="text-muted">(can use !ansv commands)</small>
+                            </label>
+                            
+                            <!-- Current Trusted Users -->
+                            <div class="trusted-users-list mb-2" id="trustedUsersList">
+                                {% if channel.trusted_users %}
+                                    {% for user in channel.trusted_users.split(',') %}
+                                        {% if user.strip() %}
+                                        <span class="badge bg-primary me-1 mb-1 trusted-user-badge" data-username="{{ user.strip() }}">
+                                            {{ user.strip() }}
+                                            <button type="button" class="btn-close btn-close-white ms-1" 
+                                                    onclick="removeTrustedUser('{{ user.strip() }}')" 
+                                                    style="font-size: 0.6em;"></button>
+                                        </span>
+                                        {% endif %}
+                                    {% endfor %}
+                                {% else %}
+                                    <span class="text-muted" id="noTrustedUsers">No trusted users</span>
+                                {% endif %}
+                            </div>
+                            
+                            <!-- Add New Trusted User -->
+                            <div class="input-group">
+                                <input type="text" class="form-control" id="newTrustedUserInput" 
+                                       placeholder="Username to add..." maxlength="25">
+                                <button class="btn btn-success" id="addTrustedUserBtn">
+                                    <i class="fas fa-user-plus"></i>
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -346,9 +395,35 @@ window.channelData = {
     tts_enabled: {{ channel.tts_enabled|tojson }},
     voice_enabled: {{ channel.voice_enabled|tojson }},
     tts_delay_enabled: {{ channel.tts_delay_enabled|tojson }},
+    join_channel: {{ channel.join_channel|tojson }},
     currently_connected: {{ channel.currently_connected|tojson }},
     bot_running: {{ channel.bot_running|tojson }}
 };
+
+// TTS Popup window management
+let ttsPopupWindow = null;
+
+function openTTSPopup(channelName) {
+    const popupUrl = `/tts-popup/${channelName}`;
+    const popupOptions = 'width=350,height=400,scrollbars=no,resizable=yes,status=no,toolbar=no,menubar=no';
+    
+    // Close existing popup if open
+    if (ttsPopupWindow && !ttsPopupWindow.closed) {
+        ttsPopupWindow.close();
+    }
+    
+    // Open new popup
+    ttsPopupWindow = window.open(popupUrl, `tts-popup-${channelName}`, popupOptions);
+    
+    if (!ttsPopupWindow) {
+        // Show notification if available, otherwise alert
+        if (window.betaUtils && typeof window.betaUtils.showToast === 'function') {
+            window.betaUtils.showToast('Popup blocked! Please allow popups for this site.', 'warning');
+        } else {
+            alert('Popup blocked! Please allow popups for this site to use the TTS popup window.');
+        }
+    }
+}
 </script>
 <script src="{{ url_for('static', filename='scripts/beta-channel.js') }}"></script>
 {% endblock %}

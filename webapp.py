@@ -2020,6 +2020,74 @@ def toggle_channel_tts_route(channel_name):
         app.logger.error(f"Error toggling TTS for {channel_name}: {e}")
         return jsonify({"success": False, "message": str(e)}), 500
 
+@app.route('/api/channel/trusted-users', methods=['POST'])
+@require_channel_access('channel_name', 'edit')
+def manage_trusted_users():
+    """Add or remove trusted users for a channel"""
+    try:
+        data = request.json
+        channel_name = data.get('channel_name')
+        username = data.get('username', '').strip()
+        action = data.get('action')  # 'add' or 'remove'
+        
+        if not channel_name:
+            return jsonify({"success": False, "message": "Channel name required"}), 400
+        
+        if not username:
+            return jsonify({"success": False, "message": "Username required"}), 400
+            
+        if action not in ['add', 'remove']:
+            return jsonify({"success": False, "message": "Action must be 'add' or 'remove'"}), 400
+        
+        # Validate username format
+        if not re.match(r"^[a-zA-Z0-9_-]{1,25}$", username):
+            return jsonify({"success": False, "message": "Invalid username format"}), 400
+        
+        # Validate channel name format
+        if not re.match(r"^[a-zA-Z0-9_]{1,25}$", channel_name):
+            return jsonify({"success": False, "message": "Invalid channel name format"}), 400
+        
+        conn = sqlite3.connect(db_file)
+        c = conn.cursor()
+        
+        # Get current trusted users
+        c.execute("SELECT trusted_users FROM channel_configs WHERE channel_name = ?", (channel_name,))
+        row = c.fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"success": False, "message": "Channel not found"}), 404
+        
+        current_trusted = row[0] or ""
+        trusted_list = [user.strip() for user in current_trusted.split(',') if user.strip()]
+        
+        if action == 'add':
+            if username not in trusted_list:
+                trusted_list.append(username)
+                message = f"Added {username} as trusted user"
+            else:
+                conn.close()
+                return jsonify({"success": False, "message": f"{username} is already a trusted user"}), 400
+        
+        elif action == 'remove':
+            if username in trusted_list:
+                trusted_list.remove(username)
+                message = f"Removed {username} from trusted users"
+            else:
+                conn.close()
+                return jsonify({"success": False, "message": f"{username} is not a trusted user"}), 400
+        
+        # Update database
+        new_trusted = ','.join(trusted_list)
+        c.execute("UPDATE channel_configs SET trusted_users = ? WHERE channel_name = ?", (new_trusted, channel_name))
+        conn.commit()
+        conn.close()
+        
+        return jsonify({"success": True, "message": message, "trusted_users": trusted_list})
+        
+    except Exception as e:
+        app.logger.error(f"Error managing trusted users: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
 @app.route('/api/system-logs')
 @require_permission(Permissions.SYSTEM_LOGS)
 def api_system_logs():
