@@ -221,7 +221,7 @@ def get_user_channels() -> List[str]:
         return []
     
     # For streamers and other users, get channels from database
-    return user_db.get_user_channels_from_db(user['id'])
+    return user_db.get_user_channels_from_db(user['user_id'])
 
 def can_access_channel(channel_name: str, action: str = 'view') -> bool:
     """Check if current user can access a specific channel with given action."""
@@ -317,6 +317,7 @@ class Permissions:
     
     # Channel Ownership (for streamers)
     CHANNELS_OWN = 'channels.own'
+    CHANNELS_VIEW_OWN = 'channels.view_own'
     CHANNELS_EDIT_OWN = 'channels.edit_own'
     CHANNELS_SETTINGS_OWN = 'channels.settings_own'
     

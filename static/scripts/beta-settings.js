@@ -79,25 +79,12 @@ function setupChannelSettings() {
         });
     });
 
-    // Add new channel
-    const addChannelBtn = document.getElementById('addChannelBtn');
-    const addChannelInput = document.getElementById('addChannelInput');
+    // Add new channel modal
+    const saveChannelBtn = document.getElementById('saveChannelBtn');
     
-    if (addChannelBtn) {
-        addChannelBtn.addEventListener('click', function() {
-            const channelName = addChannelInput.value.trim();
-            if (channelName) {
-                addChannel(channelName);
-                addChannelInput.value = '';
-            }
-        });
-    }
-
-    if (addChannelInput) {
-        addChannelInput.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                addChannelBtn.click();
-            }
+    if (saveChannelBtn) {
+        saveChannelBtn.addEventListener('click', function() {
+            addNewChannel();
         });
     }
 }
@@ -766,6 +753,24 @@ async function updateBotStatus() {
             }
         }
         
+        // Update navbar status (same logic as beta-base.js)
+        const navStatus = document.getElementById('botStatusNav');
+        if (navStatus) {
+            const icon = navStatus.querySelector('i');
+            const text = navStatus.querySelector('span');
+            
+            if (data.running && data.connected) {
+                icon.className = 'fas fa-circle text-success me-1';
+                text.textContent = 'Online';
+            } else if (data.running) {
+                icon.className = 'fas fa-circle text-warning me-1';
+                text.textContent = 'Starting...';
+            } else {
+                icon.className = 'fas fa-circle text-danger me-1';
+                text.textContent = 'Offline';
+            }
+        }
+        
     } catch (error) {
         console.error('Error fetching bot status:', error);
         
@@ -776,6 +781,81 @@ async function updateBotStatus() {
             statusDesc.textContent = 'Unable to connect to bot service';
             statusDesc.className = 'status-description text-warning';
         }
+        
+        // Update navbar status to unknown state
+        const navStatus = document.getElementById('botStatusNav');
+        if (navStatus) {
+            const icon = navStatus.querySelector('i');
+            const text = navStatus.querySelector('span');
+            icon.className = 'fas fa-circle text-muted me-1';
+            text.textContent = 'Unknown';
+        }
+    }
+}
+
+// Add new channel function
+async function addNewChannel() {
+    const channelName = document.getElementById('newChannelName').value.trim();
+    const channelOwner = document.getElementById('newChannelOwner').value.trim();
+    const joinChannel = document.getElementById('newChannelJoin').checked;
+    const ttsEnabled = document.getElementById('newChannelTts').checked;
+    const voiceEnabled = document.getElementById('newChannelVoice').checked;
+    
+    if (!channelName) {
+        showToast('Please enter a channel name', 'error');
+        return;
+    }
+    
+    // Validate channel name
+    if (!/^[a-zA-Z0-9_]+$/.test(channelName)) {
+        showToast('Channel name can only contain letters, numbers, and underscores', 'error');
+        return;
+    }
+    
+    try {
+        const response = await fetch('/add-channel', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                channel_name: channelName,
+                owner: channelOwner || channelName,
+                join_channel: joinChannel,
+                tts_enabled: ttsEnabled,
+                voice_enabled: voiceEnabled
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showToast(`Channel ${channelName} added successfully`, 'success');
+            
+            // Reset form
+            document.getElementById('addChannelForm').reset();
+            document.getElementById('newChannelJoin').checked = true;
+            document.getElementById('newChannelTts').checked = true;
+            document.getElementById('newChannelVoice').checked = true;
+            
+            // Hide modal
+            const modal = bootstrap.Modal.getInstance(document.getElementById('addChannelModal'));
+            if (modal) {
+                modal.hide();
+            }
+            
+            // Reload page to show new channel
+            setTimeout(() => {
+                location.reload();
+            }, 1000);
+            
+        } else {
+            showToast(data.error || 'Failed to add channel', 'error');
+        }
+        
+    } catch (error) {
+        console.error('Error adding channel:', error);
+        showToast('Error adding channel', 'error');
     }
 }
 

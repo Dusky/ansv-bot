@@ -23,7 +23,7 @@ from utils.db_setup import ensure_db_setup
 from utils.db_manager import get_db_manager, execute_query_sync, execute_update_sync
 from utils.user_db import UserDatabase
 from utils.auth import (
-    init_auth, require_auth, require_permission, require_role,
+    init_auth, require_auth, require_permission, require_role, require_channel_access,
     login_user, logout_user, is_authenticated, get_current_user,
     auth_context_processor, Permissions, Roles
 )
@@ -62,7 +62,7 @@ def strftime_filter(datetime_obj, fmt='%Y-%m-%d %H:%M'):
 app.jinja_env.filters['strftime'] = strftime_filter
 
 # Initialize user database and authentication system
-user_db = UserDatabase(db_file)
+user_db = UserDatabase('users.db')  # Users are stored in users.db, not messages.db
 init_auth(user_db)
 
 # Initialize Markov handler
@@ -131,6 +131,20 @@ def validate_channel_config_fields(fields):
     return None  # All validations passed
 
 # Old authentication functions removed - now using utils/auth.py
+
+# Helper function to redirect streamers to their channel
+def redirect_streamers_to_channel():
+    """Redirect streamers to their channel page instead of other areas"""
+    user = get_current_user()
+    if user and user.get('role_name') == 'streamer':
+        # Get their assigned channels
+        from utils.user_db import UserDatabase
+        user_db = UserDatabase('users.db')
+        user_channels = user_db.get_user_channels_from_db(user['id'])
+        if user_channels:
+            # Redirect to their first assigned channel
+            return redirect(f'/beta/channel/{user_channels[0]}')
+    return None
 
 # Helper functions for is_bot_actually_running
 def _check_pid_file(verbose_logging):
@@ -459,7 +473,24 @@ def login():
         )
         
         if success:
-            # Redirect to the page they were trying to access, or beta dashboard
+            # Handle special redirect logic for streamers
+            if user_data and user_data.get('role_name') == 'streamer':
+                # Update streamer permissions
+                user_db.update_streamer_permissions()
+                
+                # Get channels assigned to this streamer
+                user_channels = user_db.get_user_channels_from_db(user_data['id'])
+                
+                if user_channels:
+                    # Redirect to their first assigned channel
+                    channel_name = user_channels[0]
+                    app.logger.info(f"Redirecting streamer {user_data['username']} to their channel: {channel_name}")
+                    return redirect(f'/beta/channel/{channel_name}')
+                else:
+                    app.logger.error(f"No channels assigned to streamer {user_data['username']}")
+                    return render_template('login.html', error='No channel assigned. Please contact admin.')
+            
+            # For non-streamers: redirect to the page they were trying to access, or beta dashboard
             next_page = request.args.get('next', '/beta')
             
             # Security: Validate redirect URL to prevent open redirects
@@ -819,6 +850,11 @@ def api_user_channels(user_id):
 @app.route('/')
 @require_auth
 def main():
+    # Redirect streamers to their channel instead of main page
+    streamer_redirect = redirect_streamers_to_channel()
+    if streamer_redirect:
+        return streamer_redirect
+        
     # Theme is now injected by context_processor, but can be accessed here if needed
     # theme = request.cookies.get("theme", "darkly") 
     tts_files_data, last_id_val = get_last_10_tts_files_with_last_id(db_file)
@@ -1058,6 +1094,11 @@ def api_bot_status():
 @app.route('/settings')
 @require_permission(Permissions.SYSTEM_SETTINGS)
 def settings_page(): 
+    # Redirect streamers to their channel instead of settings page
+    streamer_redirect = redirect_streamers_to_channel()
+    if streamer_redirect:
+        return streamer_redirect
+        
     # theme = request.cookies.get("theme", "darkly") # Theme is now injected by context_processor
     bot_running = is_bot_actually_running()
     channels_data = []
@@ -1076,6 +1117,11 @@ def settings_page():
 @app.route('/stats')
 @require_permission(Permissions.DASHBOARD_STATS)
 def stats_page(): 
+    # Redirect streamers to their channel instead of stats page
+    streamer_redirect = redirect_streamers_to_channel()
+    if streamer_redirect:
+        return streamer_redirect
+        
     # theme = request.cookies.get("theme", "darkly") # Theme is now injected by context_processor
     return render_template("stats.html") # No need to pass theme
 
@@ -1083,6 +1129,11 @@ def stats_page():
 @require_permission(Permissions.BOT_START)
 def bot_control_page(): 
     """Render the bot control page."""
+    # Redirect streamers to their channel instead of bot control page
+    streamer_redirect = redirect_streamers_to_channel()
+    if streamer_redirect:
+        return streamer_redirect
+        
     # theme = request.cookies.get("theme", "darkly") # Theme is now injected by context_processor
     bot_running_status = is_bot_actually_running() 
     return render_template("bot_control.html", bot_status={'running': bot_running_status}) # No need to pass theme
@@ -1091,18 +1142,41 @@ def bot_control_page():
 @require_permission(Permissions.TTS_HISTORY)
 def tts_history_page():
     """Render the TTS history page."""
+    # Redirect streamers to their channel instead of TTS history page
+    streamer_redirect = redirect_streamers_to_channel()
+    if streamer_redirect:
+        return streamer_redirect
+        
     return render_template("tts_history.html")
 
 @app.route('/logs')
 @require_permission(Permissions.SYSTEM_LOGS)
 def logs_page():
     """Render the chat logs page."""
+    # Redirect streamers to their channel instead of logs page
+    streamer_redirect = redirect_streamers_to_channel()
+    if streamer_redirect:
+        return streamer_redirect
+        
     return render_template("logs.html")
 
 @app.route('/channel/<channel_name>')
 @require_permission(Permissions.CHANNELS_VIEW)
 def channel_page(channel_name):
     """Render the channel-specific dashboard page."""
+    # Redirect streamers to their beta channel page instead of old interface
+    user = get_current_user()
+    if user and user.get('role_name') == 'streamer':
+        from utils.user_db import UserDatabase
+        user_db = UserDatabase('users.db')
+        user_channels = user_db.get_user_channels_from_db(user['id'])
+        if user_channels and channel_name in user_channels:
+            # Redirect to beta channel page for their channel
+            return redirect(f'/beta/channel/{channel_name}')
+        else:
+            # Redirect to their assigned channel if trying to access wrong channel
+            return redirect_streamers_to_channel() or redirect('/beta')
+    
     # Validate channel exists in our database
     try:
         conn = sqlite3.connect(db_file)
@@ -1236,7 +1310,7 @@ def api_channels_list():
         return jsonify({"error": str(e)}), 500
 
 @app.route('/get-channel-settings/<channel_name>')
-@require_permission(Permissions.CHANNELS_VIEW)
+@require_channel_access('channel_name', 'view')
 def get_channel_settings_route(channel_name): 
     try:
         conn = sqlite3.connect(db_file)
@@ -1253,7 +1327,7 @@ def get_channel_settings_route(channel_name):
         return jsonify({"error": str(e)}), 500
 
 @app.route('/update-channel-settings', methods=['POST'])
-@require_permission(Permissions.CHANNELS_EDIT)
+@require_channel_access('channel_name', 'edit')
 def update_channel_settings_route(): 
     try:
         data = request.json
@@ -2171,6 +2245,11 @@ def api_channel_generate_message(channel_name):
 @require_permission(Permissions.DASHBOARD_VIEW)
 def beta_dashboard():
     """Render the redesigned beta dashboard."""
+    # Redirect streamers to their channel instead of dashboard
+    streamer_redirect = redirect_streamers_to_channel()
+    if streamer_redirect:
+        return streamer_redirect
+        
     try:
         # Get bot status and basic info for the beta dashboard
         bot_running = is_bot_actually_running()
@@ -2245,6 +2324,11 @@ def beta_stats_page():
 @require_permission(Permissions.SYSTEM_SETTINGS)
 def beta_settings_page():
     """Render the redesigned beta settings page."""
+    # Redirect streamers to their channel instead of settings
+    streamer_redirect = redirect_streamers_to_channel()
+    if streamer_redirect:
+        return streamer_redirect
+        
     try:
         bot_running = is_bot_actually_running()
         
@@ -2282,8 +2366,27 @@ def beta_settings_page():
         app.logger.error(f"Error loading beta settings page: {e}")
         return render_template("500.html", error_message=f"Error loading settings: {str(e)}"), 500
 
+@app.route('/debug-session')
+@require_auth
+def debug_session():
+    """Debug route to check session data"""
+    user = get_current_user()
+    if user:
+        from utils.user_db import UserDatabase
+        user_db = UserDatabase('users.db')
+        channels = user_db.get_user_channels_from_db(user['user_id'])
+        return jsonify({
+            'session_data': dict(session),
+            'current_user': user,
+            'assigned_channels': channels,
+            'role': user.get('role_name'),
+            'permissions': user.get('role_permissions')
+        })
+    else:
+        return jsonify({'error': 'No user session found'})
+
 @app.route('/beta/channel/<channel_name>')
-@require_permission(Permissions.CHANNELS_VIEW)
+@require_channel_access('channel_name', 'view')
 def beta_channel_page(channel_name):
     """Render the redesigned beta channel page."""
     try:

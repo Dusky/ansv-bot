@@ -190,7 +190,7 @@ class UserDatabase:
                 'display_name': 'Streamer',
                 'description': 'Channel owner with access to own channel settings only',
                 'permissions': [
-                    'dashboard.view', 'channels.own', 'channels.edit_own', 
+                    'channels.own', 'channels.view_own', 'channels.edit_own', 
                     'channels.settings_own', 'tts.generate', 'tts.history_own'
                 ]
             },
@@ -243,8 +243,15 @@ class UserDatabase:
     def verify_password(self, password: str, hashed: str) -> bool:
         """Verify a password against its hash."""
         try:
+            # Try bcrypt first (new system)
             return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
         except Exception as e:
+            # If bcrypt fails, try SHA256 (legacy system)
+            import hashlib
+            sha256_hash = hashlib.sha256(password.encode()).hexdigest()
+            if sha256_hash == hashed:
+                logger.info(f"Legacy SHA256 password verified, consider upgrading to bcrypt")
+                return True
             logger.error(f"Password verification error: {e}")
             return False
     
@@ -690,13 +697,48 @@ class UserDatabase:
         """Get list of channels assigned to a user from database."""
         conn = self.get_connection()
         try:
-            channels = conn.execute("""
+            # Get user info to check role and username
+            user = conn.execute("""
+                SELECT u.username, r.name as role_name
+                FROM users u
+                JOIN roles r ON u.role_id = r.id
+                WHERE u.id = ?
+            """, (user_id,)).fetchone()
+            
+            if not user:
+                return []
+            
+            channels = []
+            
+            # Get explicitly assigned channels
+            assigned_channels = conn.execute("""
                 SELECT channel_name 
                 FROM user_channels 
                 WHERE user_id = ? AND is_active = 1
             """, (user_id,)).fetchall()
             
-            return [channel['channel_name'] for channel in channels]
+            channels.extend([channel['channel_name'] for channel in assigned_channels])
+            
+            # For streamers, also check channels they own by username or owner field
+            if user['role_name'] == 'streamer':
+                # Connect to messages.db for channel ownership check
+                import sqlite3
+                msg_conn = sqlite3.connect('messages.db')
+                msg_conn.row_factory = sqlite3.Row
+                try:
+                    owned_channels = msg_conn.execute("""
+                        SELECT channel_name 
+                        FROM channel_configs 
+                        WHERE owner = ? OR channel_name = ?
+                    """, (user['username'], user['username'])).fetchall()
+                    
+                    for channel in owned_channels:
+                        if channel['channel_name'] not in channels:
+                            channels.append(channel['channel_name'])
+                finally:
+                    msg_conn.close()
+            
+            return channels
             
         except Exception as e:
             logger.error(f"Error getting channels for user {user_id}: {e}")
@@ -704,6 +746,158 @@ class UserDatabase:
         finally:
             conn.close()
     
+    def update_streamer_permissions(self):
+        """Update existing streamer roles with new permissions including channels.view_own"""
+        conn = self.get_connection()
+        try:
+            # Get current streamer role
+            streamer_role = conn.execute("""
+                SELECT id, permissions FROM roles WHERE name = 'streamer'
+            """).fetchone()
+            
+            if not streamer_role:
+                logger.warning("Streamer role not found")
+                return False
+            
+            # Parse current permissions
+            import json
+            current_permissions = json.loads(streamer_role['permissions'])
+            
+            # Add channels.view_own if missing
+            if 'channels.view_own' not in current_permissions:
+                current_permissions.append('channels.view_own')
+                
+                # Update role permissions
+                conn.execute("""
+                    UPDATE roles 
+                    SET permissions = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE name = 'streamer'
+                """, (json.dumps(current_permissions),))
+                
+                logger.info("Updated streamer role with channels.view_own permission")
+            
+            conn.commit()
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error updating streamer permissions: {e}")
+            conn.rollback()
+            return False
+        finally:
+            conn.close()
+    
+    def ensure_streamer_channel_access(self, user_id: int, username: str):
+        """Ensure streamer has access to their channel by creating/assigning it"""
+        # Connect to messages.db for channel operations
+        import sqlite3
+        msg_conn = sqlite3.connect('messages.db')
+        msg_conn.row_factory = sqlite3.Row
+        
+        user_conn = self.get_connection()
+        
+        try:
+            # Check if channel exists for this username in messages.db
+            channel = msg_conn.execute("""
+                SELECT channel_name FROM channel_configs 
+                WHERE channel_name = ? OR owner = ?
+            """, (username, username)).fetchone()
+            
+            # If no channel exists, create one
+            if not channel:
+                logger.info(f"Creating channel for streamer: {username}")
+                msg_conn.execute("""
+                    INSERT INTO channel_configs (
+                        channel_name, owner, tts_enabled, voice_enabled, 
+                        join_channel, lines_between_messages, time_between_messages,
+                        voice_preset, bark_model, trusted_users, ignored_users, use_general_model
+                    ) VALUES (?, ?, 1, 1, 1, 100, 0, 'v2/en_speaker_6', 'regular', '', '', 1)
+                """, (username, username))
+                
+                channel_name = username
+            else:
+                channel_name = channel['channel_name']
+                
+                # Ensure owner field is set correctly
+                msg_conn.execute("""
+                    UPDATE channel_configs 
+                    SET owner = ? 
+                    WHERE channel_name = ? AND (owner IS NULL OR owner = '')
+                """, (username, channel_name))
+            
+            # Assign user to channel in user_channels table (in users.db)
+            user_conn.execute("""
+                INSERT OR REPLACE INTO user_channels (user_id, channel_name, assigned_by, is_active)
+                VALUES (?, ?, ?, 1)
+            """, (user_id, channel_name, user_id))  # Self-assigned
+            
+            msg_conn.commit()
+            user_conn.commit()
+            logger.info(f"Ensured streamer {username} has access to channel {channel_name}")
+            return channel_name
+            
+        except Exception as e:
+            logger.error(f"Error ensuring streamer channel access: {e}")
+            msg_conn.rollback()
+            user_conn.rollback()
+            return None
+        finally:
+            msg_conn.close()
+            user_conn.close()
+
+    def assign_channel_to_user(self, user_id: int, channel_name: str, assigned_by_id: int = None) -> bool:
+        """Manually assign a channel to a user and update channel ownership"""
+        # Connect to both databases
+        import sqlite3
+        msg_conn = sqlite3.connect('messages.db')
+        msg_conn.row_factory = sqlite3.Row
+        user_conn = self.get_connection()
+        
+        try:
+            # Get user info
+            user = user_conn.execute("""
+                SELECT username, role_id FROM users WHERE id = ?
+            """, (user_id,)).fetchone()
+            
+            if not user:
+                logger.error(f"User {user_id} not found")
+                return False
+            
+            # Check if channel exists
+            channel = msg_conn.execute("""
+                SELECT channel_name, owner FROM channel_configs WHERE channel_name = ?
+            """, (channel_name,)).fetchone()
+            
+            if not channel:
+                logger.error(f"Channel {channel_name} not found")
+                return False
+            
+            # Update channel owner to match the user
+            msg_conn.execute("""
+                UPDATE channel_configs SET owner = ? WHERE channel_name = ?
+            """, (user['username'], channel_name))
+            
+            # Assign user to channel
+            assigned_by = assigned_by_id or user_id
+            user_conn.execute("""
+                INSERT OR REPLACE INTO user_channels (user_id, channel_name, assigned_by, is_active)
+                VALUES (?, ?, ?, 1)
+            """, (user_id, channel_name, assigned_by))
+            
+            msg_conn.commit()
+            user_conn.commit()
+            
+            logger.info(f"Assigned channel {channel_name} to user {user['username']} (id: {user_id})")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error assigning channel to user: {e}")
+            msg_conn.rollback()
+            user_conn.rollback()
+            return False
+        finally:
+            msg_conn.close()
+            user_conn.close()
+
     def get_channel_assignments(self) -> List[Dict[str, Any]]:
         """Get all channel assignments with user details."""
         conn = self.get_connection()
