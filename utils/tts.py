@@ -552,6 +552,26 @@ def ensure_nltk_resources():
             return False
     return True
 
+def _validate_channel_name(channel):
+    """Validate channel name to prevent path traversal attacks"""
+    if not channel:
+        return None
+    
+    # Remove # prefix if present
+    clean_channel = channel.lstrip('#')
+    
+    # Only allow alphanumeric characters, underscores, and hyphens
+    if not re.match(r'^[a-zA-Z0-9_-]+$', clean_channel):
+        logging.warning(f"Invalid channel name for file path: {channel}")
+        return None
+    
+    # Prevent excessively long names
+    if len(clean_channel) > 50:
+        logging.warning(f"Channel name too long: {channel}")
+        return None
+    
+    return clean_channel
+
 async def process_text(channel, text, model_type="bark", voice_preset_override=None): # This is for the !speak command path
     """Process text to speech with proper locking and error handling"""
     # Use locking to prevent concurrent TTS processing
@@ -560,13 +580,19 @@ async def process_text(channel, text, model_type="bark", voice_preset_override=N
         try:
             logging.info(f"Starting ASYNC TTS for channel {channel} (likely !speak command)")
             
+            # SECURITY: Validate channel name to prevent path traversal
+            safe_channel = _validate_channel_name(channel)
+            if not safe_channel:
+                logging.error(f"Invalid channel name for TTS: {channel}")
+                return False, None
+            
             # Create output directory if it doesn't exist
-            output_dir = f"static/outputs/{channel}"
+            output_dir = f"static/outputs/{safe_channel}"
             os.makedirs(output_dir, exist_ok=True)
             
             # Generate unique filename
             timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-            output_file = f"{output_dir}/{channel}-{timestamp}.wav"
+            output_file = f"{output_dir}/{safe_channel}-{timestamp}.wav"
             
             # Don't write file before processing - wait until after successful generation
             if model_type == "bark":
@@ -644,11 +670,16 @@ def start_tts_processing(input_text, channel_name, db_file='./messages.db', mess
     timestamp_str: The timestamp string of the original message.
     voice_preset_override: Optional voice preset to use, otherwise fetched from DB.
     """
+    # SECURITY: Validate channel name to prevent path traversal
+    safe_channel_name = _validate_channel_name(channel_name)
+    if not safe_channel_name:
+        logging.error(f"Invalid channel name for TTS processing: {channel_name}")
+        return False
+    
     filename_timestamp = datetime.now().strftime("%Y%m%d-%H%M%S") 
-    clean_channel_name = channel_name.lstrip('#')
-    output_dir = f"static/outputs/{clean_channel_name}"
+    output_dir = f"static/outputs/{safe_channel_name}"
     os.makedirs(output_dir, exist_ok=True)
-    generated_full_path = f"{output_dir}/{clean_channel_name}-{filename_timestamp}.wav"
+    generated_full_path = f"{output_dir}/{safe_channel_name}-{filename_timestamp}.wav"
 
     logging.info(f"Preparing TTS thread for bot message. Original message_id: {message_id}, original_timestamp_str: {timestamp_str}, voice_preset_override: {voice_preset_override}, generated_path: {generated_full_path}")
 
@@ -658,7 +689,7 @@ def start_tts_processing(input_text, channel_name, db_file='./messages.db', mess
         target=process_text_thread, 
         args=(
             input_text, 
-            channel_name, 
+            safe_channel_name,        # Use the validated channel name
             db_file,
             generated_full_path,      # This becomes 'full_path' in process_text_thread
             timestamp_str,            # This becomes 'timestamp' (original message timestamp)
@@ -671,6 +702,61 @@ def start_tts_processing(input_text, channel_name, db_file='./messages.db', mess
     tts_thread.start()
     # Logging that the thread has been dispatched. The thread itself will log its entry.
     # logging.info(f"TTS processing thread dispatched for original message_id {message_id} in channel {channel_name}.")
+
+def download_models():
+    """Download TTS models for first-time setup"""
+    try:
+        logging.info("Downloading TTS models...")
+        
+        # Ensure NLTK resources first
+        if not ensure_nltk_resources():
+            logging.warning("NLTK resources download failed, continuing anyway")
+        
+        # Set environment variables for HuggingFace
+        import os
+        os.environ.setdefault('HF_HOME', '/app/.hf_cache')
+        os.environ.setdefault('HF_HUB_DISABLE_IMPLICIT_TOKEN', '1')
+        
+        # Import with better error handling
+        try:
+            from transformers import AutoProcessor, BarkModel
+            import torch
+        except ImportError as e:
+            logging.error(f"Failed to import required libraries: {e}")
+            return False
+        
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        logging.info(f"Using device: {device}")
+        
+        # Download the default model with error handling
+        model_path = "suno/bark-small"
+        logging.info(f"Downloading model: {model_path}")
+        
+        try:
+            # Download processor first
+            processor = AutoProcessor.from_pretrained(model_path, cache_dir=os.environ.get('HF_HOME'))
+            logging.info("Processor downloaded successfully")
+            
+            # Download model
+            model = BarkModel.from_pretrained(model_path, cache_dir=os.environ.get('HF_HOME'))
+            logging.info("Model downloaded successfully")
+            
+            # Test the model briefly
+            model.to(device)
+            logging.info("Model moved to device successfully")
+            
+        except Exception as model_e:
+            logging.error(f"Failed to download/load model {model_path}: {model_e}")
+            return False
+        
+        logging.info("TTS models downloaded and validated successfully")
+        return True
+        
+    except Exception as e:
+        logging.error(f"Failed to download TTS models: {e}")
+        import traceback
+        logging.error(traceback.format_exc())
+        return False
 
 def notify_new_audio_available(channel_name, message_id):
     # Define the URL of the Flask endpoint
