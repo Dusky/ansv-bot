@@ -11,7 +11,7 @@
                         <div class="d-flex align-items-center">
                             <h3 class="panel-title">
                                 <i class="fas fa-hashtag me-2"></i>
-                                {{ channel.name }}
+                                {{ channel.name|e }}
                             </h3>
                             <span class="badge {% if channel.currently_connected %}bg-success{% else %}bg-secondary{% endif %} ms-3">
                                 <i class="fas fa-circle me-1" style="font-size: 0.7rem;"></i>
@@ -19,7 +19,7 @@
                             </span>
                         </div>
                         <div class="d-flex gap-2">
-                            <a href="https://twitch.tv/{{ channel.name }}" target="_blank" class="btn btn-sm btn-outline-purple">
+                            <a href="https://twitch.tv/{{ channel.name|e }}" target="_blank" class="btn btn-sm btn-outline-purple">
                                 <i class="fab fa-twitch me-1"></i>
                                 Open on Twitch
                             </a>
@@ -87,9 +87,9 @@
                         </label>
                         <div class="input-group">
                             <select id="modelSelector" class="form-select" 
-                                    data-channel="{{ channel.name }}">
+                                    data-channel="{{ channel.name|e }}">
                                 <option value="channel" {% if not channel.use_general_model %}selected{% endif %}>
-                                    <i class="fas fa-hashtag"></i> Channel Model ({{ channel.name }})
+                                    <i class="fas fa-hashtag"></i> Channel Model ({{ channel.name|e }})
                                 </option>
                                 <option value="general" {% if channel.use_general_model %}selected{% endif %}>
                                     <i class="fas fa-globe"></i> General Model (All Channels)
@@ -159,8 +159,8 @@
                                 </button>
                             </div>
                             <div class="col-md-6 mb-2">
-                                <button class="btn btn-secondary d-flex align-items-center w-100 justify-content-center btn-control" 
-                                        onclick="openTTSPopup('{{ channel.name }}')" 
+                                <button class="btn btn-secondary d-flex align-items-center w-100 justify-content-center btn-control tts-popup-btn" 
+                                        data-channel="{{ channel.name|e }}" 
                                         title="Open TTS popup window for stream capture">
                                     <i class="fas fa-external-link-alt me-2"></i>TTS Popup
                                 </button>
@@ -500,12 +500,25 @@
 <script>
 // Pass channel data to JavaScript
 window.channelData = {
-    name: "{{ channel.name }}",
+    name: {{ channel.name|tojson }},
     tts_enabled: {{ channel.tts_enabled|tojson }},
     voice_enabled: {{ channel.voice_enabled|tojson }},
     currently_connected: {{ channel.currently_connected|tojson }},
     bot_running: {{ channel.bot_running|tojson }}
 };
+
+// Safe event handler for TTS popup button
+document.addEventListener('DOMContentLoaded', function() {
+    const ttsPopupBtn = document.querySelector('.tts-popup-btn');
+    if (ttsPopupBtn) {
+        ttsPopupBtn.addEventListener('click', function() {
+            const channel = this.getAttribute('data-channel');
+            if (channel && window.openTTSPopup) {
+                window.openTTSPopup(channel);
+            }
+        });
+    }
+});
 
 </script>
 <script src="{{ url_for('static', filename='scripts/channel_page.js') }}"></script>

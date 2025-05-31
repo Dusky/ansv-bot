@@ -1,6 +1,6 @@
 {% extends "beta/base.html" %}
 
-{% block title %}#{{ channel.name }} - ANSV Bot Beta{% endblock %}
+{% block title %}#{{ channel.name|e }} - ANSV Bot Beta{% endblock %}
 
 {% block content %}
 <div class="container-fluid px-4 py-3">
@@ -12,7 +12,7 @@
                     <i class="fas fa-hashtag"></i>
                 </div>
                 <div class="channel-title-content">
-                    <h1 class="channel-title">#{{ channel.name }}</h1>
+                    <h1 class="channel-title">#{{ channel.name|e }}</h1>
                     <div class="channel-meta">
                         <span class="status-indicator {% if channel.currently_connected %}status-online{% else %}status-offline{% endif %}" id="channelStatus">
                             <i class="fas fa-circle"></i>
@@ -20,7 +20,7 @@
                         </span>
                         <span class="channel-owner">
                             <i class="fas fa-crown me-1"></i>
-                            {{ channel.owner or channel.name }}
+                            {{ (channel.owner or channel.name)|e }}
                         </span>
                     </div>
                 </div>
@@ -31,7 +31,7 @@
                 <i class="fas fa-arrow-left me-2"></i>Back
             </button>
             {% if current_user and current_user.role_name in ['admin', 'super_admin'] %}
-            <a href="/channel/{{ channel.name }}" class="btn btn-outline-secondary">
+            <a href="/channel/{{ channel.name|e }}" class="btn btn-outline-secondary">
                 <i class="fas fa-cog me-2"></i>Legacy View
             </a>
             {% endif %}
@@ -469,7 +469,7 @@
 <script>
 // Pass channel data to JavaScript
 window.channelData = {
-    name: "{{ channel.name }}",
+    name: {{ channel.name|tojson }},
     tts_enabled: {{ channel.tts_enabled|tojson }},
     voice_enabled: {{ channel.voice_enabled|tojson }},
     tts_delay_enabled: {{ channel.tts_delay_enabled|tojson }},
