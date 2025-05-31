@@ -2643,6 +2643,71 @@ def api_channel_tts(channel_name):
         app.logger.error(f"Error in channel TTS for {channel_name}: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
 
+@app.route('/api/system-info')
+def api_system_info():
+    """Get system information for the stats dashboard."""
+    try:
+        import os
+        import time
+        import psutil
+        
+        # Get uptime (from process start time)
+        process = psutil.Process(os.getpid())
+        start_time = process.create_time()
+        uptime_seconds = time.time() - start_time
+        
+        # Get cache directory size
+        cache_size = 0
+        cache_size_str = "0 B"
+        if os.path.exists("cache"):
+            try:
+                for dirpath, dirnames, filenames in os.walk("cache"):
+                    for filename in filenames:
+                        filepath = os.path.join(dirpath, filename)
+                        if os.path.exists(filepath):
+                            cache_size += os.path.getsize(filepath)
+                
+                # Convert to human readable
+                if cache_size > 0:
+                    size_names = ["B", "KB", "MB", "GB"]
+                    i = 0
+                    size_calc = cache_size
+                    while size_calc >= 1024 and i < len(size_names) - 1:
+                        size_calc /= 1024
+                        i += 1
+                    cache_size_str = f"{size_calc:.1f} {size_names[i]}"
+            except Exception as e:
+                logging.warning(f"Error calculating cache size: {e}")
+        
+        # Get database size
+        db_size_str = "Unknown"
+        try:
+            if os.path.exists("messages.db"):
+                db_size = os.path.getsize("messages.db")
+                size_names = ["B", "KB", "MB", "GB"]
+                i = 0
+                size_calc = db_size
+                while size_calc >= 1024 and i < len(size_names) - 1:
+                    size_calc /= 1024
+                    i += 1
+                db_size_str = f"{size_calc:.1f} {size_names[i]}"
+        except Exception as e:
+            logging.warning(f"Error calculating database size: {e}")
+        
+        return jsonify({
+            "uptime": int(uptime_seconds),
+            "cache_size": cache_size_str,
+            "database_size": db_size_str
+        })
+        
+    except Exception as e:
+        logging.error(f"Error getting system info: {e}")
+        return jsonify({
+            "uptime": 0,
+            "cache_size": "Unknown",
+            "database_size": "Unknown"
+        }), 500
+
 # PERFORMANCE OPTIMIZATION: Real-time WebSocket Events
 # Replace polling with event-driven updates for better performance
 
