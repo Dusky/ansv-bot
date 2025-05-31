@@ -369,16 +369,25 @@ function updateSystemInfo(data) {
     const cacheSizeEl = document.getElementById('totalCacheSize');
     const dbSizeEl = document.getElementById('databaseSize');
     
-    if (uptimeEl && data.uptime) {
-        uptimeEl.querySelector('span').textContent = formatUptime(data.uptime);
+    if (uptimeEl && data.uptime !== undefined) {
+        const spanEl = uptimeEl.querySelector('span');
+        if (spanEl) {
+            spanEl.textContent = formatUptime(data.uptime);
+        }
     }
     
     if (cacheSizeEl && data.cache_size) {
-        cacheSizeEl.querySelector('span').textContent = data.cache_size;
+        const spanEl = cacheSizeEl.querySelector('span');
+        if (spanEl) {
+            spanEl.textContent = data.cache_size;
+        }
     }
     
     if (dbSizeEl && data.database_size) {
-        dbSizeEl.querySelector('span').textContent = data.database_size;
+        const spanEl = dbSizeEl.querySelector('span');
+        if (spanEl) {
+            spanEl.textContent = data.database_size;
+        }
     }
 }
 
