@@ -128,6 +128,38 @@
     <!-- Tippy.js for tooltips -->
     <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.8/dist/umd/popper.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/tippy.js@6.3.7/dist/tippy-bundle.umd.min.js"></script>
+    <!-- CSRF Token Setup -->
+    <script>
+        // Setup CSRF token for all AJAX requests
+        (function() {
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+            if (csrfToken) {
+                // Setup for jQuery if available
+                if (typeof $ !== 'undefined') {
+                    $.ajaxSetup({
+                        beforeSend: function(xhr, settings) {
+                            if (!/^(GET|HEAD|OPTIONS|TRACE)$/i.test(settings.type) && !this.crossDomain) {
+                                xhr.setRequestHeader("X-CSRF-Token", csrfToken);
+                            }
+                        }
+                    });
+                }
+                
+                // Setup for fetch API
+                const originalFetch = window.fetch;
+                window.fetch = function(input, init = {}) {
+                    // Only add CSRF token to POST, PUT, PATCH, DELETE requests
+                    if (init.method && !/^(GET|HEAD|OPTIONS|TRACE)$/i.test(init.method)) {
+                        init.headers = init.headers || {};
+                        if (!init.headers['X-CSRF-Token']) {
+                            init.headers['X-CSRF-Token'] = csrfToken;
+                        }
+                    }
+                    return originalFetch.call(this, input, init);
+                };
+            }
+        })();
+    </script>
     <!-- Timezone Utils -->
     <script src="{{ url_for('static', filename='scripts/timezone-utils.js') }}"></script>
     <!-- Base Beta JS -->

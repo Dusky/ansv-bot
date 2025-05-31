@@ -4,6 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="csrf-token" content="{{ csrf_token }}">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
@@ -40,6 +41,39 @@
   <!-- Core Scripts -->
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js"></script>
   <script src="https://cdn.socket.io/4.0.0/socket.io.min.js" crossorigin="anonymous"></script>
+  
+  <!-- CSRF Token Setup -->
+  <script>
+    // Setup CSRF token for all AJAX requests
+    (function() {
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+        if (csrfToken) {
+            // Setup for jQuery if available
+            if (typeof $ !== 'undefined') {
+                $.ajaxSetup({
+                    beforeSend: function(xhr, settings) {
+                        if (!/^(GET|HEAD|OPTIONS|TRACE)$/i.test(settings.type) && !this.crossDomain) {
+                            xhr.setRequestHeader("X-CSRF-Token", csrfToken);
+                        }
+                    }
+                });
+            }
+            
+            // Setup for fetch API
+            const originalFetch = window.fetch;
+            window.fetch = function(input, init = {}) {
+                // Only add CSRF token to POST, PUT, PATCH, DELETE requests
+                if (init.method && !/^(GET|HEAD|OPTIONS|TRACE)$/i.test(init.method)) {
+                    init.headers = init.headers || {};
+                    if (!init.headers['X-CSRF-Token']) {
+                        init.headers['X-CSRF-Token'] = csrfToken;
+                    }
+                }
+                return originalFetch.call(this, input, init);
+            };
+        }
+    })();
+  </script>
   
   <!-- App Scripts - CRITICAL SEQUENCE: Don't change this order -->
   <!-- 1. First timezone utils -->

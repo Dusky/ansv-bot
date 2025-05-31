@@ -588,6 +588,7 @@ def profile():
 
 @app.route('/profile/change-password', methods=['POST'])
 @require_auth
+@require_csrf_token
 def change_password():
     """Change user password."""
     user = get_current_user()
@@ -645,6 +646,7 @@ def change_password():
 
 @app.route('/profile/change-email', methods=['POST'])
 @require_auth
+@require_csrf_token
 def change_email():
     """Change user email."""
     user = get_current_user()
@@ -723,6 +725,7 @@ def admin_users():
 
 @app.route('/admin/users/create', methods=['POST'])
 @require_role('admin')
+@require_csrf_token
 def admin_create_user():
     """Create a new user account"""
     try:
@@ -782,6 +785,7 @@ def admin_create_user():
 
 @app.route('/admin/users/<int:user_id>/edit', methods=['POST'])
 @require_role('admin')
+@require_csrf_token
 def admin_edit_user(user_id):
     """Edit user account details"""
     try:
@@ -839,6 +843,7 @@ def admin_edit_user(user_id):
 
 @app.route('/admin/users/<int:user_id>/delete', methods=['POST'])
 @require_role('admin')
+@require_csrf_token
 def admin_delete_user(user_id):
     """Delete/deactivate user account"""
     try:
@@ -871,6 +876,7 @@ def admin_delete_user(user_id):
 
 @app.route('/admin/users/<int:user_id>/assign-channels', methods=['POST'])
 @require_role('admin')
+@require_csrf_token
 def admin_assign_channels(user_id):
     """Assign channels to a user"""
     try:
@@ -1015,6 +1021,7 @@ def rebuild_all_caches():
 
 @app.route('/start_bot', methods=['POST'])
 @require_permission(Permissions.BOT_START)
+@require_csrf_token
 def start_bot_route():
     if is_bot_actually_running():
         return jsonify({"success": False, "message": "Bot is already running"}), 400
@@ -1043,6 +1050,7 @@ def start_bot_route():
 
 @app.route('/stop_bot', methods=['POST'])
 @require_permission(Permissions.BOT_STOP)
+@require_csrf_token
 def stop_bot_route():
     if not is_bot_actually_running():
         return jsonify({"success": False, "message": "Bot is not running"}), 400
