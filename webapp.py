@@ -2708,6 +2708,78 @@ def api_system_info():
             "database_size": "Unknown"
         }), 500
 
+@app.route('/api/clear-cache', methods=['POST'])
+def api_clear_cache():
+    """Clear all cached data."""
+    try:
+        import shutil
+        
+        # Clear cache directory
+        cache_dir = "cache"
+        if os.path.exists(cache_dir):
+            # Remove all files in cache directory
+            for filename in os.listdir(cache_dir):
+                file_path = os.path.join(cache_dir, filename)
+                try:
+                    if os.path.isfile(file_path):
+                        os.unlink(file_path)
+                    elif os.path.isdir(file_path):
+                        shutil.rmtree(file_path)
+                except Exception as e:
+                    logging.warning(f"Error removing cached file {file_path}: {e}")
+        
+        # Clear in-memory models if markov_handler exists
+        if 'markov_handler' in globals():
+            markov_handler.models.clear()
+        
+        return jsonify({
+            "success": True,
+            "message": "Cache cleared successfully"
+        })
+        
+    except Exception as e:
+        logging.error(f"Error clearing cache: {e}")
+        return jsonify({
+            "success": False,
+            "message": str(e)
+        }), 500
+
+@app.route('/api/settings/export')
+def api_export_settings():
+    """Export current settings as JSON."""
+    try:
+        # Get all channel configurations
+        conn = sqlite3.connect(db_file)
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        
+        # Get channels
+        c.execute("SELECT * FROM channel_configs")
+        channels = [dict(row) for row in c.fetchall()]
+        
+        # Get system settings (if they exist in a separate table)
+        settings_data = {
+            "channels": channels,
+            "export_timestamp": time.time(),
+            "export_date": datetime.now().isoformat(),
+            "version": "1.0"
+        }
+        
+        conn.close()
+        
+        # Create response
+        response = make_response(json.dumps(settings_data, indent=2))
+        response.headers['Content-Type'] = 'application/json'
+        response.headers['Content-Disposition'] = f'attachment; filename=ansv-settings-{datetime.now().strftime("%Y%m%d_%H%M%S")}.json'
+        
+        return response
+        
+    except Exception as e:
+        logging.error(f"Error exporting settings: {e}")
+        return jsonify({
+            "error": str(e)
+        }), 500
+
 # PERFORMANCE OPTIMIZATION: Real-time WebSocket Events
 # Replace polling with event-driven updates for better performance
 

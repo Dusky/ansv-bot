@@ -152,39 +152,36 @@ function setupTTSSettings() {
 }
 
 function setupAdvancedSettings() {
-    // Database cleanup
-    const cleanupBtn = document.querySelector('[data-action="cleanup-database"]');
-    if (cleanupBtn) {
-        cleanupBtn.addEventListener('click', function() {
-            if (confirm('This will remove old messages and optimize the database. Continue?')) {
-                cleanupDatabase();
+    // Rebuild all models
+    const rebuildAllBtn = document.getElementById('rebuildAllBtn');
+    if (rebuildAllBtn) {
+        rebuildAllBtn.addEventListener('click', function() {
+            if (confirm('Are you sure you want to rebuild all models? This may take several minutes.')) {
+                rebuildAllModels();
+            }
+        });
+    }
+
+    // Clear cache
+    const clearCacheBtn = document.getElementById('clearCacheBtn');
+    if (clearCacheBtn) {
+        clearCacheBtn.addEventListener('click', function() {
+            if (confirm('Are you sure you want to clear all cached data?')) {
+                clearCache();
             }
         });
     }
 
     // Export settings
-    const exportBtn = document.querySelector('[data-action="export-settings"]');
-    if (exportBtn) {
-        exportBtn.addEventListener('click', exportSettings);
-    }
-
-    // Import settings
-    const importBtn = document.querySelector('[data-action="import-settings"]');
-    const importFile = document.getElementById('importFile');
-    
-    if (importBtn && importFile) {
-        importBtn.addEventListener('click', () => importFile.click());
-        importFile.addEventListener('change', function() {
-            if (this.files.length > 0) {
-                importSettings(this.files[0]);
-            }
-        });
+    const exportSettingsBtn = document.getElementById('exportSettingsBtn');
+    if (exportSettingsBtn) {
+        exportSettingsBtn.addEventListener('click', exportSettings);
     }
 
     // Reset to defaults
-    const resetBtn = document.querySelector('[data-action="reset-settings"]');
-    if (resetBtn) {
-        resetBtn.addEventListener('click', function() {
+    const resetDefaultsBtn = document.getElementById('resetDefaultsBtn');
+    if (resetDefaultsBtn) {
+        resetDefaultsBtn.addEventListener('click', function() {
             if (confirm('This will reset all settings to defaults. This cannot be undone. Continue?')) {
                 resetToDefaults();
             }
@@ -419,6 +416,49 @@ async function cleanupDatabase() {
     } catch (error) {
         console.error('Error cleaning up database:', error);
         showToast('Database cleanup failed', 'error');
+    }
+}
+
+async function rebuildAllModels() {
+    try {
+        showToast('Starting model rebuild...', 'info');
+        const response = await fetch('/rebuild-all-caches', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (response.ok) {
+            showToast('All models rebuild started successfully', 'success');
+            setTimeout(() => location.reload(), 2000);
+        } else {
+            throw new Error('Failed to start rebuild');
+        }
+    } catch (error) {
+        console.error('Error rebuilding models:', error);
+        showToast('Failed to rebuild models', 'error');
+    }
+}
+
+async function clearCache() {
+    try {
+        const response = await fetch('/api/clear-cache', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (response.ok) {
+            showToast('Cache cleared successfully', 'success');
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            throw new Error('Failed to clear cache');
+        }
+    } catch (error) {
+        console.error('Error clearing cache:', error);
+        showToast('Failed to clear cache', 'error');
     }
 }
 
