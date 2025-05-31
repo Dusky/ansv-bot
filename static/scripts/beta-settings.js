@@ -771,12 +771,32 @@ async function updateBotStatus() {
             uptimeElement.textContent = data.running ? 'Just started' : 'Offline';
         }
         
-        if (connectedChannelsElement && typeof data.connected_channels !== 'undefined') {
-            connectedChannelsElement.textContent = data.connected_channels;
+        if (connectedChannelsElement) {
+            if (data.joined_channels && Array.isArray(data.joined_channels)) {
+                connectedChannelsElement.textContent = data.joined_channels.length;
+            } else {
+                connectedChannelsElement.textContent = data.running ? '0' : 'Offline';
+            }
         }
         
-        if (memoryUsageElement && data.memory_usage) {
-            memoryUsageElement.textContent = data.memory_usage;
+        if (memoryUsageElement) {
+            // Try to get memory usage from system info API
+            try {
+                fetch('/api/system-info')
+                    .then(response => response.json())
+                    .then(sysData => {
+                        if (sysData.memory_usage) {
+                            memoryUsageElement.textContent = sysData.memory_usage;
+                        } else {
+                            memoryUsageElement.textContent = 'Unknown';
+                        }
+                    })
+                    .catch(() => {
+                        memoryUsageElement.textContent = 'Unknown';
+                    });
+            } catch (e) {
+                memoryUsageElement.textContent = 'Unknown';
+            }
         }
         
         // Show/hide bot control buttons based on status

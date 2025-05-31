@@ -2694,10 +2694,20 @@ def api_system_info():
         except Exception as e:
             logging.warning(f"Error calculating database size: {e}")
         
+        # Get memory usage
+        memory_usage_str = "Unknown"
+        try:
+            memory_info = process.memory_info()
+            memory_mb = memory_info.rss / (1024 * 1024)  # Convert bytes to MB
+            memory_usage_str = f"{memory_mb:.1f} MB"
+        except Exception as e:
+            logging.warning(f"Error getting memory usage: {e}")
+        
         return jsonify({
             "uptime": int(uptime_seconds),
             "cache_size": cache_size_str,
-            "database_size": db_size_str
+            "database_size": db_size_str,
+            "memory_usage": memory_usage_str
         })
         
     except Exception as e:
@@ -2705,7 +2715,8 @@ def api_system_info():
         return jsonify({
             "uptime": 0,
             "cache_size": "Unknown",
-            "database_size": "Unknown"
+            "database_size": "Unknown",
+            "memory_usage": "Unknown"
         }), 500
 
 @app.route('/api/clear-cache', methods=['POST'])
