@@ -475,7 +475,7 @@ def send_markov_message(channel_name):
 # Authentication routes
 @app.route('/login', methods=['GET', 'POST'])
 # @require_rate_limit  # Temporarily disabled
-# @require_csrf_token  # Temporarily disabled  
+@require_csrf_token  
 def login():
     """Login page and authentication handler with multi-user support."""
     # If already authenticated, redirect to beta dashboard
@@ -1400,6 +1400,7 @@ def get_channel_settings_route(channel_name):
 
 @app.route('/update-channel-settings', methods=['POST'])
 @require_channel_access('channel_name', 'edit')
+@require_csrf_token
 def update_channel_settings_route(): 
     try:
         data = request.json
@@ -1457,6 +1458,8 @@ def update_channel_settings_route():
         return jsonify({"success": False, "message": f"Server error: {str(e)}"}), 500
 
 @app.route('/add-channel', methods=['POST'])
+@require_auth
+@require_csrf_token
 def add_channel_route(): 
     try:
         data = request.json
@@ -1497,6 +1500,8 @@ def add_channel_route():
         return jsonify({"success": False, "message": str(e)}), 500
 
 @app.route('/delete-channel', methods=['POST'])
+@require_auth
+@require_csrf_token
 def delete_channel_route(): 
     try:
         data = request.json
