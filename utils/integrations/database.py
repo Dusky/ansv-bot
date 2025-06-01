@@ -8,8 +8,16 @@ import logging
 from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime
 from contextlib import asynccontextmanager
-import aiosqlite
 from dataclasses import dataclass
+
+# Conditional import for aiosqlite with fallback
+try:
+    import aiosqlite
+    AIOSQLITE_AVAILABLE = True
+except ImportError:
+    AIOSQLITE_AVAILABLE = False
+    aiosqlite = None
+    logging.warning("aiosqlite not available - database operations will use sync fallback")
 
 
 @dataclass
@@ -25,6 +33,8 @@ class ChannelConfig:
     time_between_messages: int = 0
     use_general_model: bool = False
     currently_connected: bool = False
+    markov_enabled: bool = True
+    markov_response_threshold: int = 50
 
 
 @dataclass
@@ -44,6 +54,10 @@ class DatabaseManager:
         self.db_file = db_file
         self._connection_pool = {}
         self._lock = asyncio.Lock()
+        self._fallback_mode = not AIOSQLITE_AVAILABLE
+        
+        if self._fallback_mode:
+            logging.warning("DatabaseManager running in sync fallback mode - install aiosqlite for better performance")
     
     @asynccontextmanager
     async def get_connection(self):
@@ -110,7 +124,9 @@ class DatabaseManager:
                 lines_between_messages=row['lines_between_messages'] or 100,
                 time_between_messages=row['time_between_messages'] or 0,
                 use_general_model=bool(row['use_general_model']),
-                currently_connected=bool(row['currently_connected'])
+                currently_connected=bool(row['currently_connected']),
+                markov_enabled=bool(row['markov_enabled'] if 'markov_enabled' in row.keys() else True),
+                markov_response_threshold=row['markov_response_threshold'] if 'markov_response_threshold' in row.keys() else 50
             )
         return None
     
@@ -119,8 +135,9 @@ class DatabaseManager:
         query = """
         INSERT OR REPLACE INTO channel_configs 
         (channel_name, join_channel, tts_enabled, voice_enabled, voice_preset, 
-         bark_model, lines_between_messages, time_between_messages, use_general_model, currently_connected)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         bark_model, lines_between_messages, time_between_messages, use_general_model, 
+         currently_connected, markov_enabled, markov_response_threshold)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         params = (
             config.channel_name,
@@ -132,7 +149,9 @@ class DatabaseManager:
             config.lines_between_messages,
             config.time_between_messages,
             config.use_general_model,
-            config.currently_connected
+            config.currently_connected,
+            config.markov_enabled,
+            config.markov_response_threshold
         )
         await self.execute_query(query, params)
     
@@ -159,7 +178,7 @@ class DatabaseManager:
     async def save_message(self, message_data: MessageData) -> None:
         """Save a message to the database."""
         query = """
-        INSERT INTO messages (channel_name, username, message, timestamp)
+        INSERT INTO messages (channel, author_name, message, timestamp)
         VALUES (?, ?, ?, ?)
         """
         params = (
@@ -172,15 +191,15 @@ class DatabaseManager:
     
     async def get_channel_message_count(self, channel_name: str) -> int:
         """Get total message count for a channel."""
-        query = "SELECT COUNT(*) as count FROM messages WHERE channel_name = ?"
+        query = "SELECT COUNT(*) as count FROM messages WHERE channel = ?"
         row = await self.fetch_one(query, (channel_name,))
         return row['count'] if row else 0
     
     async def get_recent_messages(self, channel_name: str, limit: int = 100) -> List[Dict[str, Any]]:
         """Get recent messages for a channel."""
         query = """
-        SELECT username, message, timestamp FROM messages 
-        WHERE channel_name = ? 
+        SELECT author_name, message, timestamp FROM messages 
+        WHERE channel = ? 
         ORDER BY timestamp DESC 
         LIMIT ?
         """
@@ -192,7 +211,7 @@ class DatabaseManager:
                                 voice_preset: str, message_id: Optional[str] = None) -> None:
         """Log TTS generation to database."""
         query = """
-        INSERT INTO tts_logs (channel_name, text, file_path, voice_preset, message_id, timestamp)
+        INSERT INTO tts_logs (channel, message, file_path, voice_preset, message_id, timestamp)
         VALUES (?, ?, ?, ?, ?, ?)
         """
         params = (
@@ -208,8 +227,8 @@ class DatabaseManager:
     async def get_tts_history(self, channel_name: str, limit: int = 50) -> List[Dict[str, Any]]:
         """Get TTS history for a channel."""
         query = """
-        SELECT text, file_path, voice_preset, timestamp FROM tts_logs
-        WHERE channel_name = ?
+        SELECT message, file_path, voice_preset, timestamp FROM tts_logs
+        WHERE channel = ?
         ORDER BY timestamp DESC
         LIMIT ?
         """
@@ -262,15 +281,98 @@ class DatabaseManager:
         """Clean up messages older than specified days."""
         query = """
         DELETE FROM messages 
-        WHERE timestamp < datetime('now', '-{} days')
-        """.format(days)
-        cursor = await self.execute_query(query)
+        WHERE timestamp < datetime('now', '-' || ? || ' days')
+        """
+        cursor = await self.execute_query(query, (str(days),))
         return cursor.rowcount
     
     async def vacuum_database(self) -> None:
         """Vacuum the database to reclaim space."""
         async with self.get_connection() as conn:
             await conn.execute("VACUUM")
+    
+    # Cache Management Operations
+    async def get_cache_build_times(self) -> Dict[str, float]:
+        """Get cache build times from database."""
+        query = "SELECT channel_name, build_time FROM cache_build_times"
+        rows = await self.fetch_all(query)
+        return {row['channel_name']: float(row['build_time']) for row in rows}
+    
+    async def save_cache_build_time(self, channel_name: str, build_time: float) -> None:
+        """Save cache build time to database."""
+        query = "INSERT OR REPLACE INTO cache_build_times (channel_name, build_time) VALUES (?, ?)"
+        await self.execute_query(query, (channel_name, build_time))
+    
+    # Message Operations for Markov Processing
+    async def store_message(self, channel_name: str, author: str, content: str, timestamp: datetime) -> None:
+        """Store a message in the database."""
+        message_data = MessageData(
+            channel_name=channel_name,
+            username=author,
+            content=content,
+            timestamp=timestamp
+        )
+        await self.save_message(message_data)
+    
+    async def get_channel_messages(self, channel_name: str, limit: int = 1000) -> List[MessageData]:
+        """Get messages for markov model building."""
+        query = """
+        SELECT channel, author_name, message, timestamp FROM messages 
+        WHERE channel = ? 
+        ORDER BY timestamp DESC 
+        LIMIT ?
+        """
+        rows = await self.fetch_all(query, (channel_name, limit))
+        
+        messages = []
+        for row in rows:
+            messages.append(MessageData(
+                channel_name=row['channel'],
+                username=row['author_name'],
+                content=row['message'],
+                timestamp=datetime.fromisoformat(row['timestamp'])
+            ))
+        return messages
+    
+    async def get_all_channels(self) -> List[ChannelConfig]:
+        """Get all channel configurations."""
+        query = "SELECT * FROM channel_configs"
+        rows = await self.fetch_all(query)
+        
+        channels = []
+        for row in rows:
+            channels.append(ChannelConfig(
+                channel_name=row['channel_name'],
+                join_channel=bool(row['join_channel']),
+                tts_enabled=bool(row['tts_enabled']),
+                voice_enabled=bool(row['voice_enabled']),
+                voice_preset=row['voice_preset'],
+                bark_model=row['bark_model'],
+                lines_between_messages=row['lines_between_messages'] or 100,
+                time_between_messages=row['time_between_messages'] or 0,
+                use_general_model=bool(row['use_general_model']),
+                currently_connected=bool(row['currently_connected']),
+                markov_enabled=bool(row['markov_enabled'] if 'markov_enabled' in row.keys() else True),
+                markov_response_threshold=row['markov_response_threshold'] if 'markov_response_threshold' in row.keys() else 50
+            ))
+        return channels
+    
+    # Initialization and Cleanup
+    async def initialize(self) -> None:
+        """Initialize database connections and ensure schema."""
+        try:
+            # Test connection
+            await self.health_check()
+            logging.info("Database manager initialized successfully")
+        except Exception as e:
+            logging.error(f"Failed to initialize database manager: {e}")
+            raise
+    
+    async def close(self) -> None:
+        """Close database connections."""
+        # Connections are auto-closed in context managers
+        # This method is for future connection pooling
+        logging.info("Database manager connections closed")
     
     # Health Check
     async def health_check(self) -> bool:

@@ -8,7 +8,6 @@ import asyncio
 from typing import Optional, Dict, Any
 from datetime import datetime, timedelta
 
-from ..coordination.async_manager import AsyncManager
 from .database import DatabaseManager
 from ..tts import process_text, start_tts_processing
 
@@ -16,10 +15,10 @@ from ..tts import process_text, start_tts_processing
 class TTSController:
     """Coordinates TTS operations and manages TTS-related functionality."""
     
-    def __init__(self, database_manager: DatabaseManager, async_manager: AsyncManager):
+    def __init__(self, database_manager: DatabaseManager):
         self.db = database_manager
-        self.async_manager = async_manager
         self._last_tts_times = {}  # Channel -> last TTS time
+        self.logger = logging.getLogger(__name__)
     
     async def handle_speak_command(self, channel_name: str, text: str, 
                                   voice_preset_override: Optional[str] = None) -> bool:
@@ -219,6 +218,15 @@ class TTSController:
         except Exception as e:
             logging.error(f"Error getting TTS status for {channel_name}: {e}")
             return {"enabled": False, "error": str(e)}
+    
+    async def initialize(self) -> None:
+        """Initialize the TTS controller."""
+        self.logger.info("TTS controller initialized")
+    
+    async def shutdown(self) -> None:
+        """Shutdown TTS controller resources."""
+        self._last_tts_times.clear()
+        self.logger.info("TTS controller shutdown completed")
     
     def cleanup(self) -> None:
         """Cleanup TTS controller resources."""

@@ -125,7 +125,9 @@ class StateManager:
     async def increment_channel_line_count(self, channel_name: str) -> int:
         """Increment and return the line count for a channel."""
         async with self._lock:
-            channel_state = await self.get_channel_state(channel_name)
+            if channel_name not in self.state.channels:
+                self.state.channels[channel_name] = ChannelState(name=channel_name)
+            channel_state = self.state.channels[channel_name]
             channel_state.chat_line_count += 1
             return channel_state.chat_line_count
     
@@ -136,3 +138,39 @@ class StateManager:
     async def update_last_message_time(self, channel_name: str) -> None:
         """Update the last message time for a channel."""
         await self.update_channel_state(channel_name, last_message_time=datetime.now())
+    
+    async def update_channel_message_count(self, channel_name: str) -> None:
+        """Increment message count for channel."""
+        await self.increment_channel_line_count(channel_name)
+    
+    async def reset_channel_message_count(self, channel_name: str) -> None:
+        """Reset message count for channel."""
+        await self.reset_channel_line_count(channel_name)
+    
+    async def set_channel_connected(self, channel_name: str, connected: bool) -> None:
+        """Set channel connection status."""
+        if connected:
+            await self.add_connected_channel(channel_name)
+        else:
+            await self.remove_connected_channel(channel_name)
+    
+    async def add_channel(self, channel_name: str) -> None:
+        """Add a new channel to state tracking."""
+        async with self._lock:
+            if channel_name not in self.state.channels:
+                self.state.channels[channel_name] = ChannelState(name=channel_name)
+    
+    async def initialize(self) -> None:
+        """Initialize the state manager."""
+        logging.info("State manager initialized")
+    
+    async def get_state_summary(self) -> Dict[str, Any]:
+        """Get a summary of current state."""
+        async with self._lock:
+            return {
+                'total_channels': len(self.state.channels),
+                'connected_channels': len(self.state.connected_channels),
+                'models_loaded': self.state.models_loaded,
+                'tts_enabled': self.state.tts_enabled,
+                'startup_complete': self.state.startup_complete
+            }

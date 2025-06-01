@@ -16,6 +16,9 @@ class BotConfig:
     nickname: str
     owner: str
     channels: List[str]
+    database_path: str = "messages.db"
+    enable_tts: bool = False
+    log_level: str = "INFO"
     verbose_logs: bool = False
     lines_between_messages: int = 100
     time_between_messages: int = 0
