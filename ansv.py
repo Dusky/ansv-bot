@@ -1,6 +1,6 @@
 import argparse
 from threading import Thread
-from utils.bot import setup_bot
+from utils.bot.factory import create_bot
 from utils.db_setup import ensure_db_setup
 import os
 import torch # Keep torch import for TTS check
@@ -139,7 +139,11 @@ def main():
         print("Database setup complete.")
             
         print("Setting up bot...")
-        bot_instance = setup_bot(db_file, rebuild_cache=args.rebuild_cache, enable_tts=enable_tts_global)
+        bot_instance = asyncio.run(create_bot(
+            config_path="settings.conf",
+            rebuild_cache=args.rebuild_cache, 
+            enable_tts=enable_tts_global
+        ))
         print("Bot setup complete, starting bot...")
         
         # Create PID file after bot setup, before run

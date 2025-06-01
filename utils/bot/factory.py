@@ -18,14 +18,27 @@ def load_config_from_file(config_path: str = "settings.conf") -> BotConfig:
     config.read(config_path)
     
     try:
-        # Extract required settings
-        token = config["settings"]["token"]
-        client_id = config["settings"]["client_id"]
-        nickname = config["settings"]["nickname"]
-        owner = config["settings"]["owner"]
+        # Extract required settings - try both auth and settings sections for compatibility
+        try:
+            token = config["auth"]["tmi_token"]
+            client_id = config["auth"]["client_id"]
+            nickname = config["auth"]["nickname"]
+            owner = config["auth"]["owner"]
+        except KeyError:
+            # Fallback to settings section
+            token = config["settings"]["token"]
+            client_id = config["settings"]["client_id"]
+            nickname = config["settings"]["nickname"]
+            owner = config["settings"]["owner"]
         
-        # Parse channels
-        channels_str = config["settings"]["channels"]
+        # Parse channels - try both sections
+        try:
+            channels_str = config["settings"]["channels"]
+        except KeyError:
+            try:
+                channels_str = config["channels"]["channels"]
+            except KeyError:
+                channels_str = config["auth"]["channels"]
         channels = [ch.strip().lower() for ch in channels_str.split(",") if ch.strip()]
         
         # Optional settings
@@ -68,17 +81,25 @@ def setup_logging(log_level: str = "INFO") -> None:
     logging.getLogger("websockets").setLevel(logging.WARNING)
 
 
-async def create_bot(config_path: str = "settings.conf") -> ANSVBot:
+async def create_bot(config_path: str = "settings.conf", rebuild_cache: bool = False, enable_tts: bool = False) -> ANSVBot:
     """Create and configure an ANSV bot instance."""
     try:
         # Load configuration
         config = load_config_from_file(config_path)
+        
+        # Override TTS setting from command line if provided
+        if enable_tts:
+            config.enable_tts = enable_tts
         
         # Setup logging
         setup_logging(config.log_level)
         
         # Create bot instance
         bot = ANSVBot(config)
+        
+        # Handle cache rebuild if requested
+        if rebuild_cache:
+            logging.info("Rebuild cache requested - will rebuild markov models")
         
         # Validate configuration
         await validate_bot_config(bot)
