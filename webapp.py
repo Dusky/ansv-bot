@@ -918,12 +918,11 @@ def api_user_channels(user_id):
         return jsonify({'success': False, 'error': 'Error getting user channels'}), 500
 
 @app.route('/')
-@require_auth
+@require_auth  
+@require_permission(Permissions.DASHBOARD_VIEW)
 def main():
-    # Redirect streamers to their channel instead of main page
-    streamer_redirect = redirect_streamers_to_channel()
-    if streamer_redirect:
-        return streamer_redirect
+    # The @require_permission decorator above handles access control
+    # Streamers will get redirected or denied before reaching this point
         
     # Theme is now injected by context_processor, but can be accessed here if needed
     # theme = request.cookies.get("theme", "darkly") 

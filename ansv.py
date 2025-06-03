@@ -94,6 +94,7 @@ def main():
         parser.add_argument("--web", action="store_true", help="Enable web interface")
         parser.add_argument("--tts", action="store_true", help="Enable TTS functionality")
         parser.add_argument("--voice-preset", dest="voice_preset", type=str, help="Set default voice preset for TTS")
+        parser.add_argument("--verbose", action="store_true", help="Enable verbose console output while running")
         args = parser.parse_args()
 
         print(f"Arguments parsed: {args}")
@@ -139,11 +140,25 @@ def main():
         print("Database setup complete.")
             
         print("Setting up bot...")
-        bot_instance = asyncio.run(create_bot(
+        bot_instance = create_bot(
             config_path="settings.conf",
             rebuild_cache=args.rebuild_cache, 
             enable_tts=enable_tts_global
-        ))
+        )
+        
+        # Enable verbose console logging if requested
+        if args.verbose:
+            import logging
+            console_handler = logging.StreamHandler()
+            console_handler.setLevel(logging.INFO)
+            formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+            console_handler.setFormatter(formatter)
+            
+            # Add console handler to root logger and bot loggers
+            logging.getLogger().addHandler(console_handler)
+            logging.getLogger('twitchio').setLevel(logging.INFO)
+            logging.getLogger('websockets').setLevel(logging.INFO)
+            print("📢 Verbose console logging enabled")
         print("Bot setup complete, starting bot...")
         
         # Create PID file after bot setup, before run

@@ -81,7 +81,7 @@ def setup_logging(log_level: str = "INFO") -> None:
     logging.getLogger("websockets").setLevel(logging.WARNING)
 
 
-async def create_bot(config_path: str = "settings.conf", rebuild_cache: bool = False, enable_tts: bool = False) -> ANSVBot:
+def create_bot(config_path: str = "settings.conf", rebuild_cache: bool = False, enable_tts: bool = False) -> ANSVBot:
     """Create and configure an ANSV bot instance."""
     try:
         # Load configuration
@@ -101,8 +101,8 @@ async def create_bot(config_path: str = "settings.conf", rebuild_cache: bool = F
         if rebuild_cache:
             logging.info("Rebuild cache requested - will rebuild markov models")
         
-        # Validate configuration
-        await validate_bot_config(bot)
+        # Validate configuration (sync version)
+        validate_bot_config_sync(bot)
         
         return bot
         
@@ -111,7 +111,7 @@ async def create_bot(config_path: str = "settings.conf", rebuild_cache: bool = F
         raise
 
 
-async def validate_bot_config(bot: ANSVBot) -> None:
+def validate_bot_config_sync(bot: ANSVBot) -> None:
     """Validate bot configuration and dependencies."""
     config = bot.config
     
