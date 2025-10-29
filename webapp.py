@@ -2598,11 +2598,16 @@ def beta_dashboard():
     streamer_redirect = redirect_streamers_to_channel()
     if streamer_redirect:
         return streamer_redirect
-        
+
     try:
+        # Get current user and subscription status
+        user = get_current_user()
+        subscription_status = user_db.get_subscription_status(user['id']) if user else None
+        has_premium = user_db.has_tts_access(user['id']) if user else False
+
         # Get bot status and basic info for the beta dashboard
         bot_running = is_bot_actually_running()
-        
+
         # Get channels data
         conn = sqlite3.connect(db_file)
         conn.row_factory = sqlite3.Row
@@ -2610,14 +2615,16 @@ def beta_dashboard():
         c.execute("SELECT * FROM channel_configs ORDER BY channel_name")
         channels_data = [dict(row) for row in c.fetchall()]
         conn.close()
-        
+
         # Get recent TTS activity
         recent_tts, _ = get_last_10_tts_files_with_last_id(db_file)
-        
-        return render_template("beta/dashboard.html", 
+
+        return render_template("beta/dashboard.html",
                              bot_running=bot_running,
                              channels=channels_data,
-                             recent_tts=recent_tts[:5])  # Just show 5 most recent
+                             recent_tts=recent_tts[:5],  # Just show 5 most recent
+                             subscription_status=subscription_status,
+                             has_premium=has_premium)
         
     except Exception as e:
         app.logger.error(f"Error loading beta dashboard: {e}")
