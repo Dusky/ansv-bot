@@ -2686,8 +2686,13 @@ def beta_settings_page():
         return streamer_redirect
         
     try:
+        # Get current user and subscription status
+        user = get_current_user()
+        subscription_status = user_db.get_subscription_status(user['id']) if user else None
+        has_premium = user_db.has_tts_access(user['id']) if user else False
+
         bot_running = is_bot_actually_running()
-        
+
         # Get channels data with additional info
         conn = sqlite3.connect(db_file)
         conn.row_factory = sqlite3.Row
@@ -2713,10 +2718,12 @@ def beta_settings_page():
         for channel in channels_data:
             channel['currently_connected'] = channel['channel_name'].lower() in heartbeat_channels
         
-        return render_template("beta/settings.html", 
+        return render_template("beta/settings.html",
                              bot_running=bot_running,
                              channels=channels_data,
-                             bot_status=bot_status)
+                             bot_status=bot_status,
+                             subscription_status=subscription_status,
+                             has_premium=has_premium)
         
     except Exception as e:
         app.logger.error(f"Error loading beta settings page: {e}")

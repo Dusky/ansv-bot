@@ -23,6 +23,21 @@
         </div>
     </div>
 
+    <!-- Subscription Status Banner -->
+    {% if not has_premium %}
+    <div class="alert alert-warning mb-4" style="border-left: 4px solid #9146FF;">
+        <div class="d-flex align-items-center justify-content-between">
+            <div>
+                <h5 class="mb-1"><i class="fas fa-lock me-2"></i>TTS Settings Locked</h5>
+                <p class="mb-0">TTS configuration is a Premium feature. Upgrade to Premium ($2/month) to unlock all TTS settings</p>
+            </div>
+            <a href="/premium" class="btn btn-primary">
+                <i class="fas fa-star me-2"></i>Upgrade to Premium
+            </a>
+        </div>
+    </div>
+    {% endif %}
+
     <!-- Channel Settings -->
     <div class="row">
             <div class="row">
@@ -120,8 +135,9 @@
                                             </td>
                                             <td>
                                                 <div class="form-check form-switch">
-                                                    <input class="form-check-input" type="checkbox" 
+                                                    <input class="form-check-input" type="checkbox"
                                                            {% if channel.tts_enabled %}checked{% endif %}
+                                                           {% if not has_premium %}disabled title="Premium feature"{% endif %}
                                                            onchange="updateChannelSetting('{{ channel.channel_name }}', 'tts_enabled', this.checked)">
                                                 </div>
                                             </td>
@@ -191,8 +207,12 @@
                                                     <div class="row mt-3">
                                                         <div class="col-md-4">
                                                             <div class="setting-group">
-                                                                <label class="form-label">Voice Preset</label>
+                                                                <label class="form-label">
+                                                                    Voice Preset
+                                                                    {% if not has_premium %}<i class="fas fa-lock text-warning ms-1" title="Premium feature"></i>{% endif %}
+                                                                </label>
                                                                 <select class="form-select form-select-sm"
+                                                                        {% if not has_premium %}disabled{% endif %}
                                                                         onchange="updateChannelSetting('{{ channel.channel_name }}', 'voice_preset', this.value)">
                                                                     <option value="v2/en_speaker_0" {% if channel.voice_preset == 'v2/en_speaker_0' %}selected{% endif %}>English Speaker 0</option>
                                                                     <option value="v2/en_speaker_1" {% if channel.voice_preset == 'v2/en_speaker_1' %}selected{% endif %}>English Speaker 1</option>
@@ -203,8 +223,12 @@
                                                         </div>
                                                         <div class="col-md-4">
                                                             <div class="setting-group">
-                                                                <label class="form-label">Bark Model</label>
+                                                                <label class="form-label">
+                                                                    Bark Model
+                                                                    {% if not has_premium %}<i class="fas fa-lock text-warning ms-1" title="Premium feature"></i>{% endif %}
+                                                                </label>
                                                                 <select class="form-select form-select-sm"
+                                                                        {% if not has_premium %}disabled{% endif %}
                                                                         onchange="updateChannelSetting('{{ channel.channel_name }}', 'bark_model', this.value)">
                                                                     <option value="bark-small" {% if channel.bark_model == 'bark-small' %}selected{% endif %}>Small (Fast)</option>
                                                                     <option value="bark-regular" {% if channel.bark_model == 'bark-regular' %}selected{% endif %}>Regular (Balanced)</option>
@@ -327,11 +351,22 @@
                     <div class="settings-panel">
                         <div class="panel-header">
                             <h2 class="panel-title">
-                                <i class="fas fa-volume-up me-2"></i>
-                                Global TTS Configuration
+                                <i class="fas {% if not has_premium %}fa-lock{% else %}fa-volume-up{% endif %} me-2"></i>
+                                Global TTS Configuration{% if not has_premium %} (Premium){% endif %}
                             </h2>
                         </div>
                         <div class="panel-body">
+                            {% if not has_premium %}
+                            <!-- Locked State for Free Users -->
+                            <div class="text-center py-5">
+                                <i class="fas fa-lock fa-4x text-muted mb-4"></i>
+                                <h4 class="text-muted mb-3">Premium Feature</h4>
+                                <p class="text-muted mb-4">Global TTS configuration is available with Premium subscription</p>
+                                <a href="/premium" class="btn btn-primary btn-lg">
+                                    <i class="fas fa-star me-2"></i>Upgrade to Premium - $2/month
+                                </a>
+                            </div>
+                            {% else %}
                             <div class="tts-settings-grid">
                                 <div class="tts-setting-group">
                                     <h3 class="setting-group-title">Default Voice Settings</h3>
@@ -391,6 +426,7 @@
                                     </div>
                                 </div>
                             </div>
+                            {% endif %}
                         </div>
                     </div>
                 </div>
