@@ -224,34 +224,30 @@ def get_user_channels() -> List[str]:
     if not user or not user_db:
         return []
     
-    # Super admins and admins can access all channels
-    if user['role_name'] in ['super_admin', 'admin']:
+    # Super admins can access all channels
+    if user['role_name'] == 'super_admin':
         # Return empty list - they have wildcard permissions anyway
         return []
-    
-    # For streamers and other users, get channels from database
-    return user_db.get_user_channels_from_db(user['user_id'])
+
+    # For streamers, return their managed channel
+    managed_channel = user.get('managed_channel')
+    return [managed_channel] if managed_channel else []
 
 def can_access_channel(channel_name: str, action: str = 'view') -> bool:
     """Check if current user can access a specific channel with given action."""
     user = get_current_user()
     if not user:
         return False
-    
-    # Super admin and admin have access to all channels
-    if user['role_name'] in ['super_admin', 'admin']:
-        return has_permission(f'channels.{action}')
-    
-    # Moderators have access to all channels they're assigned to
-    if user['role_name'] == 'moderator':
-        return has_permission(f'channels.{action}')
-    
-    # Streamers can only access their own channels
+
+    # Super admin has access to all channels
+    if user['role_name'] == 'super_admin':
+        return True
+
+    # Streamers can only access their own managed channel
     if user['role_name'] == 'streamer':
-        user_channels = get_user_channels()
-        if channel_name in user_channels:
-            # Check if they have the "own" version of the permission
-            return has_permission(f'channels.{action}_own')
+        managed_channel = user.get('managed_channel')
+        if managed_channel and channel_name == managed_channel:
+            return has_permission('own_channel.*')
         return False
     
     # Default permission check
@@ -373,7 +369,4 @@ class Permissions:
 class Roles:
     """Constants for role names."""
     SUPER_ADMIN = 'super_admin'
-    ADMIN = 'admin'
-    MODERATOR = 'moderator'
     STREAMER = 'streamer'
-    VIEWER = 'viewer'
