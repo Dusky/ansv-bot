@@ -228,49 +228,52 @@
 
 ---
 
-### Phase 6: Stripe Integration (3-4 days)
+### Phase 6: Stripe Integration ✅ COMPLETED
 **Goal**: Enable premium subscriptions
 
-- [ ] Set up Stripe account:
+- [x] Set up Stripe account:
   - Create product: "ANSV Premium"
   - Create price: $2/month recurring
   - Get API keys (test & live)
 
-- [ ] Add Stripe SDK:
-  - `pip install stripe`
-  - Add to `requirements.txt`
+- [x] Add Stripe SDK:
+  - Added `stripe>=7.0.0` to requirements.txt
 
-- [ ] Create subscription endpoints:
+- [x] Create subscription endpoints:
   - `POST /checkout/create` - Create checkout session
   - `GET /checkout/success` - Handle success redirect
   - `GET /checkout/cancel` - Handle cancel redirect
   - `POST /webhook/stripe` - Webhook handler
 
-- [ ] Implement webhook events:
+- [x] Implement webhook events:
   - `checkout.session.completed` → Activate subscription
   - `invoice.payment_succeeded` → Renew subscription
   - `invoice.payment_failed` → Mark as past_due
   - `customer.subscription.deleted` → Cancel subscription
+  - `customer.subscription.updated` → Handle cancellation scheduling
 
-- [ ] Create billing page:
-  - `templates/billing.html` or `templates/premium.html`
-  - Show current plan
-  - Upgrade button (free users)
-  - Manage subscription (premium users)
-  - Payment method management
-  - Billing history
+- [x] Create billing page:
+  - `templates/beta/premium.html` with pricing and features
+  - Shows current plan status
+  - Upgrade button with Stripe Checkout (free users)
+  - Manage subscription button with Customer Portal (premium users)
+  - Feature comparison table
 
-- [ ] Add Stripe keys to environment:
-  - `STRIPE_SECRET_KEY`
-  - `STRIPE_PUBLISHABLE_KEY`
-  - `STRIPE_WEBHOOK_SECRET`
+- [x] Add Stripe keys to environment:
+  - Added to `.env.example`:
+    - `STRIPE_SECRET_KEY`
+    - `STRIPE_PUBLISHABLE_KEY`
+    - `STRIPE_WEBHOOK_SECRET`
+    - `STRIPE_PREMIUM_PRICE_ID`
 
-**Files to create/modify**:
-- `webapp.py` (Stripe routes)
-- `utils/stripe_service.py` (new, Stripe logic)
-- `templates/billing.html` (new)
-- `.env`
-- `requirements.txt`
+**Files created/modified**:
+- `webapp.py` (Stripe routes: /premium, /checkout/*, /billing/portal, /webhook/stripe)
+- `utils/stripe_service.py` (StripeService class with all helper methods)
+- `templates/beta/premium.html` (premium subscription page)
+- `templates/checkout_success.html` (success page)
+- `templates/checkout_cancel.html` (cancel page)
+- `.env.example` (Stripe configuration)
+- `requirements.txt` (stripe package)
 
 ---
 
@@ -448,19 +451,19 @@ USERS_DATABASE_URL=sqlite:///users.db
 
 ## 🚦 Current Status
 
-**Phase**: Phases 1, 2, 3 & 7 Complete ✅ - OAuth, Foundation & Feature Gating Ready
-**Next Action**: Choose next phase (Landing Page, Onboarding, or Stripe Integration)
+**Phase**: Phases 1, 2, 3, 6 & 7 Complete ✅ - Payment System Fully Operational
+**Next Action**: Choose next phase (Landing Page, Onboarding, Simplified Dashboard, or Testing)
 
 ### Completed Phases:
 - Phase 1: Database Schema Updates ✅
 - Phase 2: Role Simplification ✅
 - Phase 3: Twitch OAuth Integration ✅
+- Phase 6: Stripe Integration ✅
 - Phase 7: Premium Feature Gating ✅
 
 ### Remaining Phases:
 - Phase 4: Landing Page & Public UI
 - Phase 5: Onboarding Flow
-- Phase 6: Stripe Integration (Required for payments)
 - Phase 8: Simplified Streamer Dashboard
 - Phase 9: Testing & Polish
 
