@@ -2792,11 +2792,23 @@ def beta_channel_page(channel_name):
 @app.route('/api/channel/<channel_name>/tts', methods=['POST'])
 @require_channel_access('channel_name', 'edit')
 def api_channel_tts(channel_name):
-    """Generate TTS for a specific channel."""
+    """Generate TTS for a specific channel (Premium feature)."""
+    # Check if user has TTS access (Premium subscription)
+    user = get_current_user()
+    if user and not user_db.has_tts_access(user['id']):
+        app.logger.warning(f"User {user['username']} attempted TTS without Premium subscription")
+        return jsonify({
+            'success': False,
+            'error': 'TTS is a Premium feature',
+            'message': 'Upgrade to Premium ($2/month) to unlock Text-to-Speech',
+            'upgrade_url': '/premium',
+            'requires_premium': True
+        }), 403
+
     try:
         data = request.get_json() or {}
         text = data.get('text', '').strip()
-        
+
         if not text:
             return jsonify({"error": "Text is required"}), 400
         
