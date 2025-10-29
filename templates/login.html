@@ -158,7 +158,59 @@
             cursor: not-allowed;
             transform: none;
         }
-        
+
+        .btn-twitch-oauth {
+            background: #9146FF;
+            border: none;
+            border-radius: var(--beta-border-radius-sm);
+            padding: var(--beta-spacing-lg) var(--beta-spacing-2xl);
+            font-size: var(--beta-font-size-base);
+            font-weight: 600;
+            color: white;
+            width: 100%;
+            transition: var(--beta-transition);
+            height: 56px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-decoration: none;
+            margin-bottom: var(--beta-spacing-2xl);
+        }
+
+        .btn-twitch-oauth:hover {
+            background: #772CE8;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(145, 70, 255, 0.3);
+            color: white;
+            text-decoration: none;
+        }
+
+        .oauth-divider {
+            position: relative;
+            text-align: center;
+            margin: var(--beta-spacing-3xl) 0;
+        }
+
+        .oauth-divider::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 50%;
+            width: 100%;
+            height: 1px;
+            background: var(--beta-border-color);
+        }
+
+        .oauth-divider span {
+            position: relative;
+            background: var(--beta-card-bg);
+            padding: 0 var(--beta-spacing-lg);
+            color: var(--beta-text-muted);
+            font-size: var(--beta-font-size-sm);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
         .alert {
             border: none;
             border-radius: var(--beta-border-radius-sm);
@@ -267,14 +319,27 @@
             <h1 class="brand-title">ANSV Bot</h1>
             <p class="brand-subtitle">User Login</p>
         </div>
-        
+
         <!-- Error Alert -->
         {% if error %}
         <div class="alert alert-danger" role="alert">
             <i class="fas fa-exclamation-triangle me-2"></i>{{ error }}
         </div>
         {% endif %}
-        
+
+        <!-- Twitch OAuth Button -->
+        <a href="{{ url_for('auth_twitch') }}" class="btn-twitch-oauth">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" style="margin-right: 10px;">
+                <path d="M11.571 4.714h1.715v5.143H11.57zm4.715 0H18v5.143h-1.714zM6 0L1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0zm14.571 11.143l-3.428 3.428h-3.429l-3 3v-3H6.857V1.714h13.714Z"/>
+            </svg>
+            Sign in with Twitch
+        </a>
+
+        <!-- Divider -->
+        <div class="oauth-divider">
+            <span>or continue with email</span>
+        </div>
+
         <!-- Login Form -->
         <form method="POST" class="login-form" id="loginForm">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
