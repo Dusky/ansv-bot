@@ -74,6 +74,14 @@ class UserDatabase:
                             password_changed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                            twitch_user_id VARCHAR(50) UNIQUE,
+                            twitch_username VARCHAR(50),
+                            avatar_url TEXT,
+                            managed_channel VARCHAR(100),
+                            subscription_tier VARCHAR(20) DEFAULT 'free',
+                            subscription_status VARCHAR(20) DEFAULT 'inactive',
+                            stripe_customer_id VARCHAR(100),
+                            onboarding_completed BOOLEAN DEFAULT 0,
                             FOREIGN KEY (role_id) REFERENCES roles(id)
                         )
                     """)
@@ -97,6 +105,14 @@ class UserDatabase:
                         password_changed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        twitch_user_id VARCHAR(50) UNIQUE,
+                        twitch_username VARCHAR(50),
+                        avatar_url TEXT,
+                        managed_channel VARCHAR(100),
+                        subscription_tier VARCHAR(20) DEFAULT 'free',
+                        subscription_status VARCHAR(20) DEFAULT 'inactive',
+                        stripe_customer_id VARCHAR(100),
+                        onboarding_completed BOOLEAN DEFAULT 0,
                         FOREIGN KEY (role_id) REFERENCES roles(id)
                     )
                 """)
@@ -146,8 +162,61 @@ class UserDatabase:
                     FOREIGN KEY (assigned_by) REFERENCES users(id)
                 )
             """)
-            
-            
+
+            # Create subscriptions table
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS subscriptions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    stripe_subscription_id VARCHAR(100) UNIQUE,
+                    status VARCHAR(20) NOT NULL DEFAULT 'active',
+                    current_period_start DATETIME,
+                    current_period_end DATETIME,
+                    cancel_at_period_end BOOLEAN DEFAULT 0,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(id)
+                )
+            """)
+
+            # Create payments table
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS payments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    amount DECIMAL(10, 2) NOT NULL,
+                    currency VARCHAR(3) DEFAULT 'USD',
+                    status VARCHAR(20) NOT NULL,
+                    stripe_payment_intent_id VARCHAR(100),
+                    description TEXT,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(id)
+                )
+            """)
+
+            # Migrate existing users table to add new columns
+            cursor = conn.execute("PRAGMA table_info(users)")
+            existing_columns = [col[1] for col in cursor.fetchall()]
+
+            migration_columns = [
+                ('twitch_user_id', 'VARCHAR(50)'),
+                ('twitch_username', 'VARCHAR(50)'),
+                ('avatar_url', 'TEXT'),
+                ('managed_channel', 'VARCHAR(100)'),
+                ('subscription_tier', "VARCHAR(20) DEFAULT 'free'"),
+                ('subscription_status', "VARCHAR(20) DEFAULT 'inactive'"),
+                ('stripe_customer_id', 'VARCHAR(100)'),
+                ('onboarding_completed', 'BOOLEAN DEFAULT 0')
+            ]
+
+            for column_name, column_type in migration_columns:
+                if column_name not in existing_columns:
+                    try:
+                        conn.execute(f"ALTER TABLE users ADD COLUMN {column_name} {column_type}")
+                        logger.info(f"Added column '{column_name}' to users table")
+                    except Exception as e:
+                        logger.warning(f"Could not add column '{column_name}': {e}")
+
             conn.commit()
             logger.info("User database tables initialized successfully")
             
