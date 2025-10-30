@@ -312,7 +312,7 @@ run_migrations() {
 
     # Check if migration script exists
     if [[ -f "utils/migrate_to_users.py" ]]; then
-        python utils/migrate_to_users.py --db messages.db || {
+        python utils/migrate_to_users.py --db users.db || {
             echo -e "${YELLOW}Migration warning (may be normal if already migrated)${NC}"
         }
     fi
