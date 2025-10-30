@@ -39,6 +39,24 @@ TTS_MODELS_DIR="models/tts" # This is where Bark models will be cached by Huggin
 TTS_OUTPUT_DIR="static/outputs"
 TTS_VOICES_DIR="voices" # This is for custom .npz voice files
 
+# Detect available Python version
+detect_python() {
+    # Try Python versions in order of preference
+    for version in python3.11 python3.10 python3.9 python3.8 python3; do
+        if command -v "$version" &> /dev/null; then
+            PYTHON_CMD="$version"
+            PYTHON_VERSION=$("$version" --version 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "unknown")
+            return 0
+        fi
+    done
+    echo -e "${RED}Error: Python 3.8+ not found!${NC}"
+    echo -e "${YELLOW}Please install Python 3.8 or higher${NC}"
+    exit 1
+}
+
+# Call this early to set PYTHON_CMD
+detect_python
+
 # ASCII Art Banner with Animation Frames
 print_banner() {
     clear
@@ -59,70 +77,59 @@ print_banner() {
     echo -e "${NC}"
 }
 
-# Fun Loading Spinner
+# Loading Spinner
 show_loading() {
-    echo -n -e "${YELLOW}Preparing the party "
+    echo -n -e "${YELLOW}Loading "
     while true; do
-        for c in "🌑" "🌒" "🌓" "🌔" "🌕" "🌖" "🌗" "🌘"; do
-            echo -ne "\b$c"
-            sleep 0.1
+        for c in "." ".." "..."; do
+            echo -ne "\r${YELLOW}Loading$c   "
+            sleep 0.3
         done
     done
 }
 
-# First-Run Dance Party 🎉
-first_run_dance() {
-    echo -e "\n${CYAN}First run detected! Let's dance!${NC}"
-    dances=("💃" "🕺" "🎊" "🎈")
-    for i in {1..10}; do
-        echo -n -e "${dances[$RANDOM % ${#dances[@]}]} "
-        sleep 0.2
-    done
-    echo -e "\n"
-}
-
-# Configuration Wizard with Personality and Input Validation
+# Configuration Wizard
 first_run_wizard() {
-    echo -e "${BRAIN} ${YELLOW}Hi! I'm ANSV-Buddy! Let's get you set up!${NC}"
-    echo -e "${CYAN}I'll help you create a settings.conf file with your bot configuration.${NC}\n"
+    echo -e "${CYAN}First-time setup wizard${NC}"
+    echo -e "Creating settings.conf file with your bot configuration...\n"
     
     # Get and validate bot name
     while true; do
-        read -p "$(echo -e "${ROBOT} What's your bot's name? ➤ ")" bot_name
+        read -p "Bot name: " bot_name
         bot_name="$(sanitize_input "$bot_name" 2>/dev/null || echo "$bot_name")"
         if validate_bot_name "$bot_name" 2>/dev/null || [[ ${#bot_name} -gt 0 && ${#bot_name} -le 50 ]]; then
             break
         fi
         echo -e "${RED}Invalid bot name. Use 1-50 alphanumeric characters, underscores, or hyphens.${NC}"
     done
-    
+
     # Get and validate owner username
     while true; do
-        read -p "$(echo -e "${ALIEN} Your Twitch username? ➤ ")" owner
+        read -p "Your Twitch username: " owner
         owner="$(sanitize_input "$owner" 2>/dev/null || echo "$owner")"
         if validate_username "$owner" 2>/dev/null || [[ ${#owner} -ge 4 && ${#owner} -le 25 ]]; then
             break
         fi
         echo -e "${RED}Invalid username. Use 4-25 alphanumeric characters or underscores.${NC}"
     done
-    
+
     # Get and validate channels
     while true; do
-        read -p "$(echo -e "${GLOBE} Channels to join (comma-separated)? ➤ ")" channels
+        read -p "Channels to join (comma-separated): " channels
         channels="$(sanitize_input "$channels" 2>/dev/null || echo "$channels")"
         if validate_channels "$channels" 2>/dev/null || [[ -n "$channels" ]]; then
             break
         fi
         echo -e "${RED}Invalid channels. Use comma-separated valid usernames.${NC}"
     done
-    
+
     # Get command prefix (optional)
-    read -p "$(echo -e "${TOOLS} Command prefix [default: !]: ")" command_prefix
+    read -p "Command prefix [default: !]: " command_prefix
     command_prefix="${command_prefix:-!}"
-    
+
     # Get admin password
     while true; do
-        read -s -p "$(echo -e "${FIRE} Admin password for web interface [default: admin123]: ")" admin_password
+        read -s -p "Admin password for web interface [default: admin123]: " admin_password
         echo  # New line after hidden input
         admin_password="${admin_password:-admin123}"
         if [[ ${#admin_password} -ge 4 ]]; then
@@ -130,23 +137,23 @@ first_run_wizard() {
         fi
         echo -e "${RED}Password must be at least 4 characters long.${NC}"
     done
-    
+
     # Ask about TTS
-    read -p "$(echo -e "${MUSIC} Enable TTS functionality? (y/n) [default: n]: ")" enable_tts
+    read -p "Enable TTS functionality? (y/n) [default: n]: " enable_tts
     enable_tts="${enable_tts:-n}"
     tts_enabled="false"
     voice_preset="v2/en_speaker_6"
     if [[ "$enable_tts" =~ ^[Yy] ]]; then
         tts_enabled="true"
-        read -p "$(echo -e "${MUSIC} Voice preset [default: v2/en_speaker_6]: ")" voice_preset_input
+        read -p "Voice preset [default: v2/en_speaker_6]: " voice_preset_input
         voice_preset="${voice_preset_input:-v2/en_speaker_6}"
     fi
     
     # Generate a random secret key for web interface
     secret_key="$(openssl rand -hex 32 2>/dev/null || echo "change-this-secret-key-$(date +%s)")"
     
-    echo -e "\n${CYAN}📝 Creating your configuration file...${NC}"
-    
+    echo -e "\n${CYAN}Creating configuration file...${NC}"
+
     # Create comprehensive config file
     if cat > "$CONFIG_FILE" << EOF
 [auth]
@@ -182,17 +189,15 @@ voice_preset = $voice_preset
 EOF
     then
         echo -e "\n${GREEN}✅ Configuration file created successfully!${NC}"
-        echo -e "${PARTY} ${GREEN}All set! Let's get this party started!${NC}"
-        
+
         # Show next steps
-        echo -e "\n${YELLOW}🔑 IMPORTANT NEXT STEPS:${NC}"
-        echo -e "${CYAN}1. Get your Twitch API credentials from: ${BLUE}https://dev.twitch.tv/console${NC}"
-        echo -e "${CYAN}2. Edit settings.conf and replace:${NC}"
-        echo -e "   ${YELLOW}oauth:your_token_here${NC} with your OAuth token"
-        echo -e "   ${YELLOW}your_client_id_here${NC} with your Client ID"
-        echo -e "${CYAN}3. Run the bot again after updating credentials!${NC}\n"
-        
-        first_run_dance
+        echo -e "\n${YELLOW}IMPORTANT NEXT STEPS:${NC}"
+        echo -e "1. Get your Twitch API credentials from: ${BLUE}https://dev.twitch.tv/console${NC}"
+        echo -e "2. Edit settings.conf and replace:"
+        echo -e "   - ${YELLOW}oauth:your_token_here${NC} with your OAuth token"
+        echo -e "   - ${YELLOW}your_client_id_here${NC} with your Client ID"
+        echo -e "3. Run the bot again after updating credentials\n"
+
         return 0
     else
         echo -e "${RED}Failed to create configuration file!${NC}"
@@ -208,10 +213,8 @@ check_security() {
     fi
     
     if grep -q "oauth:your" "$CONFIG_FILE" 2>/dev/null; then
-        echo -e "${RED}🚨 RED ALERT! 🚨${NC}"
-        echo -e "${FIRE} You're using placeholder credentials! ${FIRE}${NC}"
-        echo -e "${YELLOW}Visit ${CYAN}https://dev.twitch.tv/console${YELLOW}"
-        echo -e "to get your real credentials!${NC}"
+        echo -e "${RED}Error: Using placeholder credentials!${NC}"
+        echo -e "${YELLOW}Get your real credentials from: ${CYAN}https://dev.twitch.tv/console${NC}"
         exit 1
     fi
     
@@ -235,7 +238,7 @@ show_status() {
     echo -e "${MUSIC} Voice Presets:  $(find "$TTS_VOICES_DIR" -name "*.npz" 2>/dev/null | wc -l)"
     echo -e "${BRAIN} Models Loaded:  $(ls cache/*.json 2>/dev/null | wc -l)"
     echo -e "${ROBOT} Messages in DB: $(sqlite3 messages.db "SELECT COUNT(*) FROM messages" 2>/dev/null || echo "N/A")"
-    echo -e "${TOOLS} Python Version: $(python3.11 --version 2>&1 | cut -d' ' -f2 2>/dev/null || echo "Not found")"
+    echo -e "${TOOLS} Python Version: $PYTHON_VERSION"
     echo -e "${ALIEN} Disk Usage:     $(du -sh . 2>/dev/null | cut -f1 || echo "N/A")"
     echo -e "${PARTY} Last Modified:  $(stat -f "%Sm" -t "%Y-%m-%d %H:%M" ansv.py 2>/dev/null || stat -c "%y" ansv.py 2>/dev/null | cut -d' ' -f1-2 || echo "N/A")"
     echo -e "${FIRE} Active Users:   $(who 2>/dev/null | wc -l | tr -d ' ' || echo "N/A")"
@@ -334,7 +337,7 @@ safe_kill_process() {
 
 # Enhanced start_bot function with array-based execution
 start_bot() {
-    echo -e "\n${GREEN}${ROCKET} Launch sequence initiated! ${ROCKET}${NC}"
+    echo -e "\n${GREEN}Starting ANSV Bot...${NC}"
     show_loading &
     local load_pid=$!
     
@@ -395,7 +398,7 @@ start_bot() {
     fi
     
     safe_kill_process "$load_pid"
-    echo -e "\n${GREEN}${FIRE} BLAST OFF! ${FIRE}${NC}"
+    echo -e "\n${GREEN}Starting bot process...${NC}"
     
     # Set up signal handling for clean shutdown
     trap 'echo "Caught signal, shutting down cleanly..."; safe_kill_process "$bot_pid" 2>/dev/null; exit 130' INT TERM
@@ -419,10 +422,10 @@ start_bot() {
 check_venv() {
     if [[ ! -d "$VENV_DIR" ]]; then
         echo -e "${RED}Virtual environment not found!${NC}"
-        echo -e "Run: ${YELLOW}python3.11 -m venv $VENV_DIR${NC}"
+        echo -e "Run: ${YELLOW}$PYTHON_CMD -m venv $VENV_DIR${NC}"
         exit 1
     fi
-    
+
     # Verify virtual environment is functional
     if [[ ! -f "$VENV_DIR/bin/activate" ]]; then
         echo -e "${RED}Virtual environment appears corrupted!${NC}"
@@ -462,9 +465,9 @@ run_with_timeout() {
     fi
 }
 
-# Enhanced Command Handlers
+# Command Handlers
 start_web() {
-    echo -e "${GREEN}🌐 Starting Web Interface...${NC}"
+    echo -e "${GREEN}Starting web interface...${NC}"
     
     if [[ ! -f "$VENV_DIR/bin/activate" ]]; then
         echo -e "${RED}Virtual environment not found!${NC}"
@@ -486,7 +489,7 @@ start_web() {
 }
 
 dev_server() {
-    echo -e "${GREEN}🔧 Starting Development Server...${NC}"
+    echo -e "${GREEN}Starting development server...${NC}"
     export FLASK_DEBUG=1
     export FLASK_ENV=development
     
@@ -629,7 +632,7 @@ show_help() {
 }
 
 check_dependencies() {
-    echo -e "${CYAN}🔍 Checking system dependencies...${NC}"
+    echo -e "${CYAN}Checking system dependencies...${NC}"
     
     # Detect platform
     case "$(uname -s)" in
@@ -650,17 +653,19 @@ check_dependencies() {
         fi
     fi
 
-    # Verify Python 3.11 with timeout
-    if ! run_with_timeout "10s" python3.11 --version &> /dev/null; then
-        echo -e "${RED}Python 3.11 not found!${NC}"
-        echo -e "${YELLOW}Installing via package manager...${NC}"
-        
+    # Verify Python version with timeout
+    if ! run_with_timeout "10s" "$PYTHON_CMD" --version &> /dev/null; then
+        echo -e "${RED}Python 3.8+ not found!${NC}"
+        echo -e "${YELLOW}Installing Python 3.11 via package manager...${NC}"
+
         case "$PLATFORM" in
             "macos")
                 if ! run_with_timeout "${NETWORK_TIMEOUT}s" brew install python@3.11; then
                     echo -e "${RED}Failed to install Python 3.11${NC}"
                     exit 1
                 fi
+                # Re-detect Python after installation
+                detect_python
                 ;;
             "linux")
                 if command -v apt-get >/dev/null 2>&1; then
@@ -669,8 +674,10 @@ check_dependencies() {
                         echo -e "${RED}Failed to install Python 3.11${NC}"
                         exit 1
                     fi
+                    # Re-detect Python after installation
+                    detect_python
                 else
-                    echo -e "${RED}Please install Python 3.11 manually${NC}"
+                    echo -e "${RED}Please install Python 3.8+ manually${NC}"
                     exit 1
                 fi
                 ;;
@@ -706,7 +713,7 @@ check_dependencies() {
 }
 
 install_requirements() {
-    echo -e "${CYAN}📦 Installing Python requirements...${NC}"
+    echo -e "${CYAN}Installing Python requirements...${NC}"
     
     # Configure HF home directory and disable warnings
     export HF_HOME="${PWD}/.hf_cache"
@@ -738,7 +745,7 @@ install_requirements() {
     fi
     
     if [[ "${TTS:-false}" = true ]]; then
-        echo -e "${MUSIC} Installing TTS dependencies...${NC}"
+        echo -e "${CYAN}Installing TTS dependencies...${NC}"
         
         if [[ ! -f "requirements-tts.txt" ]]; then
             echo -e "${RED}requirements-tts.txt not found!${NC}"
@@ -753,7 +760,7 @@ install_requirements() {
         # First, install PyTorch with correct version based on CPU_ONLY flag
         # This must be done BEFORE installing requirements-tts.txt to avoid CUDA installation
         if [[ "${CPU_ONLY:-false}" = true ]]; then
-            echo -e "${YELLOW}🖥️ Installing PyTorch CPU-only version (forced)...${NC}"
+            echo -e "${YELLOW}Installing PyTorch CPU-only version...${NC}"
             if ! run_with_timeout "${NETWORK_TIMEOUT}s" pip install torch==2.6.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cpu; then
                 echo -e "${RED}Failed to install PyTorch CPU version${NC}"
                 exit 1
@@ -796,7 +803,7 @@ install_requirements() {
         fi
         
         # Download required NLTK resources with error handling
-        echo -e "${CYAN}📦 Downloading NLTK resources for TTS...${NC}"
+        echo -e "${CYAN}Downloading NLTK resources for TTS...${NC}"
         if ! python -c "import nltk; nltk.download('punkt', quiet=True)"; then
             echo -e "${YELLOW}Warning: Failed to download NLTK resources${NC}"
         fi
@@ -814,18 +821,20 @@ install_requirements() {
 }
 
 clean_install() {
-    echo -e "${RED}♻️  Nuclear Option: Fresh Install${NC}"
-    
+    echo -e "${CYAN}♻️  Clean Install: Fresh Setup${NC}"
+
     # Remove existing virtual environment
     if [[ -d "$VENV_DIR" ]]; then
+        echo -e "${YELLOW}Removing existing virtual environment...${NC}"
         rm -rf "$VENV_DIR" || {
             echo -e "${RED}Failed to remove existing virtual environment${NC}"
             exit 1
         }
     fi
-    
+
     # Create new virtual environment
-    if ! python3.11 -m venv "$VENV_DIR"; then
+    echo -e "${CYAN}Creating virtual environment with $PYTHON_CMD...${NC}"
+    if ! "$PYTHON_CMD" -m venv "$VENV_DIR"; then
         echo -e "${RED}Failed to create virtual environment${NC}"
         exit 1
     fi
@@ -853,11 +862,11 @@ clean_install() {
 run_database_migrations() {
     # Check if migrations already run in this session
     if [[ "${MIGRATIONS_COMPLETED:-false}" = true ]]; then
-        echo -e "${GREEN}✅ Database migrations already completed in this session${NC}"
+        echo -e "${GREEN}✅ Database migrations already completed${NC}"
         return 0
     fi
-    
-    echo -e "${CYAN}🗄️ Running database migrations...${NC}"
+
+    echo -e "${CYAN}Running database migrations...${NC}"
     
     # Ensure we're in the virtual environment
     if [[ ! -f "$VENV_DIR/bin/activate" ]]; then
@@ -940,7 +949,7 @@ except Exception as e:
 }
 
 prepare_tts_directories() {
-    echo -e "${CYAN}📂 Setting up TTS directories...${NC}"
+    echo -e "${CYAN}Setting up TTS directories...${NC}"
     
     # Create main TTS directories with error checking
     for dir in "$TTS_MODELS_DIR" "$TTS_OUTPUT_DIR" "$TTS_VOICES_DIR"; do
@@ -975,7 +984,7 @@ prepare_tts_directories() {
 }
 
 check_tts_models() {
-    echo -e "${CYAN}🔍 Checking TTS models...${NC}"
+    echo -e "${CYAN}Checking TTS models...${NC}"
     
     # Validate HF_HOME is set
     if [[ -z "${HF_HOME:-}" ]]; then
@@ -1010,7 +1019,7 @@ download_voice_preset() {
 
 # Voice presets validation (built-in presets don't need downloading)
 download_voice_presets() {
-    echo -e "${CYAN}🎤 Validating standard voice presets...${NC}"
+    echo -e "${CYAN}Validating standard voice presets...${NC}"
     
     local presets=("v2/en_speaker_0" "v2/en_speaker_1" "v2/en_speaker_5" "v2/en_speaker_6" "v2/en_speaker_9")
     
