@@ -1371,25 +1371,36 @@ def api_user_channels(user_id):
         return jsonify({'success': False, 'error': 'Error getting user channels'}), 500
 
 @app.route('/')
+def index():
+    """Landing page for public visitors, redirect to dashboard for authenticated users."""
+    if is_authenticated():
+        # Authenticated users go to dashboard
+        return redirect(url_for('beta_dashboard'))
+    else:
+        # Public visitors see landing page
+        return render_template("landing.html")
+
+@app.route('/legacy')
 @require_auth
-def main():
+def legacy_main():
+    """Legacy main page - preserved for backwards compatibility."""
     # Redirect streamers to their channel instead of main page
     streamer_redirect = redirect_streamers_to_channel()
     if streamer_redirect:
         return streamer_redirect
-        
+
     # Theme is now injected by context_processor, but can be accessed here if needed
-    # theme = request.cookies.get("theme", "darkly") 
+    # theme = request.cookies.get("theme", "darkly")
     tts_files_data, last_id_val = get_last_10_tts_files_with_last_id(db_file)
-    
+
     bot_running_status = is_bot_actually_running()
-    
+
     bot_status_info = {
         'running': bot_running_status,
         'uptime': 'N/A',
         'channels': []
     }
-    
+
     if bot_running_status and os.path.exists('bot_heartbeat.json'):
         try:
             with open('bot_heartbeat.json', 'r') as f:
@@ -1402,8 +1413,8 @@ def main():
                 bot_status_info['channels'] = heartbeat.get('channels', [])
         except (FileNotFoundError, json.JSONDecodeError) as e:
             app.logger.warning(f"Could not read or parse bot_heartbeat.json: {e}")
-    
-    return render_template("index.html", tts_files=tts_files_data, 
+
+    return render_template("index.html", tts_files=tts_files_data,
                            last_id=last_id_val, bot_status=bot_status_info) # No need to pass theme explicitly
 
 @app.route("/generate-message/<channel_name>") 
