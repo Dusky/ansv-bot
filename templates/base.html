@@ -86,7 +86,7 @@
   <!-- Navigation Bar -->
   <nav class="navbar navbar-expand-lg navbar-dark bg-primary shadow sticky-top">
     <div class="container">
-      <a class="navbar-brand d-flex align-items-center" href="{{ url_for('main') }}">
+      <a class="navbar-brand d-flex align-items-center" href="{{ url_for('index') }}">
         <i class="fas fa-robot me-2"></i>
         <span>ANSV Bot</span>
       </a>
@@ -97,7 +97,7 @@
       <div class="collapse navbar-collapse" id="navbarNav">
         <ul class="navbar-nav me-auto mb-2 mb-lg-0">
           <li class="nav-item">
-            <a class="nav-link {{ 'active' if request.endpoint == 'main' else '' }}" href="{{ url_for('main') }}">
+            <a class="nav-link {{ 'active' if request.endpoint == 'index' else '' }}" href="{{ url_for('index') }}">
               <i class="fas fa-tachometer-alt me-1"></i> Dashboard
             </a>
           </li>
