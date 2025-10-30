@@ -200,31 +200,37 @@
 
 ---
 
-### Phase 5: Onboarding Flow (2-3 days)
+### Phase 5: Onboarding Flow ✅ COMPLETED
 **Goal**: Guide new users through setup
 
-- [ ] Create onboarding wizard templates:
-  - `templates/onboarding/welcome.html`
-  - `templates/onboarding/confirm_channel.html`
-  - `templates/onboarding/settings.html`
-  - `templates/onboarding/premium_upsell.html`
+- [x] Create onboarding wizard templates:
+  - `templates/onboarding/welcome.html` - Welcome screen with branding
+  - `templates/onboarding/channel.html` - Channel confirmation
+  - `templates/onboarding/settings.html` - Bot settings configuration
+  - `templates/onboarding/premium.html` - Premium upsell
 
-- [ ] Add onboarding routes:
-  - `GET /onboarding` - Check completion status
-  - `POST /onboarding/channel` - Save channel
-  - `POST /onboarding/settings` - Save initial settings
-  - `POST /onboarding/complete` - Mark complete
+- [x] Add onboarding routes:
+  - `GET /onboarding` - Welcome page
+  - `GET /onboarding/channel` - Channel confirmation page
+  - `POST /onboarding/channel` - Confirm channel
+  - `GET /onboarding/settings` - Settings page
+  - `POST /onboarding/settings` - Save settings and create channel config
+  - `GET /onboarding/premium` - Premium upsell page
+  - `POST /onboarding/complete` - Mark onboarding complete
 
-- [ ] Track completion:
-  - `onboarding_completed` flag in users table
-  - Redirect to onboarding if not completed
+- [x] Track completion:
+  - Uses `onboarding_completed` flag in users table
+  - OAuth callback redirects to onboarding for new users
+  - Dashboard redirects incomplete users to onboarding
 
-- [ ] Auto-create channel config on completion
+- [x] Auto-create channel config on settings step with user preferences
 
-**Files to create/modify**:
-- `templates/onboarding/` (new directory)
-- `webapp.py` (onboarding routes)
-- `utils/user_db.py` (onboarding helpers)
+**Files created/modified**:
+- `templates/onboarding/welcome.html` (new - step 1)
+- `templates/onboarding/channel.html` (new - step 2)
+- `templates/onboarding/settings.html` (new - step 3)
+- `templates/onboarding/premium.html` (new - step 4)
+- `webapp.py` (onboarding routes, OAuth redirect, dashboard check)
 
 ---
 
@@ -449,21 +455,21 @@ USERS_DATABASE_URL=sqlite:///users.db
 
 ## 🚦 Current Status
 
-**Phase**: 7 of 9 Phases Complete ✅ - Platform + Marketing Ready
-**Next Action**: Onboarding Flow or Testing & Polish
+**Phase**: 8 of 9 Phases Complete ✅ - Full Platform Ready
+**Next Action**: Phase 9 (Testing & Polish) - Final Step!
 
 ### Completed Phases:
 - Phase 1: Database Schema Updates ✅
 - Phase 2: Role Simplification ✅
 - Phase 3: Twitch OAuth Integration ✅
 - Phase 4: Landing Page & Public UI ✅
+- Phase 5: Onboarding Flow ✅
 - Phase 6: Stripe Integration ✅
 - Phase 7: Premium Feature Gating ✅
 - Phase 8: Simplified Streamer Dashboard ✅
 
-### Remaining Phases:
-- Phase 5: Onboarding Flow (welcome wizard for new users)
-- Phase 9: Testing & Polish (recommended before launch)
+### Remaining:
+- Phase 9: Testing & Polish (recommended before production launch)
 
 ---
 
