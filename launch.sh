@@ -1,47 +1,27 @@
 #!/bin/bash
-set -euo pipefail  # Exit on error, undefined vars, pipe failures
+set -euo pipefail
 
-# Source validation functions
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${SCRIPT_DIR}/scripts/validate_input.sh" 2>/dev/null || {
-    echo "Warning: Input validation functions not found. Some security features disabled."
-}
+# ANSV Bot - Service Management Script
+# For production deployment and development
 
-# Timeout settings
-NETWORK_TIMEOUT=30
-DEPS_CHECK_INTERVAL=7
-
-# ANSI Color Codes
+# Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
-MAGENTA='\033[0;35m'
 CYAN='\033[0;36m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
-# Emoji Constants
-ROCKET="🚀"
-ROBOT="🤖"
-GLOBE="🌐"
-TOOLS="🛠️"
-PARTY="🎉"
-ALIEN="👽"
-FIRE="🔥"
-BRAIN="🧠"
-MUSIC="🎵"
-
-# Environment Setup
+# Configuration
 VENV_DIR=".venv"
 CONFIG_FILE="settings.conf"
 EXAMPLE_CONFIG="settings.example.conf"
-TTS_MODELS_DIR="models/tts" # This is where Bark models will be cached by HuggingFace
-TTS_OUTPUT_DIR="static/outputs"
-TTS_VOICES_DIR="voices" # This is for custom .npz voice files
+PID_FILE=".ansv.pid"
+LOG_DIR="logs"
+BACKUP_DIR="backups"
 
-# Detect available Python version
+# Detect Python version
 detect_python() {
-    # Try Python versions in order of preference
     for version in python3.11 python3.10 python3.9 python3.8 python3; do
         if command -v "$version" &> /dev/null; then
             PYTHON_CMD="$version"
@@ -49,1027 +29,567 @@ detect_python() {
             return 0
         fi
     done
-    echo -e "${RED}Error: Python 3.8+ not found!${NC}"
-    echo -e "${YELLOW}Please install Python 3.8 or higher${NC}"
+    echo -e "${RED}Error: Python 3.8+ required${NC}"
+    echo -e "${YELLOW}Install Python 3.8 or higher${NC}"
     exit 1
 }
 
-# Call this early to set PYTHON_CMD
 detect_python
 
-# ASCII Art Banner with Animation Frames
+# Banner
 print_banner() {
-    clear
-    frames=(
-        "    █████╗ ███╗   ██╗███████╗██╗   ██╗    "
-        "   ██╔══██╗████╗  ██║██╔════╝██║   ██║    "
-        "   ███████║██╔██╗ ██║███████╗██║   ██║    "
-        "   ██╔══██║██║╚██╗██║╚════██║██║   ██║    "
-        "   ██║  ██║██║ ╚████║███████║╚██████╔╝    "
-        "   ╚═╝  ╚═╝╚═╝  ╚═══╝╚══════╝ ╚═════╝     "
-    )
-    
-    echo -e "${MAGENTA}"
-    for frame in "${frames[@]}"; do
-        echo "$frame"
-        sleep 0.1
-    done
+    echo -e "${CYAN}"
+    echo "   █████╗ ███╗   ██╗███████╗██╗   ██╗"
+    echo "  ██╔══██╗████╗  ██║██╔════╝██║   ██║"
+    echo "  ███████║██╔██╗ ██║███████╗██║   ██║"
+    echo "  ██╔══██║██║╚██╗██║╚════██║██║   ██║"
+    echo "  ██║  ██║██║ ╚████║███████║╚██████╔╝"
+    echo "  ╚═╝  ╚═╝╚═╝  ╚═══╝╚══════╝ ╚═════╝ "
     echo -e "${NC}"
+    echo -e "${BLUE}Service Management v2.0${NC}\n"
 }
 
-# Loading Spinner
-show_loading() {
-    echo -n -e "${YELLOW}Loading "
-    while true; do
-        for c in "." ".." "..."; do
-            echo -ne "\r${YELLOW}Loading$c   "
-            sleep 0.3
-        done
-    done
-}
-
-# Configuration Wizard
-first_run_wizard() {
-    echo -e "${CYAN}First-time setup wizard${NC}"
-    echo -e "Creating settings.conf file with your bot configuration...\n"
-    
-    # Get and validate bot name
-    while true; do
-        read -p "Bot name: " bot_name
-        bot_name="$(sanitize_input "$bot_name" 2>/dev/null || echo "$bot_name")"
-        if validate_bot_name "$bot_name" 2>/dev/null || [[ ${#bot_name} -gt 0 && ${#bot_name} -le 50 ]]; then
-            break
-        fi
-        echo -e "${RED}Invalid bot name. Use 1-50 alphanumeric characters, underscores, or hyphens.${NC}"
-    done
-
-    # Get and validate owner username
-    while true; do
-        read -p "Your Twitch username: " owner
-        owner="$(sanitize_input "$owner" 2>/dev/null || echo "$owner")"
-        if validate_username "$owner" 2>/dev/null || [[ ${#owner} -ge 4 && ${#owner} -le 25 ]]; then
-            break
-        fi
-        echo -e "${RED}Invalid username. Use 4-25 alphanumeric characters or underscores.${NC}"
-    done
-
-    # Get and validate channels
-    while true; do
-        read -p "Channels to join (comma-separated): " channels
-        channels="$(sanitize_input "$channels" 2>/dev/null || echo "$channels")"
-        if validate_channels "$channels" 2>/dev/null || [[ -n "$channels" ]]; then
-            break
-        fi
-        echo -e "${RED}Invalid channels. Use comma-separated valid usernames.${NC}"
-    done
-
-    # Get command prefix (optional)
-    read -p "Command prefix [default: !]: " command_prefix
-    command_prefix="${command_prefix:-!}"
-
-    # Get admin password
-    while true; do
-        read -s -p "Admin password for web interface [default: admin123]: " admin_password
-        echo  # New line after hidden input
-        admin_password="${admin_password:-admin123}"
-        if [[ ${#admin_password} -ge 4 ]]; then
-            break
-        fi
-        echo -e "${RED}Password must be at least 4 characters long.${NC}"
-    done
-
-    # Ask about TTS
-    read -p "Enable TTS functionality? (y/n) [default: n]: " enable_tts
-    enable_tts="${enable_tts:-n}"
-    tts_enabled="false"
-    voice_preset="v2/en_speaker_6"
-    if [[ "$enable_tts" =~ ^[Yy] ]]; then
-        tts_enabled="true"
-        read -p "Voice preset [default: v2/en_speaker_6]: " voice_preset_input
-        voice_preset="${voice_preset_input:-v2/en_speaker_6}"
-    fi
-    
-    # Generate a random secret key for web interface
-    secret_key="$(openssl rand -hex 32 2>/dev/null || echo "change-this-secret-key-$(date +%s)")"
-    
-    echo -e "\n${CYAN}Creating configuration file...${NC}"
-
-    # Create comprehensive config file
-    if cat > "$CONFIG_FILE" << EOF
-[auth]
-; Get these from https://dev.twitch.tv/console
-tmi_token = oauth:your_token_here
-client_id = your_client_id_here
-nickname = $bot_name
-owner = $owner
-; Admin password for web interface
-admin_password = $admin_password
-
-[settings]
-; Prefix for bot commands
-command_prefix = $command_prefix
-; Channels to auto-join (comma-separated)
-channels = $channels
-; Enable debug mode for verbose logging (true/false)
-debug_mode = false
-; Users to ignore (comma-separated)
-ignored_users = nightbot,moobot,streamelements,streamlabs
-
-[web]
-; Web interface configuration
-port = 5001
-host = 0.0.0.0
-secret_key = $secret_key
-verbose_logs = false
-
-[tts]
-; TTS settings
-enable_tts = $tts_enabled
-voice_preset = $voice_preset
-EOF
-    then
-        echo -e "\n${GREEN}✅ Configuration file created successfully!${NC}"
-
-        # Show next steps
-        echo -e "\n${YELLOW}IMPORTANT NEXT STEPS:${NC}"
-        echo -e "1. Get your Twitch API credentials from: ${BLUE}https://dev.twitch.tv/console${NC}"
-        echo -e "2. Edit settings.conf and replace:"
-        echo -e "   - ${YELLOW}oauth:your_token_here${NC} with your OAuth token"
-        echo -e "   - ${YELLOW}your_client_id_here${NC} with your Client ID"
-        echo -e "3. Run the bot again after updating credentials\n"
-
-        return 0
-    else
-        echo -e "${RED}Failed to create configuration file!${NC}"
-        return 1
-    fi
-}
-
-# Enhanced Security Check
-check_security() {
-    if [[ ! -f "$CONFIG_FILE" ]]; then
-        echo -e "${RED}Configuration file not found!${NC}"
-        return 1
-    fi
-    
-    if grep -q "oauth:your" "$CONFIG_FILE" 2>/dev/null; then
-        echo -e "${RED}Error: Using placeholder credentials!${NC}"
-        echo -e "${YELLOW}Get your real credentials from: ${CYAN}https://dev.twitch.tv/console${NC}"
-        exit 1
-    fi
-    
-    # Check file permissions
-    if [[ "$(stat -f "%A" "$CONFIG_FILE" 2>/dev/null || stat -c "%a" "$CONFIG_FILE" 2>/dev/null)" != "600" ]]; then
-        echo -e "${YELLOW}Warning: Configuration file has loose permissions. Fixing...${NC}"
-        chmod 600 "$CONFIG_FILE" || {
-            echo -e "${RED}Failed to secure configuration file permissions!${NC}"
-            exit 1
-        }
-    fi
-}
-
-# Enhanced Status Dashboard with User Interaction
-show_status() {
-    echo -e "\n${CYAN}=== System Status Dashboard ==="
-    echo -e "${ROCKET} Bot Running:    $(ps aux | grep [a]nsv.py | wc -l)"
-    echo -e "${GLOBE} Web Interface:  $(netstat -tuln | grep ':5001' | wc -l)"
-    echo -e "${MUSIC} TTS Enabled:    ${TTS:-false}"
-    echo -e "${MUSIC} Voice Models:   $(find "${HF_HOME:-$PWD/.hf_cache}/hub" -type d -name "snapshots" 2>/dev/null | wc -l)"
-    echo -e "${MUSIC} Voice Presets:  $(find "$TTS_VOICES_DIR" -name "*.npz" 2>/dev/null | wc -l)"
-    echo -e "${BRAIN} Models Loaded:  $(ls cache/*.json 2>/dev/null | wc -l)"
-    echo -e "${ROBOT} Messages in DB: $(sqlite3 messages.db "SELECT COUNT(*) FROM messages" 2>/dev/null || echo "N/A")"
-    echo -e "${TOOLS} Python Version: $PYTHON_VERSION"
-    echo -e "${ALIEN} Disk Usage:     $(du -sh . 2>/dev/null | cut -f1 || echo "N/A")"
-    echo -e "${PARTY} Last Modified:  $(stat -f "%Sm" -t "%Y-%m-%d %H:%M" ansv.py 2>/dev/null || stat -c "%y" ansv.py 2>/dev/null | cut -d' ' -f1-2 || echo "N/A")"
-    echo -e "${FIRE} Active Users:   $(who 2>/dev/null | wc -l | tr -d ' ' || echo "N/A")"
-    echo -e "==============================${NC}"
-    echo -e "\n${YELLOW}Press any key to return to menu...${NC}"
-    read -n 1 -s
-}
-
-# Enhanced Menu System with Emojis
-interactive_menu() {
-    while true; do
-        print_banner
-        echo -e "${CYAN}=== MAIN MENU ==="
-        echo -e "0) ${TOOLS} Clean Install & Setup"
-        echo -e "1) ${ROCKET} Launch Bot Only"
-        echo -e "2) ${GLOBE} Bot + Web Interface"
-        echo -e "3) ${MUSIC} Bot + Web + TTS"
-        echo -e "4) ${TOOLS} Web Interface Only"
-        echo -e "5) ${FIRE} Development Server"
-        echo -e "6) ${BRAIN} Rebuild Cache & Start"
-        echo -e "7) ${ALIEN} System Status"
-        echo -e "8) ${PARTY} Exit"
-        echo -n -e "\n${YELLOW}What's your pleasure? [0-8]: ${NC}"
-
-        read -r choice
-        case $choice in
-            0) 
-                echo -e "${YELLOW}Enable TTS for clean install? (y/n): ${NC}"
-                read -r tts_choice
-                if [ "$tts_choice" = "y" ]; then
-                    TTS=true
-                    echo -e "${YELLOW}Force CPU-only PyTorch? (y/n): ${NC}"
-                    read -r cpu_choice
-                    [ "$cpu_choice" = "y" ] && CPU_ONLY=true
-                fi
-                clean_install
-                break
-                ;;
-            1) start_bot; break ;;
-            2) WEB=true; start_bot; break ;;
-            3) 
-                WEB=true 
-                TTS=true
-                echo -e "${YELLOW}Force CPU-only PyTorch? (y/n): ${NC}"
-                read -r cpu_choice
-                [ "$cpu_choice" = "y" ] && CPU_ONLY=true
-                check_dependencies
-                install_requirements
-                start_bot
-                break
-                ;;
-            4) start_web; break ;;
-            5) dev_server; break ;;
-            6) REBUILD=true; start_bot; break ;;
-            7) show_status;;
-            8) echo -e "${PARTY} ${RED}Exiting...${NC}"; exit 0 ;;
-            *) echo -e "${RED}Invalid choice! Try again! ${FIRE}"; sleep 1 ;;
-        esac
-    done
-}
-
-# Enhanced dependency check with proper error handling
-need_dependencies_check() {
-    local deps_marker=".deps_installed"
-    
-    # If marker doesn't exist, need to check deps
-    if [[ ! -f "$deps_marker" ]]; then
-        return 0  # true, need to check deps
-    fi
-    
-    # Check if marker is older than configured interval
-    if command -v find >/dev/null 2>&1; then
-        local old_files
-        old_files=$(find "$deps_marker" -mtime +"$DEPS_CHECK_INTERVAL" -print 2>/dev/null | wc -l)
-        if [[ "$old_files" -gt 0 ]]; then
-            return 0  # true, need to check deps
-        fi
-    fi
-    
-    return 1  # false, no need to check deps
-}
-
-# Safe process termination
-safe_kill_process() {
-    local pid="$1"
-    if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
-        kill "$pid" 2>/dev/null || true
-        # Wait briefly for process to terminate
-        sleep 0.5
-        # Force kill if still running
-        if kill -0 "$pid" 2>/dev/null; then
-            kill -KILL "$pid" 2>/dev/null || true
-        fi
-    fi
-}
-
-# Enhanced start_bot function with array-based execution
-start_bot() {
-    echo -e "\n${GREEN}Starting ANSV Bot...${NC}"
-    show_loading &
-    local load_pid=$!
-    
-    # Only check deps if not coming from clean install and deps need checking
-    if [[ -z "${CLEAN_INSTALL_DONE:-}" ]] && need_dependencies_check; then
-        check_dependencies
-        install_requirements
-        # Create or update the deps marker file
-        touch .deps_installed || {
-            echo -e "${RED}Failed to create dependency marker${NC}"
-            safe_kill_process "$load_pid"
-            exit 1
-        }
-    else
-        echo -e "${GREEN}Using existing dependencies${NC}"
-    fi
-    
-    # Run database migrations if not coming from clean install
-    if [[ -z "${CLEAN_INSTALL_DONE:-}" ]]; then
-        safe_kill_process "$load_pid"
-        if ! run_database_migrations; then
-            echo -e "${RED}Database migration failed${NC}"
-            exit 1
-        fi
-        # Restart loading animation
-        show_loading &
-        load_pid=$!
-    fi
-    
-    # Validate virtual environment
-    if [[ ! -f "$VENV_DIR/bin/activate" ]]; then
-        echo -e "${RED}Virtual environment not found at $VENV_DIR${NC}"
-        safe_kill_process "$load_pid"
-        exit 1
-    fi
-    
-    # shellcheck disable=SC1091
-    source "$VENV_DIR/bin/activate" || {
-        echo -e "${RED}Failed to activate virtual environment${NC}"
-        safe_kill_process "$load_pid"
-        exit 1
-    }
-    
-    # Build command array instead of string concatenation
-    local cmd_array=("python" "ansv.py")
-    
-    [[ "${WEB:-false}" = true ]] && cmd_array+=("--web")
-    [[ "${TTS:-false}" = true ]] && cmd_array+=("--tts")
-    [[ "${REBUILD:-false}" = true ]] && cmd_array+=("--rebuild-cache")
-    [[ "${VERBOSE:-false}" = true ]] && export VERBOSE=1
-    if [[ -n "${VOICE_PRESET:-}" ]]; then
-        # Validate voice preset before using
-        if validate_voice_preset "$VOICE_PRESET" 2>/dev/null || [[ "$VOICE_PRESET" =~ ^v2/en_speaker_[0-9]$ ]]; then
-            cmd_array+=("--voice-preset" "$VOICE_PRESET")
-        else
-            echo -e "${YELLOW}Warning: Invalid voice preset '$VOICE_PRESET', ignoring${NC}"
-        fi
-    fi
-    
-    safe_kill_process "$load_pid"
-    echo -e "\n${GREEN}Starting bot process...${NC}"
-    
-    # Set up signal handling for clean shutdown
-    trap 'echo "Caught signal, shutting down cleanly..."; safe_kill_process "$bot_pid" 2>/dev/null; exit 130' INT TERM
-    
-    # Execute command using array (safe from injection)
-    "${cmd_array[@]}" &
-    local bot_pid=$!
-    
-    # Wait for process and capture exit code
-    wait "$bot_pid"
-    local exit_code=$?
-    
-    if [[ $exit_code -ne 0 ]]; then
-        echo -e "${RED}Bot exited with error code $exit_code${NC}"
-    fi
-    
-    exit "$exit_code"
-}
-
-# Enhanced Helper Functions with Error Handling
-check_venv() {
-    if [[ ! -d "$VENV_DIR" ]]; then
-        echo -e "${RED}Virtual environment not found!${NC}"
-        echo -e "Run: ${YELLOW}$PYTHON_CMD -m venv $VENV_DIR${NC}"
-        exit 1
-    fi
-
-    # Verify virtual environment is functional
-    if [[ ! -f "$VENV_DIR/bin/activate" ]]; then
-        echo -e "${RED}Virtual environment appears corrupted!${NC}"
-        echo -e "${YELLOW}Try running: ./launch.sh --clean${NC}"
-        exit 1
-    fi
-}
-
-check_config() {
-    if [[ ! -f "$CONFIG_FILE" ]]; then
-        # Config file doesn't exist - this is normal for first run
-        # The main function will handle running the first_run_wizard
-        return 0
-    fi
-    
-    # Config file exists, check permissions
-    if [[ "$(stat -f "%A" "$CONFIG_FILE" 2>/dev/null || stat -c "%a" "$CONFIG_FILE" 2>/dev/null)" != "600" ]]; then
-        echo -e "${YELLOW}Warning: Configuration file has loose permissions. Fixing...${NC}"
-        chmod 600 "$CONFIG_FILE" || {
-            echo -e "${YELLOW}Warning: Could not set secure permissions on config file${NC}"
-        }
-    fi
-}
-
-# Network operation with timeout
-run_with_timeout() {
-    local timeout="$1"
-    shift
-    
-    if command -v timeout >/dev/null 2>&1; then
-        timeout "$timeout" "$@"
-    elif command -v gtimeout >/dev/null 2>&1; then  # macOS with coreutils
-        gtimeout "$timeout" "$@"
-    else
-        # Fallback without timeout
-        "$@"
-    fi
-}
-
-# Command Handlers
-start_web() {
-    echo -e "${GREEN}Starting web interface...${NC}"
-    
-    if [[ ! -f "$VENV_DIR/bin/activate" ]]; then
-        echo -e "${RED}Virtual environment not found!${NC}"
-        exit 1
-    fi
-    
-    # shellcheck disable=SC1091
-    source "$VENV_DIR/bin/activate" || {
-        echo -e "${RED}Failed to activate virtual environment${NC}"
-        exit 1
-    }
-    
-    if [[ ! -f "webapp.py" ]]; then
-        echo -e "${RED}webapp.py not found!${NC}"
-        exit 1
-    fi
-    
-    python webapp.py
-}
-
-dev_server() {
-    echo -e "${GREEN}Starting development server...${NC}"
-    export FLASK_DEBUG=1
-    export FLASK_ENV=development
-    
-    if [[ ! -f "$VENV_DIR/bin/activate" ]]; then
-        echo -e "${RED}Virtual environment not found!${NC}"
-        exit 1
-    fi
-    
-    # shellcheck disable=SC1091
-    source "$VENV_DIR/bin/activate" || {
-        echo -e "${RED}Failed to activate virtual environment${NC}"
-        exit 1
-    }
-    
-    python webapp.py
-}
-
-# Main Execution
-parse_arguments() {
-    # Default values
-    WEB=false
-    TTS=false
-    REBUILD=false
-    DEV=false
-    WEB_ONLY=false
-    CLEAN=false
-    VERBOSE=false
-    VOICE_PRESET=""
-    CPU_ONLY=false
-    
-    while [[ $# -gt 0 ]]; do
-        case $1 in
-            --web) WEB=true ;;
-            --tts) TTS=true ;;
-            --verbose) VERBOSE=true ;;
-            --voice-preset)
-                VOICE_PRESET="$2"
-                shift 
-                ;;
-            --download-models) 
-                export HF_HOME="${PWD}/.hf_cache"
-                
-                if [[ ! -f "$VENV_DIR/bin/activate" ]]; then
-                    echo -e "${RED}Virtual environment not found! Run --clean first.${NC}"
-                    exit 1
-                fi
-                
-                # shellcheck disable=SC1091
-                source "$VENV_DIR/bin/activate" || {
-                    echo -e "${RED}Failed to activate virtual environment${NC}"
-                    exit 1
-                }
-                
-                prepare_tts_directories
-                check_tts_models
-                download_voice_presets
-                echo -e "${GREEN}✅ Models downloaded successfully!${NC}"
-                exit 0 
-                ;;
-            --rebuild) REBUILD=true ;;
-            --dev) DEV=true ;;
-            --web-only) WEB_ONLY=true ;;
-            --clean) CLEAN=true ;;
-            --cpu-only) CPU_ONLY=true ;;
-            --migrate-db) 
-                if [[ ! -f "$VENV_DIR/bin/activate" ]]; then
-                    echo -e "${RED}Virtual environment not found! Run --clean first.${NC}"
-                    exit 1
-                fi
-                
-                # shellcheck disable=SC1091
-                source "$VENV_DIR/bin/activate" || {
-                    echo -e "${RED}Failed to activate virtual environment${NC}"
-                    exit 1
-                }
-                
-                run_database_migrations
-                exit $?
-                ;;
-            -h|--help) show_help; exit 0 ;;
-            *) echo -e "${RED}Unknown option: $1${NC}"; exit 1 ;;
-        esac
-        shift
-    done
-    
-    # Second pass: execute commands based on flags
-    if [[ "$CLEAN" = true ]]; then
-        clean_install
-        # After clean install, continue with other commands
-        [[ "$TTS" = true ]] && TTS=true
-    fi
-    
-    # Handle post-clean operations
-    if [[ "$DEV" = true ]]; then
-        dev_server
-        exit 0
-    elif [[ "$WEB_ONLY" = true ]]; then
-        start_web
-        exit 0
-    elif [[ "$CLEAN" = true ]]; then
-        # If clean was only command, start normally
-        start_bot
-        exit 0
-    fi
-    start_bot
-}
-
+# Help message
 show_help() {
-    echo -e "${YELLOW}Usage:${NC}"
-    echo "  ./launch.sh [options] - Command-line mode"
-    echo "  ./launch.sh           - Interactive menu mode"
-    echo
-    echo "${YELLOW}Options:${NC}"
-    echo "  --web       : Enable web interface with bot"
-    echo "  --tts       : Enable TTS functionality"
-    echo "  --verbose   : Show detailed initialization steps and logs"
-    echo "  --voice-preset PRESET : Use specific voice preset (e.g., v2/en_speaker_6)"
-    echo "  --download-models : Download TTS models (voice presets are built-in)"
-    echo "  --rebuild   : Rebuild Markov cache at startup"
-    echo "  --dev       : Start web interface in development mode"
-    echo "  --web-only  : Start web interface without bot"
-    echo "  --clean     : Perform fresh install"
-    echo "  --cpu-only  : Force CPU-only PyTorch installation (no CUDA)"
-    echo "  --migrate-db: Run database migrations manually"
-    echo "  --help      : Show this help message"
-    echo
-    echo "${YELLOW}Configuration:${NC}"
-    echo "  In settings.conf, set 'verbose_logs = true' in the [web] section"
-    echo "  to see detailed debug logs (database heartbeats, stats requests, etc.)"
-    echo
-    echo "${YELLOW}Examples:${NC}"
-    echo "  ./launch.sh --web --tts      # Bot + Web + TTS"
-    echo "  ./launch.sh --tts --verbose # Bot with TTS and detailed logs"
-    echo "  ./launch.sh --tts --voice-preset v2/en_speaker_9  # Use specific voice"
-    echo "  ./launch.sh --tts --cpu-only # TTS with CPU-only PyTorch"
-    echo "  ./launch.sh --clean --cpu-only # Clean install with CPU-only PyTorch"
-    echo "  ./launch.sh --download-models # Download base TTS models"
-    echo "  ./launch.sh --migrate-db     # Run database migrations"
-    echo "  ./launch.sh --dev            # Dev server with hot reload"
+    print_banner
+    echo -e "${YELLOW}Usage:${NC} ./launch.sh <command> [options]"
+    echo ""
+    echo -e "${CYAN}Service Management:${NC}"
+    echo "  start             Start the service (bot + web)"
+    echo "  stop              Stop the service gracefully"
+    echo "  restart           Restart the service"
+    echo "  status            Show service status and health"
+    echo "  logs [lines]      View logs (default: last 50 lines)"
+    echo ""
+    echo -e "${CYAN}Deployment:${NC}"
+    echo "  deploy            Pull updates, migrate, restart"
+    echo "  migrate           Run database migrations"
+    echo "  setup             Initial installation (first time only)"
+    echo ""
+    echo -e "${CYAN}Maintenance:${NC}"
+    echo "  backup            Backup databases and config"
+    echo "  restore <file>    Restore from backup"
+    echo "  clean             Clean reinstall (wipes data!)"
+    echo "  check             Verify system dependencies"
+    echo "  update-deps       Update Python dependencies"
+    echo ""
+    echo -e "${CYAN}Development:${NC}"
+    echo "  dev               Start in development mode (hot reload)"
+    echo "  shell             Open Python shell with app context"
+    echo "  test              Run test suite"
+    echo ""
+    echo -e "${CYAN}Options:${NC}"
+    echo "  --verbose         Show detailed output"
+    echo "  --force           Skip confirmations"
+    echo "  --help, -h        Show this help"
+    echo ""
+    echo -e "${YELLOW}Examples:${NC}"
+    echo "  ./launch.sh start              # Start the service"
+    echo "  ./launch.sh logs 100           # View last 100 log lines"
+    echo "  ./launch.sh deploy             # Deploy updates"
+    echo "  ./launch.sh backup             # Create backup"
+    echo "  ./launch.sh dev                # Development mode"
 }
 
-check_dependencies() {
-    echo -e "${CYAN}Checking system dependencies...${NC}"
-    
-    # Detect platform
-    case "$(uname -s)" in
-        Darwin*)    PLATFORM="macos" ;;
-        Linux*)     PLATFORM="linux" ;;
-        MINGW*|CYGWIN*) PLATFORM="windows" ;;
-        *)          echo -e "${RED}Unsupported platform: $(uname -s)${NC}"; exit 1 ;;
-    esac
-
-    # Check for Homebrew on macOS with timeout
-    if [[ "$PLATFORM" = "macos" ]] && ! command -v brew &> /dev/null; then
-        echo -e "${YELLOW}Installing Homebrew...${NC}"
-        
-        if ! run_with_timeout "${NETWORK_TIMEOUT}s" /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"; then
-            echo -e "${RED}Failed to install Homebrew (timeout or error)${NC}"
-            echo -e "${YELLOW}Please install Homebrew manually: https://brew.sh${NC}"
-            exit 1
+# Check if service is running
+is_running() {
+    if [[ -f "$PID_FILE" ]]; then
+        local pid=$(cat "$PID_FILE")
+        if kill -0 "$pid" 2>/dev/null; then
+            return 0
+        else
+            rm -f "$PID_FILE"
+            return 1
         fi
     fi
+    return 1
+}
 
-    # Verify Python version with timeout
-    if ! run_with_timeout "10s" "$PYTHON_CMD" --version &> /dev/null; then
-        echo -e "${RED}Python 3.8+ not found!${NC}"
-        echo -e "${YELLOW}Installing Python 3.11 via package manager...${NC}"
-
-        case "$PLATFORM" in
-            "macos")
-                if ! run_with_timeout "${NETWORK_TIMEOUT}s" brew install python@3.11; then
-                    echo -e "${RED}Failed to install Python 3.11${NC}"
-                    exit 1
-                fi
-                # Re-detect Python after installation
-                detect_python
-                ;;
-            "linux")
-                if command -v apt-get >/dev/null 2>&1; then
-                    if ! run_with_timeout "${NETWORK_TIMEOUT}s" sudo apt-get update && \
-                       run_with_timeout "${NETWORK_TIMEOUT}s" sudo apt-get install -y python3.11 python3.11-venv; then
-                        echo -e "${RED}Failed to install Python 3.11${NC}"
-                        exit 1
-                    fi
-                    # Re-detect Python after installation
-                    detect_python
-                else
-                    echo -e "${RED}Please install Python 3.8+ manually${NC}"
-                    exit 1
-                fi
-                ;;
-        esac
-    fi
-
-    # Check TTS dependencies if requested
-    if [[ "${TTS:-false}" = true ]]; then
-        if ! command -v ffmpeg &> /dev/null; then
-            echo -e "${YELLOW}Installing ffmpeg...${NC}"
-            case "$PLATFORM" in
-                "macos")
-                    if ! run_with_timeout "${NETWORK_TIMEOUT}s" brew install ffmpeg; then
-                        echo -e "${RED}Failed to install ffmpeg${NC}"
-                        exit 1
-                    fi
-                    ;;
-                "linux")
-                    if command -v apt-get >/dev/null 2>&1; then
-                        if ! run_with_timeout "${NETWORK_TIMEOUT}s" sudo apt-get install -y ffmpeg; then
-                            echo -e "${RED}Failed to install ffmpeg${NC}"
-                            exit 1
-                        fi
-                    fi
-                    ;;
-                "windows")
-                    echo -e "${RED}Please install ffmpeg from https://ffmpeg.org/download.html${NC}"
-                    exit 1
-                    ;;
-            esac
-        fi
+# Get service PID
+get_pid() {
+    if [[ -f "$PID_FILE" ]]; then
+        cat "$PID_FILE"
     fi
 }
 
-install_requirements() {
-    echo -e "${CYAN}Installing Python requirements...${NC}"
-    
-    # Configure HF home directory and disable warnings
+# Start service
+cmd_start() {
+    echo -e "${CYAN}Starting ANSV Bot Service...${NC}"
+
+    if is_running; then
+        echo -e "${YELLOW}Service already running (PID: $(get_pid))${NC}"
+        exit 0
+    fi
+
+    # Verify setup
+    if [[ ! -d "$VENV_DIR" ]]; then
+        echo -e "${RED}Virtual environment not found${NC}"
+        echo -e "${YELLOW}Run: ./launch.sh setup${NC}"
+        exit 1
+    fi
+
+    if [[ ! -f "$CONFIG_FILE" ]]; then
+        echo -e "${RED}Configuration file not found${NC}"
+        echo -e "${YELLOW}Run: ./launch.sh setup${NC}"
+        exit 1
+    fi
+
+    # Create log directory
+    mkdir -p "$LOG_DIR"
+
+    # Activate virtual environment
+    source "$VENV_DIR/bin/activate"
+
+    # Run migrations
+    echo -e "${CYAN}Running database migrations...${NC}"
+    run_migrations
+
+    # Start the service
+    echo -e "${GREEN}Starting service...${NC}"
     export HF_HOME="${PWD}/.hf_cache"
     export HF_HUB_DISABLE_IMPLICIT_TOKEN=1
-    # Note: HF_HUB_DISABLE_PROGRESS_BARS removed to show TTS download progress
-    
-    # Validate requirements file exists
-    if [[ ! -f "requirements.txt" ]]; then
-        echo -e "${RED}requirements.txt not found!${NC}"
-        exit 1
-    fi
-    
-    # Ensure we're in the virtual environment
-    if [[ ! -f "$VENV_DIR/bin/activate" ]]; then
-        echo -e "${RED}Virtual environment not found!${NC}"
-        exit 1
-    fi
-    
-    # shellcheck disable=SC1091
-    source "$VENV_DIR/bin/activate" || {
-        echo -e "${RED}Failed to activate virtual environment${NC}"
-        exit 1
-    }
-    
-    # Install base requirements with timeout
-    if ! run_with_timeout "${NETWORK_TIMEOUT}s" pip install -r requirements.txt; then
-        echo -e "${RED}Failed to install base requirements${NC}"
-        exit 1
-    fi
-    
-    if [[ "${TTS:-false}" = true ]]; then
-        echo -e "${CYAN}Installing TTS dependencies...${NC}"
-        
-        if [[ ! -f "requirements-tts.txt" ]]; then
-            echo -e "${RED}requirements-tts.txt not found!${NC}"
-            exit 1
-        fi
-        
-        prepare_tts_directories || {
-            echo -e "${RED}Failed to prepare TTS directories${NC}"
-            exit 1
-        }
-        
-        # First, install PyTorch with correct version based on CPU_ONLY flag
-        # This must be done BEFORE installing requirements-tts.txt to avoid CUDA installation
-        if [[ "${CPU_ONLY:-false}" = true ]]; then
-            echo -e "${YELLOW}Installing PyTorch CPU-only version...${NC}"
-            if ! run_with_timeout "${NETWORK_TIMEOUT}s" pip install torch==2.6.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cpu; then
-                echo -e "${RED}Failed to install PyTorch CPU version${NC}"
-                exit 1
-            fi
-        else
-            case "$PLATFORM" in
-                "macos")
-                    echo "Ensuring PyTorch for macOS (CPU)..."
-                    if ! run_with_timeout "${NETWORK_TIMEOUT}s" pip install torch==2.6.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cpu; then
-                        echo -e "${RED}Failed to install PyTorch for macOS${NC}"
-                        exit 1
-                    fi
-                    ;;
-                "linux"|"windows")
-                    if command -v nvidia-smi &> /dev/null; then
-                        echo "Ensuring PyTorch with CUDA support..."
-                        if ! run_with_timeout "${NETWORK_TIMEOUT}s" pip install torch==2.6.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cu121; then
-                            echo -e "${RED}Failed to install PyTorch with CUDA${NC}"
-                            exit 1
-                        fi
-                    else
-                        echo "Ensuring PyTorch CPU version..."
-                        if ! run_with_timeout "${NETWORK_TIMEOUT}s" pip install torch==2.6.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cpu; then
-                            echo -e "${RED}Failed to install PyTorch CPU${NC}"
-                            exit 1
-                        fi
-                    fi
-                    ;;
-            esac
-        fi
-        
-        # Verify PyTorch installation
-        echo -e "${GREEN}✅ PyTorch installed. Checking version and device support...${NC}"
-        python -c "import torch; print(f'PyTorch version: {torch.__version__}'); print(f'CUDA available: {torch.cuda.is_available()}'); print(f'Device: {\"CUDA\" if torch.cuda.is_available() else \"CPU\"}')" || echo -e "${YELLOW}Warning: Could not verify PyTorch installation${NC}"
-        
-        echo -e "${CYAN}Installing remaining TTS dependencies from requirements-tts.txt...${NC}"
-        if ! run_with_timeout "${NETWORK_TIMEOUT}s" pip install -r requirements-tts.txt --no-cache-dir; then
-            echo -e "${RED}Failed to install TTS requirements${NC}"
-            exit 1
-        fi
-        
-        # Download required NLTK resources with error handling
-        echo -e "${CYAN}Downloading NLTK resources for TTS...${NC}"
-        if ! python -c "import nltk; nltk.download('punkt', quiet=True)"; then
-            echo -e "${YELLOW}Warning: Failed to download NLTK resources${NC}"
-        fi
-        
-        check_tts_models
-        
-        # Validate voice presets (built-in presets don't need downloading)
-        download_voice_presets
-    fi
-    
-    # Create a marker file to indicate dependencies were installed
-    if ! touch .deps_installed; then
-        echo -e "${YELLOW}Warning: Could not create dependency marker file${NC}"
-    fi
-}
 
-clean_install() {
-    echo -e "${CYAN}♻️  Clean Install: Fresh Setup${NC}"
+    # Start both bot and web in background
+    nohup python ansv.py --web > "$LOG_DIR/ansv.log" 2>&1 &
+    echo $! > "$PID_FILE"
 
-    # Remove existing virtual environment
-    if [[ -d "$VENV_DIR" ]]; then
-        echo -e "${YELLOW}Removing existing virtual environment...${NC}"
-        rm -rf "$VENV_DIR" || {
-            echo -e "${RED}Failed to remove existing virtual environment${NC}"
-            exit 1
-        }
-    fi
+    sleep 2
 
-    # Create new virtual environment
-    echo -e "${CYAN}Creating virtual environment with $PYTHON_CMD...${NC}"
-    if ! "$PYTHON_CMD" -m venv "$VENV_DIR"; then
-        echo -e "${RED}Failed to create virtual environment${NC}"
-        exit 1
-    fi
-    
-    # Activate virtual environment
-    # shellcheck disable=SC1091
-    if ! source "$VENV_DIR/bin/activate"; then
-        echo -e "${RED}Failed to activate virtual environment${NC}"
-        exit 1
-    fi
-    
-    check_dependencies
-    install_requirements
-    
-    # Run database migrations
-    if ! run_database_migrations; then
-        echo -e "${RED}Database migration failed during clean install${NC}"
-        exit 1
-    fi
-    
-    export CLEAN_INSTALL_DONE=true
-    echo -e "${GREEN}✅ Fresh environment created!${NC}"
-}
-
-run_database_migrations() {
-    # Check if migrations already run in this session
-    if [[ "${MIGRATIONS_COMPLETED:-false}" = true ]]; then
-        echo -e "${GREEN}✅ Database migrations already completed${NC}"
-        return 0
-    fi
-
-    echo -e "${CYAN}Running database migrations...${NC}"
-    
-    # Ensure we're in the virtual environment
-    if [[ ! -f "$VENV_DIR/bin/activate" ]]; then
-        echo -e "${RED}Virtual environment not found!${NC}"
-        return 1
-    fi
-    
-    # shellcheck disable=SC1091
-    source "$VENV_DIR/bin/activate" || {
-        echo -e "${RED}Failed to activate virtual environment${NC}"
-        return 1
-    }
-    
-    # Determine which database file to use (check what ansv.py uses)
-    local db_file="messages.db"
-    if [[ -f "ansv_bot.db" ]] && [[ ! -f "messages.db" ]]; then
-        db_file="ansv_bot.db"
-    fi
-    
-    # Check if we need to migrate to user system
-    # First check if database file exists
-    if [[ ! -f "$db_file" ]]; then
-        echo -e "${YELLOW}Database file not found. Running migration...${NC}"
-        needs_migration=true
+    if is_running; then
+        echo -e "${GREEN}✓ Service started successfully (PID: $(get_pid))${NC}"
+        echo -e "${BLUE}Logs: $LOG_DIR/ansv.log${NC}"
+        echo -e "${BLUE}Web interface: http://localhost:5001${NC}"
     else
-        # Check if users table exists using python from venv
-        echo -e "${CYAN}Checking for existing user management system...${NC}"
-        python_check_result=$(python -c "
-import sqlite3
-import sys
-try:
-    conn = sqlite3.connect('$db_file')
-    cursor = conn.cursor()
-    cursor.execute(\"SELECT name FROM sqlite_master WHERE type='table' AND name='users'\")
-    result = cursor.fetchone()
-    conn.close()
-    if result:
-        print('USERS_TABLE_EXISTS')
-        sys.exit(0)  # Users table exists
-    else:
-        print('USERS_TABLE_NOT_FOUND')
-        sys.exit(1)  # Users table does not exist
-except Exception as e:
-    print(f'PYTHON_CHECK_ERROR: {e}')
-    sys.exit(1)  # Error occurred
-" 2>&1)
-        python_exit_code=$?
-        
-        if [[ $python_exit_code -eq 0 && "$python_check_result" == *"USERS_TABLE_EXISTS"* ]]; then
-            needs_migration=false
-        else
-            echo -e "${YELLOW}Python check result: $python_check_result (exit code: $python_exit_code)${NC}"
-            needs_migration=true
-        fi
+        echo -e "${RED}Failed to start service${NC}"
+        echo -e "${YELLOW}Check logs: tail -f $LOG_DIR/ansv.log${NC}"
+        exit 1
     fi
-    
-    if [[ "$needs_migration" = true ]]; then
-        echo -e "${YELLOW}User management system not found. Running migration...${NC}"
-        
-        # Run user migration
-        if ! python utils/migrate_to_users.py --db "$db_file"; then
-            echo -e "${RED}Failed to migrate user system${NC}"
-            return 1
-        fi
-        
-        echo -e "${GREEN}✅ User migration completed${NC}"
-    else
-        echo -e "${GREEN}✅ User management system already exists${NC}"
-    fi
-    
-    # Verify migration was successful
-    if ! python utils/migrate_to_users.py --verify-only --db "$db_file"; then
-        echo -e "${RED}Migration verification failed${NC}"
-        return 1
-    fi
-    
-    echo -e "${GREEN}✅ Database migrations completed successfully${NC}"
-    export MIGRATIONS_COMPLETED=true
-    return 0
 }
 
-prepare_tts_directories() {
-    echo -e "${CYAN}Setting up TTS directories...${NC}"
-    
-    # Create main TTS directories with error checking
-    for dir in "$TTS_MODELS_DIR" "$TTS_OUTPUT_DIR" "$TTS_VOICES_DIR"; do
-        if ! mkdir -p "$dir"; then
-            echo -e "${RED}Failed to create directory: $dir${NC}"
-            return 1
-        fi
+# Stop service
+cmd_stop() {
+    echo -e "${CYAN}Stopping ANSV Bot Service...${NC}"
+
+    if ! is_running; then
+        echo -e "${YELLOW}Service not running${NC}"
+        exit 0
+    fi
+
+    local pid=$(get_pid)
+    echo -e "${YELLOW}Stopping process $pid...${NC}"
+
+    # Send SIGTERM
+    kill -TERM "$pid" 2>/dev/null || true
+
+    # Wait for graceful shutdown
+    local count=0
+    while kill -0 "$pid" 2>/dev/null && [ $count -lt 10 ]; do
+        sleep 1
+        count=$((count + 1))
     done
-    
-    # Create channel-specific output directories from settings
-    if [[ -f "$CONFIG_FILE" ]]; then
-        local channels_line
-        channels_line=$(grep "^channels[[:space:]]*=" "$CONFIG_FILE" | head -n 1)
-        if [[ -n "$channels_line" ]]; then
-            local channels_value
-            channels_value=$(echo "$channels_line" | cut -d'=' -f2- | tr -d ' ')
-            IFS=',' read -ra channel_array <<< "$channels_value"
-            for channel in "${channel_array[@]}"; do
-                # Validate channel name and create directory
-                if [[ -n "$channel" ]] && validate_username "$channel" 2>/dev/null; then
-                    if ! mkdir -p "$TTS_OUTPUT_DIR/$channel"; then
-                        echo -e "${YELLOW}Warning: Failed to create directory for channel: $channel${NC}"
-                    fi
-                elif [[ -n "$channel" ]]; then
-                    echo -e "${YELLOW}Warning: Invalid channel name: $channel${NC}"
-                fi
-            done
-        fi
+
+    # Force kill if still running
+    if kill -0 "$pid" 2>/dev/null; then
+        echo -e "${YELLOW}Force stopping...${NC}"
+        kill -KILL "$pid" 2>/dev/null || true
     fi
-    
-    return 0
+
+    rm -f "$PID_FILE"
+    echo -e "${GREEN}✓ Service stopped${NC}"
 }
 
-check_tts_models() {
-    echo -e "${CYAN}Checking TTS models...${NC}"
-    
-    # Validate HF_HOME is set
-    if [[ -z "${HF_HOME:-}" ]]; then
-        echo -e "${YELLOW}HF_HOME not set, using default cache${NC}"
-        export HF_HOME="${PWD}/.hf_cache"
-    fi
-    
-    # Basic presence check
-    if [[ ! -d "$HF_HOME/hub" ]]; then
-        echo -e "${YELLOW}⚠️ No Hugging Face models found. First run will download models.${NC}"
-        echo -e "${YELLOW}   This may take a while (1-2GB). Get some coffee! ☕${NC}"
-    else
-        local model_count
-        model_count=$(find "$HF_HOME/hub" -type d -name "snapshots" 2>/dev/null | wc -l)
-        echo -e "${GREEN}✅ Found $model_count cached model(s)${NC}"
-    fi
+# Restart service
+cmd_restart() {
+    echo -e "${CYAN}Restarting ANSV Bot Service...${NC}"
+    cmd_stop
+    sleep 2
+    cmd_start
 }
 
-download_voice_preset() {
-    local preset="$1"
-    
-    # v2/en_speaker_* presets are built into the Bark model and don't need caching
-    if [[ "$preset" =~ ^v2/en_speaker_[0-9]$ ]]; then
-        echo -e "${GREEN}✅ Voice preset $preset is built into Bark model (no download needed)${NC}"
-        return 0
-    fi
-    
-    # For custom voice presets, we'd need actual .npz files in the voices/ directory
-    echo -e "${YELLOW}ℹ️  Custom voice preset $preset requires .npz file in voices/ directory${NC}"
-    return 0
-}
-
-# Voice presets validation (built-in presets don't need downloading)
-download_voice_presets() {
-    echo -e "${CYAN}Validating standard voice presets...${NC}"
-    
-    local presets=("v2/en_speaker_0" "v2/en_speaker_1" "v2/en_speaker_5" "v2/en_speaker_6" "v2/en_speaker_9")
-    
-    for preset in "${presets[@]}"; do
-        download_voice_preset "$preset"
-    done
-    
-    echo -e "${GREEN}✅ All built-in voice presets are available (no downloads required)${NC}"
-    return 0
-}
-
-# Enhanced runtime execution with proper error handling
-main() {
-    # Check for help flag first, before any other processing
-    for arg in "$@"; do
-        if [[ "$arg" == "-h" || "$arg" == "--help" ]]; then
-            show_help
-            exit 0
-        fi
-    done
-    
-    # Set up error handling
-    trap 'echo -e "\n${RED}Script interrupted${NC}"; exit 130' INT
-    trap 'echo -e "\n${RED}Script terminated${NC}"; exit 143' TERM
-    
+# Service status
+cmd_status() {
     print_banner
-    
-    # Check prerequisites with error handling
-    check_venv || exit 1
-    check_config || exit 1
-    
-    # Run first-time setup wizard if needed
-    if [[ ! -f "$CONFIG_FILE" ]]; then
-        first_run_wizard || {
-            echo -e "${RED}Configuration setup failed${NC}"
-            exit 1
-        }
-    fi
-    
-    check_security || exit 1
-    
-    # Check if arguments were provided
-    if [[ $# -eq 0 ]]; then
-        # No arguments, show interactive menu
-        interactive_menu
+
+    echo -e "${CYAN}=== Service Status ===${NC}"
+    if is_running; then
+        local pid=$(get_pid)
+        echo -e "${GREEN}Status: Running${NC}"
+        echo -e "PID: $pid"
+        echo -e "Uptime: $(ps -p $pid -o etime= 2>/dev/null | tr -d ' ' || echo 'N/A')"
     else
-        # Parse command line arguments
-        parse_arguments "$@"
+        echo -e "${RED}Status: Stopped${NC}"
+    fi
+
+    echo -e "\n${CYAN}=== System Info ===${NC}"
+    echo -e "Python: $PYTHON_VERSION"
+    echo -e "Virtual Env: $([ -d "$VENV_DIR" ] && echo "✓ Present" || echo "✗ Missing")"
+    echo -e "Config: $([ -f "$CONFIG_FILE" ] && echo "✓ Present" || echo "✗ Missing")"
+
+    if [[ -f "users.db" ]]; then
+        source "$VENV_DIR/bin/activate" 2>/dev/null || true
+        local user_count=$(python -c "import sqlite3; print(sqlite3.connect('users.db').execute('SELECT COUNT(*) FROM users').fetchone()[0])" 2>/dev/null || echo "N/A")
+        echo -e "Users: $user_count"
+    fi
+
+    if [[ -f "messages.db" ]]; then
+        local msg_count=$(python -c "import sqlite3; print(sqlite3.connect('messages.db').execute('SELECT COUNT(*) FROM messages').fetchone()[0])" 2>/dev/null || echo "N/A")
+        echo -e "Messages: $msg_count"
+    fi
+
+    echo -e "\n${CYAN}=== Disk Usage ===${NC}"
+    du -sh . 2>/dev/null | cut -f1 || echo "N/A"
+
+    if [[ -f "$LOG_DIR/ansv.log" ]]; then
+        echo -e "\n${CYAN}=== Recent Logs ===${NC}"
+        tail -n 10 "$LOG_DIR/ansv.log" 2>/dev/null || echo "No logs available"
     fi
 }
 
-# Call main function with all arguments
+# View logs
+cmd_logs() {
+    local lines=${1:-50}
+
+    if [[ ! -f "$LOG_DIR/ansv.log" ]]; then
+        echo -e "${YELLOW}No log file found${NC}"
+        exit 0
+    fi
+
+    echo -e "${CYAN}=== Last $lines lines ===${NC}\n"
+    tail -n "$lines" "$LOG_DIR/ansv.log"
+
+    # Offer to tail -f
+    echo -e "\n${YELLOW}Press 'f' to follow logs, any other key to exit${NC}"
+    read -n 1 -s key
+    if [[ "$key" == "f" ]]; then
+        tail -f "$LOG_DIR/ansv.log"
+    fi
+}
+
+# Deploy updates
+cmd_deploy() {
+    echo -e "${CYAN}=== Deploying Updates ===${NC}\n"
+
+    # Stop service if running
+    if is_running; then
+        echo -e "${YELLOW}Stopping service...${NC}"
+        cmd_stop
+    fi
+
+    # Pull latest code
+    echo -e "${CYAN}Pulling latest code...${NC}"
+    if [[ -d ".git" ]]; then
+        git pull || {
+            echo -e "${RED}Git pull failed${NC}"
+            exit 1
+        }
+    else
+        echo -e "${YELLOW}Not a git repository, skipping pull${NC}"
+    fi
+
+    # Update dependencies
+    echo -e "${CYAN}Updating dependencies...${NC}"
+    cmd_update_deps
+
+    # Run migrations
+    echo -e "${CYAN}Running migrations...${NC}"
+    run_migrations
+
+    # Start service
+    echo -e "${CYAN}Starting service...${NC}"
+    cmd_start
+
+    echo -e "\n${GREEN}✓ Deployment complete${NC}"
+}
+
+# Database migrations
+run_migrations() {
+    if [[ ! -f "$VENV_DIR/bin/activate" ]]; then
+        echo -e "${RED}Virtual environment not found${NC}"
+        return 1
+    fi
+
+    source "$VENV_DIR/bin/activate"
+
+    # Check if migration script exists
+    if [[ -f "utils/migrate_to_users.py" ]]; then
+        python utils/migrate_to_users.py --db messages.db || {
+            echo -e "${YELLOW}Migration warning (may be normal if already migrated)${NC}"
+        }
+    fi
+
+    echo -e "${GREEN}✓ Migrations complete${NC}"
+}
+
+cmd_migrate() {
+    echo -e "${CYAN}Running database migrations...${NC}"
+    run_migrations
+}
+
+# Initial setup
+cmd_setup() {
+    print_banner
+    echo -e "${CYAN}=== Initial Setup ===${NC}\n"
+
+    # Check if already setup
+    if [[ -d "$VENV_DIR" ]] && [[ -f "$CONFIG_FILE" ]]; then
+        echo -e "${YELLOW}Already configured${NC}"
+        echo -e "Use ${CYAN}./launch.sh clean${NC} for fresh install"
+        exit 0
+    fi
+
+    # Install system dependencies
+    echo -e "${CYAN}Checking system dependencies...${NC}"
+    check_system_deps
+
+    # Create virtual environment
+    if [[ ! -d "$VENV_DIR" ]]; then
+        echo -e "${CYAN}Creating virtual environment...${NC}"
+        "$PYTHON_CMD" -m venv "$VENV_DIR" || {
+            echo -e "${RED}Failed to create virtual environment${NC}"
+            exit 1
+        }
+    fi
+
+    source "$VENV_DIR/bin/activate"
+
+    # Install Python dependencies
+    echo -e "${CYAN}Installing Python dependencies...${NC}"
+    pip install --upgrade pip
+    pip install -r requirements.txt || {
+        echo -e "${RED}Failed to install dependencies${NC}"
+        exit 1
+    }
+
+    # Create config from example
+    if [[ ! -f "$CONFIG_FILE" ]] && [[ -f "$EXAMPLE_CONFIG" ]]; then
+        echo -e "${CYAN}Creating configuration file...${NC}"
+        cp "$EXAMPLE_CONFIG" "$CONFIG_FILE"
+        chmod 600 "$CONFIG_FILE"
+    fi
+
+    # Create directories
+    mkdir -p "$LOG_DIR" "$BACKUP_DIR" static/outputs models/tts voices
+
+    # Run migrations
+    run_migrations
+
+    echo -e "\n${GREEN}✓ Setup complete!${NC}\n"
+    echo -e "${YELLOW}Next steps:${NC}"
+    echo -e "1. Edit ${CYAN}$CONFIG_FILE${NC} with your credentials"
+    echo -e "2. Get Twitch credentials: ${BLUE}https://dev.twitch.tv/console${NC}"
+    echo -e "3. Configure Stripe keys for payments"
+    echo -e "4. Run: ${CYAN}./launch.sh start${NC}"
+}
+
+# Backup
+cmd_backup() {
+    echo -e "${CYAN}Creating backup...${NC}"
+
+    mkdir -p "$BACKUP_DIR"
+    local timestamp=$(date +%Y%m%d_%H%M%S)
+    local backup_file="$BACKUP_DIR/ansv_backup_$timestamp.tar.gz"
+
+    tar -czf "$backup_file" \
+        messages.db users.db "$CONFIG_FILE" cache/ 2>/dev/null || {
+        echo -e "${YELLOW}Some files may be missing, continuing...${NC}"
+    }
+
+    echo -e "${GREEN}✓ Backup created: $backup_file${NC}"
+    echo -e "${BLUE}Size: $(du -sh "$backup_file" | cut -f1)${NC}"
+}
+
+# Restore
+cmd_restore() {
+    local backup_file="$1"
+
+    if [[ -z "$backup_file" ]]; then
+        echo -e "${RED}Usage: ./launch.sh restore <backup_file>${NC}"
+        echo -e "\nAvailable backups:"
+        ls -lh "$BACKUP_DIR"/*.tar.gz 2>/dev/null || echo "No backups found"
+        exit 1
+    fi
+
+    if [[ ! -f "$backup_file" ]]; then
+        echo -e "${RED}Backup file not found: $backup_file${NC}"
+        exit 1
+    fi
+
+    echo -e "${YELLOW}This will overwrite current data!${NC}"
+    read -p "Continue? (yes/no): " confirm
+    if [[ "$confirm" != "yes" ]]; then
+        echo "Cancelled"
+        exit 0
+    fi
+
+    if is_running; then
+        cmd_stop
+    fi
+
+    echo -e "${CYAN}Restoring from backup...${NC}"
+    tar -xzf "$backup_file" || {
+        echo -e "${RED}Failed to restore backup${NC}"
+        exit 1
+    }
+
+    echo -e "${GREEN}✓ Restore complete${NC}"
+}
+
+# Clean install
+cmd_clean() {
+    echo -e "${RED}WARNING: This will delete all data!${NC}"
+    read -p "Type 'DELETE' to confirm: " confirm
+    if [[ "$confirm" != "DELETE" ]]; then
+        echo "Cancelled"
+        exit 0
+    fi
+
+    if is_running; then
+        cmd_stop
+    fi
+
+    echo -e "${CYAN}Removing old installation...${NC}"
+    rm -rf "$VENV_DIR" messages.db users.db cache/ "$LOG_DIR" .deps_installed
+
+    cmd_setup
+}
+
+# Check dependencies
+check_system_deps() {
+    local missing=()
+
+    # Check Python
+    if ! command -v "$PYTHON_CMD" &> /dev/null; then
+        missing+=("python3")
+    fi
+
+    # Check git
+    if ! command -v git &> /dev/null; then
+        missing+=("git")
+    fi
+
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        echo -e "${RED}Missing dependencies: ${missing[*]}${NC}"
+        echo -e "${YELLOW}Install them using your package manager${NC}"
+        exit 1
+    fi
+
+    echo -e "${GREEN}✓ System dependencies OK${NC}"
+}
+
+cmd_check() {
+    echo -e "${CYAN}Checking system...${NC}\n"
+    check_system_deps
+
+    if [[ -d "$VENV_DIR" ]]; then
+        echo -e "${GREEN}✓ Virtual environment${NC}"
+    else
+        echo -e "${RED}✗ Virtual environment${NC}"
+    fi
+
+    if [[ -f "$CONFIG_FILE" ]]; then
+        echo -e "${GREEN}✓ Configuration file${NC}"
+    else
+        echo -e "${RED}✗ Configuration file${NC}"
+    fi
+
+    echo ""
+}
+
+# Update dependencies
+cmd_update_deps() {
+    if [[ ! -d "$VENV_DIR" ]]; then
+        echo -e "${RED}Virtual environment not found${NC}"
+        exit 1
+    fi
+
+    source "$VENV_DIR/bin/activate"
+
+    echo -e "${CYAN}Updating Python dependencies...${NC}"
+    pip install --upgrade pip
+    pip install -r requirements.txt --upgrade
+
+    echo -e "${GREEN}✓ Dependencies updated${NC}"
+}
+
+# Development mode
+cmd_dev() {
+    echo -e "${CYAN}Starting development server...${NC}"
+
+    if [[ ! -d "$VENV_DIR" ]]; then
+        echo -e "${RED}Run ./launch.sh setup first${NC}"
+        exit 1
+    fi
+
+    source "$VENV_DIR/bin/activate"
+    export FLASK_ENV=development
+    export FLASK_DEBUG=1
+
+    # Run migrations
+    run_migrations
+
+    echo -e "${GREEN}Starting in development mode...${NC}"
+    echo -e "${BLUE}Web: http://localhost:5001${NC}"
+    python ansv.py --web --verbose
+}
+
+# Python shell
+cmd_shell() {
+    if [[ ! -d "$VENV_DIR" ]]; then
+        echo -e "${RED}Run ./launch.sh setup first${NC}"
+        exit 1
+    fi
+
+    source "$VENV_DIR/bin/activate"
+    echo -e "${CYAN}Opening Python shell...${NC}"
+    python
+}
+
+# Test suite
+cmd_test() {
+    if [[ ! -d "$VENV_DIR" ]]; then
+        echo -e "${RED}Run ./launch.sh setup first${NC}"
+        exit 1
+    fi
+
+    source "$VENV_DIR/bin/activate"
+
+    if [[ -f "pytest" ]] || pip show pytest &>/dev/null; then
+        echo -e "${CYAN}Running tests...${NC}"
+        pytest
+    else
+        echo -e "${YELLOW}pytest not installed${NC}"
+        echo -e "Install: pip install pytest"
+    fi
+}
+
+# Main
+main() {
+    local command="${1:-}"
+
+    case "$command" in
+        start) cmd_start ;;
+        stop) cmd_stop ;;
+        restart) cmd_restart ;;
+        status) cmd_status ;;
+        logs) cmd_logs "${2:-50}" ;;
+        deploy) cmd_deploy ;;
+        migrate) cmd_migrate ;;
+        setup) cmd_setup ;;
+        backup) cmd_backup ;;
+        restore) cmd_restore "$2" ;;
+        clean) cmd_clean ;;
+        check) cmd_check ;;
+        update-deps) cmd_update_deps ;;
+        dev) cmd_dev ;;
+        shell) cmd_shell ;;
+        test) cmd_test ;;
+        --help|-h|help|"") show_help ;;
+        *)
+            echo -e "${RED}Unknown command: $command${NC}"
+            echo -e "Run ${CYAN}./launch.sh --help${NC} for usage"
+            exit 1
+            ;;
+    esac
+}
+
 main "$@"
