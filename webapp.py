@@ -1726,12 +1726,51 @@ def rebuild_cache(channel_name):
 @require_channel_access('channel_name', 'edit')
 def rebuild_model(channel_name):
     """Rebuild Markov model for a channel (alias for rebuild-cache)."""
+    import os
+
     try:
+        # Check if log file exists first
+        log_file_path = os.path.join('logs', f'{channel_name}.txt')
+
+        if not os.path.exists(log_file_path):
+            app.logger.warning(f"Log file not found for {channel_name}: {log_file_path}")
+            return jsonify({
+                "success": False,
+                "error": f"No chat log file found for #{channel_name}",
+                "message": "The bot needs to collect chat messages first before building a model. Make sure the bot is connected and chat messages are being logged."
+            }), 404
+
+        # Check if log file has content
+        file_size = os.path.getsize(log_file_path)
+        if file_size < 100:
+            return jsonify({
+                "success": False,
+                "error": "Chat log file is too small",
+                "message": f"The log file for #{channel_name} only has {file_size} bytes. More chat messages are needed to build a model."
+            }), 400
+
+        # Attempt rebuild
         success = markov_handler.rebuild_cache_for_channel(channel_name, 'logs')
-        return jsonify({"success": success, "message": f"Model rebuild for {channel_name} " + ("succeeded" if success else "failed")})
+
+        if success:
+            return jsonify({
+                "success": True,
+                "message": f"Model rebuilt successfully for #{channel_name}"
+            })
+        else:
+            return jsonify({
+                "success": False,
+                "error": "Rebuild failed",
+                "message": "Check the server logs for details"
+            }), 500
+
     except Exception as e:
-        app.logger.error(f"Error rebuilding model for {channel_name}: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        app.logger.error(f"Error rebuilding model for {channel_name}: {e}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "message": "An unexpected error occurred during rebuild"
+        }), 500
 
 @app.route('/rebuild-all-caches', methods=['POST'])
 def rebuild_all_caches():
