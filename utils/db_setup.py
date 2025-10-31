@@ -63,6 +63,7 @@ def ensure_db_setup(db_file):
         # Create 'channel_configs' table with default columns
         c.execute('''CREATE TABLE IF NOT EXISTS channel_configs (
                         channel_name TEXT PRIMARY KEY,
+                        user_id INTEGER,
                         tts_enabled BOOLEAN NOT NULL,
                         voice_enabled BOOLEAN NOT NULL,
                         join_channel BOOLEAN NOT NULL,
@@ -156,6 +157,9 @@ def ensure_db_setup(db_file):
         # Check and add missing columns in 'channel_configs'
         c.execute("PRAGMA table_info(channel_configs)")
         channel_config_columns = [row[1] for row in c.fetchall()]
+        if 'user_id' not in channel_config_columns:
+            c.execute('ALTER TABLE channel_configs ADD COLUMN user_id INTEGER')
+            logging.info("Column 'user_id' added to 'channel_configs'.")
         if 'lines_between_messages' not in channel_config_columns:
             c.execute('ALTER TABLE channel_configs ADD COLUMN lines_between_messages INTEGER DEFAULT 100')
             logging.info("Column 'lines_between_messages' added to 'channel_configs'.")

@@ -74,6 +74,15 @@ class UserDatabase:
                             password_changed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                            twitch_user_id VARCHAR(50) UNIQUE,
+                            twitch_username VARCHAR(50),
+                            avatar_url TEXT,
+                            managed_channel VARCHAR(100),
+                            subscription_tier VARCHAR(20) DEFAULT 'free',
+                            subscription_status VARCHAR(20) DEFAULT 'inactive',
+                            stripe_customer_id VARCHAR(100),
+                            stripe_subscription_id VARCHAR(100),
+                            onboarding_completed BOOLEAN DEFAULT 0,
                             FOREIGN KEY (role_id) REFERENCES roles(id)
                         )
                     """)
@@ -97,6 +106,15 @@ class UserDatabase:
                         password_changed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        twitch_user_id VARCHAR(50) UNIQUE,
+                        twitch_username VARCHAR(50),
+                        avatar_url TEXT,
+                        managed_channel VARCHAR(100),
+                        subscription_tier VARCHAR(20) DEFAULT 'free',
+                        subscription_status VARCHAR(20) DEFAULT 'inactive',
+                        stripe_customer_id VARCHAR(100),
+                        stripe_subscription_id VARCHAR(100),
+                        onboarding_completed BOOLEAN DEFAULT 0,
                         FOREIGN KEY (role_id) REFERENCES roles(id)
                     )
                 """)
@@ -146,8 +164,62 @@ class UserDatabase:
                     FOREIGN KEY (assigned_by) REFERENCES users(id)
                 )
             """)
-            
-            
+
+            # Create subscriptions table
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS subscriptions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    stripe_subscription_id VARCHAR(100) UNIQUE,
+                    status VARCHAR(20) NOT NULL DEFAULT 'active',
+                    current_period_start DATETIME,
+                    current_period_end DATETIME,
+                    cancel_at_period_end BOOLEAN DEFAULT 0,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(id)
+                )
+            """)
+
+            # Create payments table
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS payments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    amount DECIMAL(10, 2) NOT NULL,
+                    currency VARCHAR(3) DEFAULT 'USD',
+                    status VARCHAR(20) NOT NULL,
+                    stripe_payment_intent_id VARCHAR(100),
+                    description TEXT,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(id)
+                )
+            """)
+
+            # Migrate existing users table to add new columns
+            cursor = conn.execute("PRAGMA table_info(users)")
+            existing_columns = [col[1] for col in cursor.fetchall()]
+
+            migration_columns = [
+                ('twitch_user_id', 'VARCHAR(50)'),
+                ('twitch_username', 'VARCHAR(50)'),
+                ('avatar_url', 'TEXT'),
+                ('managed_channel', 'VARCHAR(100)'),
+                ('subscription_tier', "VARCHAR(20) DEFAULT 'free'"),
+                ('subscription_status', "VARCHAR(20) DEFAULT 'inactive'"),
+                ('stripe_customer_id', 'VARCHAR(100)'),
+                ('stripe_subscription_id', 'VARCHAR(100)'),
+                ('onboarding_completed', 'BOOLEAN DEFAULT 0')
+            ]
+
+            for column_name, column_type in migration_columns:
+                if column_name not in existing_columns:
+                    try:
+                        conn.execute(f"ALTER TABLE users ADD COLUMN {column_name} {column_type}")
+                        logger.info(f"Added column '{column_name}' to users table")
+                    except Exception as e:
+                        logger.warning(f"Could not add column '{column_name}': {e}")
+
             conn.commit()
             logger.info("User database tables initialized successfully")
             
@@ -162,45 +234,20 @@ class UserDatabase:
         """Create default system roles with permissions."""
         
         # Define default roles and their permissions
+        # Simplified: only super_admin (platform admin) and streamer (users)
         default_roles = {
             'super_admin': {
                 'display_name': 'Super Administrator',
-                'description': 'Full system access with all permissions',
+                'description': 'Platform administrator with full system access',
                 'permissions': ['*']  # Wildcard for all permissions
-            },
-            'admin': {
-                'display_name': 'Administrator',
-                'description': 'System administration with user management',
-                'permissions': [
-                    'dashboard.*', 'bot.*', 'channels.*', 
-                    'tts.*', 'models.*', 'users.*',
-                    'system.logs', 'system.settings'
-                ]
-            },
-            'moderator': {
-                'display_name': 'Moderator',
-                'description': 'Channel management and monitoring',
-                'permissions': [
-                    'dashboard.view', 'dashboard.stats',
-                    'channels.view', 'channels.edit', 'channels.moderate',
-                    'tts.generate', 'tts.history', 'tts.manage',
-                    'models.view'
-                ]
             },
             'streamer': {
                 'display_name': 'Streamer',
-                'description': 'Channel owner with access to own channel settings only',
+                'description': 'Twitch streamer managing their own channel',
                 'permissions': [
-                    'channels.own', 'channels.view_own', 'channels.edit_own', 
-                    'channels.settings_own', 'tts.generate', 'tts.history_own'
-                ]
-            },
-            'viewer': {
-                'display_name': 'Viewer',
-                'description': 'Read-only access to dashboard and statistics',
-                'permissions': [
-                    'dashboard.view', 'dashboard.stats',
-                    'channels.view', 'tts.history', 'models.view'
+                    'dashboard.view',
+                    'own_channel.*',
+                    'tts.own_channel'
                 ]
             }
         }
@@ -1031,7 +1078,111 @@ class UserDatabase:
             return None
         finally:
             conn.close()
-    
+
+    def has_tts_access(self, user_id: int) -> bool:
+        """Check if user has access to TTS features (Premium subscription)."""
+        conn = self.get_connection()
+        try:
+            user = conn.execute("""
+                SELECT subscription_tier, subscription_status
+                FROM users
+                WHERE id = ?
+            """, (user_id,)).fetchone()
+
+            if not user:
+                return False
+
+            return (user['subscription_tier'] == 'premium' and
+                    user['subscription_status'] == 'active')
+        finally:
+            conn.close()
+
+    def get_subscription_status(self, user_id: int) -> Optional[Dict[str, Any]]:
+        """Get user's subscription information."""
+        conn = self.get_connection()
+        try:
+            result = conn.execute("""
+                SELECT u.subscription_tier, u.subscription_status, u.stripe_customer_id,
+                       s.stripe_subscription_id, s.current_period_start, s.current_period_end,
+                       s.cancel_at_period_end
+                FROM users u
+                LEFT JOIN subscriptions s ON u.id = s.user_id AND s.status = 'active'
+                WHERE u.id = ?
+            """, (user_id,)).fetchone()
+
+            if result:
+                return dict(result)
+            return None
+        finally:
+            conn.close()
+
+    def update_subscription(self, user_id: int, tier: str, status: str,
+                           stripe_customer_id: str = None,
+                           stripe_subscription_id: str = None,
+                           current_period_start: str = None,
+                           current_period_end: str = None,
+                           cancel_at_period_end: bool = False) -> bool:
+        """Update user's subscription tier and status."""
+        conn = self.get_connection()
+        try:
+            # Update users table
+            updates = {
+                'subscription_tier': tier,
+                'subscription_status': status
+            }
+
+            if stripe_customer_id:
+                updates['stripe_customer_id'] = stripe_customer_id
+
+            if stripe_subscription_id:
+                updates['stripe_subscription_id'] = stripe_subscription_id
+
+            set_clause = ', '.join([f"{k} = ?" for k in updates.keys()])
+            values = list(updates.values()) + [user_id]
+
+            conn.execute(f"""
+                UPDATE users
+                SET {set_clause}, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            """, values)
+
+            # Update or create subscription record if we have subscription details
+            if stripe_subscription_id and status in ['active', 'past_due', 'cancelled']:
+                # Check if subscription record exists
+                existing = conn.execute("""
+                    SELECT id FROM subscriptions WHERE stripe_subscription_id = ?
+                """, (stripe_subscription_id,)).fetchone()
+
+                if existing:
+                    # Update existing subscription record
+                    conn.execute("""
+                        UPDATE subscriptions
+                        SET status = ?, current_period_start = ?, current_period_end = ?,
+                            cancel_at_period_end = ?, updated_at = CURRENT_TIMESTAMP
+                        WHERE stripe_subscription_id = ?
+                    """, (status, current_period_start, current_period_end,
+                          1 if cancel_at_period_end else 0, stripe_subscription_id))
+                else:
+                    # Create new subscription record
+                    conn.execute("""
+                        INSERT INTO subscriptions (
+                            user_id, stripe_subscription_id, status,
+                            current_period_start, current_period_end, cancel_at_period_end
+                        ) VALUES (?, ?, ?, ?, ?, ?)
+                    """, (user_id, stripe_subscription_id, status,
+                          current_period_start, current_period_end,
+                          1 if cancel_at_period_end else 0))
+
+            conn.commit()
+            logger.info(f"Updated subscription for user {user_id}: {tier}/{status}")
+            return True
+        except Exception as e:
+            logger.error(f"Error updating subscription: {e}")
+            conn.rollback()
+            return False
+        finally:
+            conn.close()
+
     def update_user(self, user_id: int, username: str = None, email: str = None, role_id: int = None) -> bool:
         """Update user information."""
         conn = self.get_connection()

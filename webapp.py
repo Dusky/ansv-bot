@@ -9,6 +9,8 @@ import json
 import random
 import traceback
 import signal # Added import for signal
+import requests
+from urllib.parse import urlencode
 from flask import Flask, render_template, request, jsonify, redirect, url_for, send_from_directory, make_response, session
 from flask_socketio import SocketIO # Import SocketIO
 from datetime import datetime, timedelta
@@ -16,12 +18,17 @@ import configparser
 import hashlib
 import secrets
 from functools import wraps
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 from utils.markov_handler import MarkovHandler
 from utils.logger import Logger
 from utils.tts import start_tts_processing # Import for TTS generation
 from utils.db_setup import ensure_db_setup
 from utils.db_manager import get_db_manager, execute_query_sync, execute_update_sync
 from utils.user_db import UserDatabase
+from utils.stripe_service import stripe_service
 from utils.auth import (
     init_auth, require_auth, require_permission, require_role, require_channel_access,
     login_user, logout_user, is_authenticated, get_current_user,
@@ -175,16 +182,14 @@ def validate_channel_config_fields(fields):
 
 # Helper function to redirect streamers to their channel
 def redirect_streamers_to_channel():
-    """Redirect streamers to their channel page instead of other areas"""
+    """Redirect streamers to their managed channel page (1 account = 1 channel)"""
     user = get_current_user()
     if user and user.get('role_name') == 'streamer':
-        # Get their assigned channels
-        from utils.user_db import UserDatabase
-        user_db = UserDatabase('users.db')
-        user_channels = user_db.get_user_channels_from_db(user['id'])
-        if user_channels:
-            # Redirect to their first assigned channel
-            return redirect(f'/beta/channel/{user_channels[0]}')
+        # Get their managed channel (set during OAuth signup)
+        managed_channel = user.get('managed_channel')
+        if managed_channel:
+            # Redirect to their single managed channel
+            return redirect(f'/beta/channel/{managed_channel}')
     return None
 
 # Helper functions for is_bot_actually_running
@@ -569,11 +574,672 @@ def login():
     # GET request - show login form with CSRF token
     return render_template('login.html', csrf_token=CSRFProtection.generate_csrf_token())
 
+@app.route('/auth/twitch')
+def auth_twitch():
+    """Initiate Twitch OAuth flow."""
+    # Try to get from config first, fallback to environment variables
+    client_id = config.get('oauth', 'twitch_client_id', fallback=None) or os.getenv('TWITCH_CLIENT_ID')
+    redirect_uri = config.get('oauth', 'twitch_redirect_uri', fallback=None) or os.getenv('TWITCH_REDIRECT_URI', 'http://localhost:5001/auth/twitch/callback')
+
+    if not client_id or client_id == 'your_oauth_client_id_here':
+        app.logger.error("Twitch OAuth not configured")
+        error_msg = ('Twitch OAuth not configured. '
+                    'Please set twitch_client_id and twitch_client_secret in settings.conf [oauth] section. '
+                    'Create an OAuth app at https://dev.twitch.tv/console')
+        return render_template('login.html', error=error_msg), 500
+
+    # Generate random state for CSRF protection
+    state = secrets.token_urlsafe(32)
+    session['oauth_state'] = state
+
+    # Build Twitch OAuth authorization URL
+    params = {
+        'client_id': client_id,
+        'redirect_uri': redirect_uri,
+        'response_type': 'code',
+        'scope': 'user:read:email',  # Request email permission
+        'state': state
+    }
+
+    auth_url = f"https://id.twitch.tv/oauth2/authorize?{urlencode(params)}"
+    return redirect(auth_url)
+
+@app.route('/auth/twitch/callback')
+def auth_twitch_callback():
+    """Handle Twitch OAuth callback."""
+    # Verify state to prevent CSRF
+    state = request.args.get('state')
+    if not state or state != session.get('oauth_state'):
+        app.logger.warning("OAuth state mismatch - possible CSRF attack")
+        return render_template('login.html', error='Authentication failed. Please try again.'), 400
+
+    # Clear state from session
+    session.pop('oauth_state', None)
+
+    # Get authorization code
+    code = request.args.get('code')
+    if not code:
+        error = request.args.get('error', 'Unknown error')
+        app.logger.warning(f"OAuth authorization failed: {error}")
+        return render_template('login.html', error='Twitch authorization denied.'), 400
+
+    # Exchange code for access token
+    client_id = config.get('oauth', 'twitch_client_id', fallback=None) or os.getenv('TWITCH_CLIENT_ID')
+    client_secret = config.get('oauth', 'twitch_client_secret', fallback=None) or os.getenv('TWITCH_CLIENT_SECRET')
+    redirect_uri = config.get('oauth', 'twitch_redirect_uri', fallback=None) or os.getenv('TWITCH_REDIRECT_URI', 'http://localhost:5001/auth/twitch/callback')
+
+    if not client_id or not client_secret or client_id == 'your_oauth_client_id_here':
+        app.logger.error("Twitch OAuth credentials not configured")
+        error_msg = ('Twitch OAuth not configured. '
+                    'Please set twitch_client_id and twitch_client_secret in settings.conf [oauth] section.')
+        return render_template('login.html', error=error_msg), 500
+
+    token_url = 'https://id.twitch.tv/oauth2/token'
+    token_data = {
+        'client_id': client_id,
+        'client_secret': client_secret,
+        'code': code,
+        'grant_type': 'authorization_code',
+        'redirect_uri': redirect_uri
+    }
+
+    try:
+        # Request access token
+        token_response = requests.post(token_url, data=token_data, timeout=10)
+        token_response.raise_for_status()
+        token_json = token_response.json()
+        access_token = token_json.get('access_token')
+
+        if not access_token:
+            app.logger.error("No access token in Twitch response")
+            return render_template('login.html', error='Authentication failed.'), 500
+
+        # Fetch user information from Twitch
+        user_url = 'https://api.twitch.tv/helix/users'
+        headers = {
+            'Authorization': f'Bearer {access_token}',
+            'Client-Id': client_id
+        }
+
+        user_response = requests.get(user_url, headers=headers, timeout=10)
+        user_response.raise_for_status()
+        user_json = user_response.json()
+
+        if not user_json.get('data'):
+            app.logger.error("No user data in Twitch response")
+            return render_template('login.html', error='Failed to fetch user data.'), 500
+
+        twitch_user = user_json['data'][0]
+        twitch_user_id = twitch_user['id']
+        twitch_username = twitch_user['login']
+        twitch_email = twitch_user.get('email', '')
+        avatar_url = twitch_user.get('profile_image_url', '')
+
+        app.logger.info(f"OAuth successful for Twitch user: {twitch_username} (ID: {twitch_user_id})")
+
+        # Check if user already exists by Twitch ID
+        conn = user_db.get_connection()
+        existing_user = conn.execute(
+            "SELECT * FROM users WHERE twitch_user_id = ?",
+            (twitch_user_id,)
+        ).fetchone()
+
+        if existing_user:
+            # User exists - log them in
+            user_dict = dict(existing_user)
+
+            # Update OAuth data if changed
+            conn.execute("""
+                UPDATE users
+                SET twitch_username = ?, avatar_url = ?, last_login = CURRENT_TIMESTAMP
+                WHERE id = ?
+            """, (twitch_username, avatar_url, user_dict['id']))
+            conn.commit()
+            conn.close()
+
+            # Create session
+            session['user_id'] = user_dict['id']
+            session['username'] = user_dict['username']
+            session.permanent = False
+
+            app.logger.info(f"Existing user logged in via OAuth: {user_dict['username']}")
+
+            # Redirect to onboarding if not completed, otherwise dashboard
+            if not user_dict.get('onboarding_completed'):
+                return redirect('/onboarding')
+            return redirect('/beta')
+
+        else:
+            # New user - create account
+            # Get streamer role ID
+            streamer_role = conn.execute(
+                "SELECT id FROM roles WHERE name = 'streamer'"
+            ).fetchone()
+
+            if not streamer_role:
+                app.logger.error("Streamer role not found in database")
+                conn.close()
+                return render_template('login.html', error='System error. Please contact administrator.'), 500
+
+            # Generate random password (won't be used for OAuth users)
+            random_password = secrets.token_urlsafe(32)
+            password_hash = user_db.hash_password(random_password)
+
+            # Create new user
+            try:
+                conn.execute("""
+                    INSERT INTO users (
+                        username, email, password_hash, role_id,
+                        twitch_user_id, twitch_username, avatar_url, managed_channel,
+                        subscription_tier, subscription_status, onboarding_completed
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    twitch_username,  # Use Twitch username
+                    twitch_email,
+                    password_hash,
+                    streamer_role['id'],
+                    twitch_user_id,
+                    twitch_username,
+                    avatar_url,
+                    twitch_username,  # Set managed_channel to their username
+                    'free',
+                    'inactive',
+                    0  # Not onboarded yet
+                ))
+                conn.commit()
+
+                # Get the newly created user
+                new_user = conn.execute(
+                    "SELECT * FROM users WHERE twitch_user_id = ?",
+                    (twitch_user_id,)
+                ).fetchone()
+                conn.close()
+
+                if new_user:
+                    user_dict = dict(new_user)
+
+                    # Create session
+                    session['user_id'] = user_dict['id']
+                    session['username'] = user_dict['username']
+                    session.permanent = False
+
+                    app.logger.info(f"New user created via OAuth: {twitch_username}")
+
+                    # Redirect new users to onboarding
+                    return redirect('/onboarding')
+                else:
+                    app.logger.error("Failed to retrieve newly created user")
+                    return render_template('login.html', error='Account creation failed.'), 500
+
+            except Exception as e:
+                conn.rollback()
+                conn.close()
+                app.logger.error(f"Error creating user from OAuth: {e}")
+                return render_template('login.html', error='Failed to create account.'), 500
+
+    except requests.exceptions.RequestException as e:
+        app.logger.error(f"OAuth request failed: {e}")
+        return render_template('login.html', error='Failed to communicate with Twitch.'), 500
+    except Exception as e:
+        app.logger.error(f"OAuth error: {e}")
+        return render_template('login.html', error='Authentication failed.'), 500
+
 @app.route('/logout')
 def logout():
     """Logout and clear session."""
     logout_user(request.remote_addr, request.headers.get('User-Agent', 'Unknown'))
     return redirect(url_for('login'))
+
+# Stripe Billing & Premium Routes
+@app.route('/premium')
+@require_auth
+def premium_page():
+    """Premium subscription and billing page."""
+    user = get_current_user()
+    if not user:
+        return redirect(url_for('login'))
+
+    subscription_status = user_db.get_subscription_status(user['id']) if user else None
+    has_premium = user_db.has_tts_access(user['id']) if user else False
+
+    return render_template('beta/premium.html',
+                         user=user,
+                         subscription_status=subscription_status,
+                         has_premium=has_premium,
+                         stripe_publishable_key=stripe_service.publishable_key)
+
+@app.route('/checkout/create', methods=['POST'])
+@require_auth
+def create_checkout():
+    """Create Stripe checkout session for Premium subscription."""
+    user = get_current_user()
+    if not user:
+        return jsonify({'success': False, 'error': 'Not authenticated'}), 401
+
+    # Check if already has premium
+    if user_db.has_tts_access(user['id']):
+        return jsonify({'success': False, 'error': 'Already subscribed to Premium'}), 400
+
+    try:
+        # Get user email
+        user_email = user.get('email') or f"{user['username']}@ansv.bot"
+
+        # Create checkout session
+        success_url = url_for('checkout_success', _external=True) + '?session_id={CHECKOUT_SESSION_ID}'
+        cancel_url = url_for('checkout_cancel', _external=True)
+
+        result = stripe_service.create_checkout_session(
+            user_id=user['id'],
+            user_email=user_email,
+            success_url=success_url,
+            cancel_url=cancel_url
+        )
+
+        if result and result.get('success'):
+            return jsonify({
+                'success': True,
+                'session_id': result['session_id'],
+                'url': result['url']
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': result.get('error', 'Failed to create checkout session')
+            }), 500
+
+    except Exception as e:
+        app.logger.error(f"Error creating checkout: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/checkout/success')
+@require_auth
+def checkout_success():
+    """Handle successful checkout redirect."""
+    session_id = request.args.get('session_id')
+
+    return render_template('checkout_success.html',
+                         session_id=session_id,
+                         message='Payment successful! Your Premium subscription is being activated.')
+
+@app.route('/checkout/cancel')
+@require_auth
+def checkout_cancel():
+    """Handle cancelled checkout redirect."""
+    return render_template('checkout_cancel.html',
+                         message='Checkout cancelled. You can try again anytime.')
+
+@app.route('/billing/portal', methods=['POST'])
+@require_auth
+def billing_portal():
+    """Redirect to Stripe customer portal for subscription management."""
+    user = get_current_user()
+    if not user:
+        return jsonify({'success': False, 'error': 'Not authenticated'}), 401
+
+    # Get subscription status to find customer ID
+    subscription_status = user_db.get_subscription_status(user['id'])
+
+    if not subscription_status or not subscription_status.get('stripe_customer_id'):
+        return jsonify({'success': False, 'error': 'No active subscription found'}), 400
+
+    try:
+        return_url = url_for('premium_page', _external=True)
+
+        result = stripe_service.create_customer_portal_session(
+            customer_id=subscription_status['stripe_customer_id'],
+            return_url=return_url
+        )
+
+        if result and result.get('success'):
+            return jsonify({
+                'success': True,
+                'url': result['url']
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': result.get('error', 'Failed to create portal session')
+            }), 500
+
+    except Exception as e:
+        app.logger.error(f"Error creating portal session: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/webhook/stripe', methods=['POST'])
+def stripe_webhook():
+    """Handle Stripe webhook events."""
+    payload = request.data
+    sig_header = request.headers.get('Stripe-Signature')
+
+    if not sig_header:
+        app.logger.error("No Stripe signature in webhook request")
+        return jsonify({'error': 'No signature'}), 400
+
+    # Verify and construct event
+    event = stripe_service.construct_webhook_event(payload, sig_header)
+
+    if not event:
+        return jsonify({'error': 'Invalid signature'}), 400
+
+    event_type = event['type']
+    app.logger.info(f"Received Stripe webhook: {event_type}")
+
+    try:
+        if event_type == 'checkout.session.completed':
+            # Payment successful, activate subscription
+            session = event['data']['object']
+            user_id = int(session.get('client_reference_id') or session['metadata'].get('user_id'))
+            customer_id = session['customer']
+            subscription_id = session.get('subscription')
+
+            app.logger.info(f"Checkout completed for user {user_id}, subscription {subscription_id}")
+
+            # Fetch full subscription details from Stripe
+            try:
+                import stripe
+                subscription = stripe.Subscription.retrieve(subscription_id)
+                current_period_start = subscription.current_period_start
+                current_period_end = subscription.current_period_end
+                cancel_at_period_end = subscription.cancel_at_period_end
+            except Exception as e:
+                app.logger.error(f"Error fetching subscription details: {e}")
+                current_period_start = None
+                current_period_end = None
+                cancel_at_period_end = False
+
+            # Update user subscription status
+            user_db.update_subscription(
+                user_id=user_id,
+                tier='premium',
+                status='active',
+                stripe_customer_id=customer_id,
+                stripe_subscription_id=subscription_id,
+                current_period_start=current_period_start,
+                current_period_end=current_period_end,
+                cancel_at_period_end=cancel_at_period_end
+            )
+
+        elif event_type == 'invoice.payment_succeeded':
+            # Recurring payment successful
+            invoice = event['data']['object']
+            subscription_id = invoice['subscription']
+            customer_id = invoice['customer']
+
+            # Find user by subscription ID
+            conn = user_db.get_connection()
+            c = conn.cursor()
+            c.execute("SELECT id FROM users WHERE stripe_subscription_id = ?", (subscription_id,))
+            user_row = c.fetchone()
+            conn.close()
+
+            if user_row:
+                user_id = user_row[0]
+                app.logger.info(f"Payment succeeded for user {user_id}, subscription {subscription_id}")
+
+                # Fetch subscription details from Stripe
+                try:
+                    import stripe
+                    subscription = stripe.Subscription.retrieve(subscription_id)
+                    current_period_start = subscription.current_period_start
+                    current_period_end = subscription.current_period_end
+                    cancel_at_period_end = subscription.cancel_at_period_end
+                except Exception as e:
+                    app.logger.error(f"Error fetching subscription details: {e}")
+                    current_period_start = None
+                    current_period_end = None
+                    cancel_at_period_end = False
+
+                # Ensure subscription is active
+                user_db.update_subscription(
+                    user_id=user_id,
+                    tier='premium',
+                    status='active',
+                    stripe_customer_id=customer_id,
+                    stripe_subscription_id=subscription_id,
+                    current_period_start=current_period_start,
+                    current_period_end=current_period_end,
+                    cancel_at_period_end=cancel_at_period_end
+                )
+
+        elif event_type == 'invoice.payment_failed':
+            # Payment failed
+            invoice = event['data']['object']
+            subscription_id = invoice['subscription']
+
+            # Find user by subscription ID
+            conn = user_db.get_connection()
+            c = conn.cursor()
+            c.execute("SELECT id FROM users WHERE stripe_subscription_id = ?", (subscription_id,))
+            user_row = c.fetchone()
+            conn.close()
+
+            if user_row:
+                user_id = user_row[0]
+                app.logger.warning(f"Payment failed for user {user_id}, subscription {subscription_id}")
+
+                # Mark as past_due
+                user_db.update_subscription(
+                    user_id=user_id,
+                    tier='premium',
+                    status='past_due',
+                    stripe_subscription_id=subscription_id
+                )
+
+        elif event_type == 'customer.subscription.deleted':
+            # Subscription cancelled
+            subscription = event['data']['object']
+            subscription_id = subscription['id']
+
+            # Find user by subscription ID
+            conn = user_db.get_connection()
+            c = conn.cursor()
+            c.execute("SELECT id FROM users WHERE stripe_subscription_id = ?", (subscription_id,))
+            user_row = c.fetchone()
+            conn.close()
+
+            if user_row:
+                user_id = user_row[0]
+                app.logger.info(f"Subscription cancelled for user {user_id}, subscription {subscription_id}")
+
+                # Downgrade to free
+                user_db.update_subscription(
+                    user_id=user_id,
+                    tier='free',
+                    status='cancelled',
+                    stripe_subscription_id=subscription_id
+                )
+
+        elif event_type == 'customer.subscription.updated':
+            # Subscription updated (e.g., cancel at period end set)
+            subscription = event['data']['object']
+            subscription_id = subscription['id']
+            cancel_at_period_end = subscription.get('cancel_at_period_end', False)
+            current_period_start = subscription.get('current_period_start')
+            current_period_end = subscription.get('current_period_end')
+            status_map = {
+                'active': 'active',
+                'past_due': 'past_due',
+                'canceled': 'cancelled',
+                'unpaid': 'cancelled'
+            }
+            status = status_map.get(subscription.get('status'), 'active')
+
+            # Find user by subscription ID
+            conn = user_db.get_connection()
+            c = conn.cursor()
+            c.execute("SELECT id FROM users WHERE stripe_subscription_id = ?", (subscription_id,))
+            user_row = c.fetchone()
+            conn.close()
+
+            if user_row:
+                user_id = user_row[0]
+                app.logger.info(f"Subscription updated for user {user_id}, cancel_at_period_end={cancel_at_period_end}")
+
+                # Update subscription with all details
+                tier = 'premium' if status in ['active', 'past_due'] else 'free'
+                user_db.update_subscription(
+                    user_id=user_id,
+                    tier=tier,
+                    status=status,
+                    stripe_subscription_id=subscription_id,
+                    current_period_start=current_period_start,
+                    current_period_end=current_period_end,
+                    cancel_at_period_end=cancel_at_period_end
+                )
+
+        return jsonify({'success': True}), 200
+
+    except Exception as e:
+        app.logger.error(f"Error processing webhook {event_type}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+# Onboarding Routes
+@app.route('/onboarding')
+@require_auth
+def onboarding_welcome():
+    """Welcome page for new users."""
+    user = get_current_user()
+    if not user:
+        return redirect(url_for('login'))
+
+    # If already completed onboarding, redirect to dashboard
+    if user.get('onboarding_completed'):
+        return redirect(url_for('beta_dashboard'))
+
+    return render_template('onboarding/welcome.html')
+
+@app.route('/onboarding/channel')
+@require_auth
+def onboarding_channel():
+    """Channel confirmation page."""
+    user = get_current_user()
+    if not user:
+        return redirect(url_for('login'))
+
+    if user.get('onboarding_completed'):
+        return redirect(url_for('beta_dashboard'))
+
+    return render_template('onboarding/channel.html')
+
+@app.route('/onboarding/channel', methods=['POST'])
+@require_auth
+def onboarding_channel_confirm():
+    """Confirm channel selection."""
+    user = get_current_user()
+    if not user:
+        return jsonify({'success': False, 'error': 'Not authenticated'}), 401
+
+    try:
+        # Channel is already set from OAuth (managed_channel)
+        # Just confirm it exists
+        managed_channel = user.get('managed_channel')
+        if not managed_channel:
+            return jsonify({'success': False, 'error': 'No managed channel found'}), 400
+
+        return jsonify({'success': True})
+
+    except Exception as e:
+        app.logger.error(f"Error confirming channel: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/onboarding/settings')
+@require_auth
+def onboarding_settings():
+    """Bot settings configuration page."""
+    user = get_current_user()
+    if not user:
+        return redirect(url_for('login'))
+
+    if user.get('onboarding_completed'):
+        return redirect(url_for('beta_dashboard'))
+
+    return render_template('onboarding/settings.html')
+
+@app.route('/onboarding/settings', methods=['POST'])
+@require_auth
+def onboarding_settings_save():
+    """Save initial bot settings and create channel config."""
+    user = get_current_user()
+    if not user:
+        return jsonify({'success': False, 'error': 'Not authenticated'}), 401
+
+    try:
+        data = request.json
+        managed_channel = user.get('managed_channel')
+
+        if not managed_channel:
+            return jsonify({'success': False, 'error': 'No managed channel found'}), 400
+
+        # Create channel config with user's settings
+        conn = sqlite3.connect(db_file)
+        try:
+            c = conn.cursor()
+
+            # Check if channel config already exists
+            c.execute("SELECT channel_name FROM channel_configs WHERE channel_name = ?", (managed_channel,))
+            existing = c.fetchone()
+
+            if not existing:
+                # Create new channel config
+                c.execute("""
+                    INSERT INTO channel_configs (
+                        channel_name, user_id, join_channel, voice_enabled,
+                        tts_enabled, lines_between_messages
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                """, (
+                    managed_channel,
+                    user['id'],
+                    data.get('join_channel', True),
+                    data.get('voice_enabled', True),
+                    False,  # TTS disabled by default (Premium only)
+                    data.get('lines_between_messages', 100)
+                ))
+                conn.commit()
+
+            return jsonify({'success': True})
+        finally:
+            conn.close()
+
+    except Exception as e:
+        app.logger.error(f"Error saving settings: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/onboarding/premium')
+@require_auth
+def onboarding_premium():
+    """Premium upsell page."""
+    user = get_current_user()
+    if not user:
+        return redirect(url_for('login'))
+
+    if user.get('onboarding_completed'):
+        return redirect(url_for('beta_dashboard'))
+
+    return render_template('onboarding/premium.html')
+
+@app.route('/onboarding/complete', methods=['POST'])
+@require_auth
+def onboarding_complete():
+    """Mark onboarding as complete."""
+    user = get_current_user()
+    if not user:
+        return jsonify({'success': False, 'error': 'Not authenticated'}), 401
+
+    try:
+        # Mark onboarding as complete
+        conn = user_db.get_connection()
+        c = conn.cursor()
+        c.execute("UPDATE users SET onboarding_completed = 1 WHERE id = ?", (user['id'],))
+        conn.commit()
+        conn.close()
+
+        app.logger.info(f"User {user['id']} completed onboarding")
+
+        return jsonify({'success': True})
+
+    except Exception as e:
+        app.logger.error(f"Error completing onboarding: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 # User Profile Management Routes
 @app.route('/profile')
@@ -912,25 +1578,36 @@ def api_user_channels(user_id):
         return jsonify({'success': False, 'error': 'Error getting user channels'}), 500
 
 @app.route('/')
+def index():
+    """Landing page for public visitors, redirect to dashboard for authenticated users."""
+    if is_authenticated():
+        # Authenticated users go to dashboard
+        return redirect(url_for('beta_dashboard'))
+    else:
+        # Public visitors see landing page
+        return render_template("landing.html")
+
+@app.route('/legacy')
 @require_auth
-def main():
+def legacy_main():
+    """Legacy main page - preserved for backwards compatibility."""
     # Redirect streamers to their channel instead of main page
     streamer_redirect = redirect_streamers_to_channel()
     if streamer_redirect:
         return streamer_redirect
-        
+
     # Theme is now injected by context_processor, but can be accessed here if needed
-    # theme = request.cookies.get("theme", "darkly") 
+    # theme = request.cookies.get("theme", "darkly")
     tts_files_data, last_id_val = get_last_10_tts_files_with_last_id(db_file)
-    
+
     bot_running_status = is_bot_actually_running()
-    
+
     bot_status_info = {
         'running': bot_running_status,
         'uptime': 'N/A',
         'channels': []
     }
-    
+
     if bot_running_status and os.path.exists('bot_heartbeat.json'):
         try:
             with open('bot_heartbeat.json', 'r') as f:
@@ -943,8 +1620,8 @@ def main():
                 bot_status_info['channels'] = heartbeat.get('channels', [])
         except (FileNotFoundError, json.JSONDecodeError) as e:
             app.logger.warning(f"Could not read or parse bot_heartbeat.json: {e}")
-    
-    return render_template("index.html", tts_files=tts_files_data, 
+
+    return render_template("index.html", tts_files=tts_files_data,
                            last_id=last_id_val, bot_status=bot_status_info) # No need to pass theme explicitly
 
 @app.route("/generate-message/<channel_name>") 
@@ -2388,30 +3065,51 @@ def api_channel_generate_message(channel_name):
 @require_permission(Permissions.DASHBOARD_VIEW)
 def beta_dashboard():
     """Render the redesigned beta dashboard."""
-    # Redirect streamers to their channel instead of dashboard
-    streamer_redirect = redirect_streamers_to_channel()
-    if streamer_redirect:
-        return streamer_redirect
-        
     try:
+        # Get current user and subscription status
+        user = get_current_user()
+
+        # Redirect to onboarding if not completed
+        if user and not user.get('onboarding_completed'):
+            return redirect(url_for('onboarding_welcome'))
+
+        subscription_status = user_db.get_subscription_status(user['id']) if user else None
+        has_premium = user_db.has_tts_access(user['id']) if user else False
+
         # Get bot status and basic info for the beta dashboard
         bot_running = is_bot_actually_running()
-        
-        # Get channels data
+
+        # Get channels data based on user role
         conn = sqlite3.connect(db_file)
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
-        c.execute("SELECT * FROM channel_configs ORDER BY channel_name")
-        channels_data = [dict(row) for row in c.fetchall()]
+
+        if user and user.get('role_name') == 'streamer':
+            # Streamers see only their managed channel
+            managed_channel = user.get('managed_channel')
+            if managed_channel:
+                c.execute("SELECT * FROM channel_configs WHERE channel_name = ?", (managed_channel,))
+                channel_row = c.fetchone()
+                channels_data = [dict(channel_row)] if channel_row else []
+            else:
+                channels_data = []
+        else:
+            # Super admins see all channels
+            c.execute("SELECT * FROM channel_configs ORDER BY channel_name")
+            channels_data = [dict(row) for row in c.fetchall()]
+
         conn.close()
-        
+
         # Get recent TTS activity
         recent_tts, _ = get_last_10_tts_files_with_last_id(db_file)
-        
-        return render_template("beta/dashboard.html", 
+
+        return render_template("beta/dashboard.html",
                              bot_running=bot_running,
                              channels=channels_data,
-                             recent_tts=recent_tts[:5])  # Just show 5 most recent
+                             recent_tts=recent_tts[:5],  # Just show 5 most recent
+                             subscription_status=subscription_status,
+                             has_premium=has_premium,
+                             is_single_channel=(user and user.get('role_name') == 'streamer'))
         
     except Exception as e:
         app.logger.error(f"Error loading beta dashboard: {e}")
@@ -2467,22 +3165,35 @@ def beta_stats_page():
 @require_permission(Permissions.SYSTEM_SETTINGS)
 def beta_settings_page():
     """Render the redesigned beta settings page."""
-    # Redirect streamers to their channel instead of settings
-    streamer_redirect = redirect_streamers_to_channel()
-    if streamer_redirect:
-        return streamer_redirect
-        
     try:
+        # Get current user and subscription status
+        user = get_current_user()
+        subscription_status = user_db.get_subscription_status(user['id']) if user else None
+        has_premium = user_db.has_tts_access(user['id']) if user else False
+
         bot_running = is_bot_actually_running()
-        
-        # Get channels data with additional info
+
+        # Get channels data based on user role
         conn = sqlite3.connect(db_file)
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
-        c.execute("SELECT * FROM channel_configs ORDER BY channel_name")
-        channels_data = [dict(row) for row in c.fetchall()]
+
+        if user and user.get('role_name') == 'streamer':
+            # Streamers see only their managed channel
+            managed_channel = user.get('managed_channel')
+            if managed_channel:
+                c.execute("SELECT * FROM channel_configs WHERE channel_name = ?", (managed_channel,))
+                channel_row = c.fetchone()
+                channels_data = [dict(channel_row)] if channel_row else []
+            else:
+                channels_data = []
+        else:
+            # Super admins see all channels
+            c.execute("SELECT * FROM channel_configs ORDER BY channel_name")
+            channels_data = [dict(row) for row in c.fetchall()]
+
         conn.close()
-        
+
         # Get bot status for connection info
         bot_status = {}
         if bot_running and os.path.exists("bot_heartbeat.json"):
@@ -2491,19 +3202,22 @@ def beta_settings_page():
                     bot_status = json.load(f)
             except (FileNotFoundError, json.JSONDecodeError):
                 pass
-        
+
         # Add connection status to channels
         heartbeat_channels = []
         if bot_status.get('channels'):
             heartbeat_channels = [ch.lstrip('#').lower() for ch in bot_status.get('channels', [])]
-        
+
         for channel in channels_data:
             channel['currently_connected'] = channel['channel_name'].lower() in heartbeat_channels
-        
-        return render_template("beta/settings.html", 
+
+        return render_template("beta/settings.html",
                              bot_running=bot_running,
                              channels=channels_data,
-                             bot_status=bot_status)
+                             bot_status=bot_status,
+                             subscription_status=subscription_status,
+                             has_premium=has_premium,
+                             is_single_channel=(user and user.get('role_name') == 'streamer'))
         
     except Exception as e:
         app.logger.error(f"Error loading beta settings page: {e}")
@@ -2533,6 +3247,11 @@ def debug_session():
 def beta_channel_page(channel_name):
     """Render the redesigned beta channel page."""
     try:
+        # Get current user and subscription status
+        user = get_current_user()
+        subscription_status = user_db.get_subscription_status(user['id']) if user else None
+        has_premium = user_db.has_tts_access(user['id']) if user else False
+
         # Validate channel exists
         conn = sqlite3.connect(db_file)
         conn.row_factory = sqlite3.Row
@@ -2540,10 +3259,10 @@ def beta_channel_page(channel_name):
         c.execute("SELECT * FROM channel_configs WHERE channel_name = ?", (channel_name,))
         channel_config = c.fetchone()
         conn.close()
-        
+
         if not channel_config:
             return render_template("404.html", error_message=f"Channel '{channel_name}' not found"), 404
-        
+
         # Convert to dict for template
         channel_data = dict(channel_config)
         channel_data['name'] = channel_name
@@ -2576,8 +3295,11 @@ def beta_channel_page(channel_name):
         
         channel_data['currently_connected'] = currently_connected
         channel_data['bot_running'] = bot_running
-        
-        return render_template("beta/channel.html", channel=channel_data)
+
+        return render_template("beta/channel.html",
+                             channel=channel_data,
+                             subscription_status=subscription_status,
+                             has_premium=has_premium)
         
     except Exception as e:
         app.logger.error(f"Error loading beta channel page for {channel_name}: {e}")
@@ -2586,11 +3308,23 @@ def beta_channel_page(channel_name):
 @app.route('/api/channel/<channel_name>/tts', methods=['POST'])
 @require_channel_access('channel_name', 'edit')
 def api_channel_tts(channel_name):
-    """Generate TTS for a specific channel."""
+    """Generate TTS for a specific channel (Premium feature)."""
+    # Check if user has TTS access (Premium subscription)
+    user = get_current_user()
+    if user and not user_db.has_tts_access(user['id']):
+        app.logger.warning(f"User {user['username']} attempted TTS without Premium subscription")
+        return jsonify({
+            'success': False,
+            'error': 'TTS is a Premium feature',
+            'message': 'Upgrade to Premium ($2/month) to unlock Text-to-Speech',
+            'upgrade_url': '/premium',
+            'requires_premium': True
+        }), 403
+
     try:
         data = request.get_json() or {}
         text = data.get('text', '').strip()
-        
+
         if not text:
             return jsonify({"error": "Text is required"}), 400
         
