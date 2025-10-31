@@ -1714,12 +1714,24 @@ def rebuild_general_cache():
         return jsonify({"success": False, "message": str(e)}), 500
 
 @app.route('/rebuild-cache/<channel_name>', methods=['POST'])
+@require_channel_access('channel_name', 'edit')
 def rebuild_cache(channel_name):
     try:
         success = markov_handler.rebuild_cache_for_channel(channel_name, 'logs')
         return jsonify({"success": success, "message": f"Cache rebuild for {channel_name} " + ("succeeded" if success else "failed")})
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
+
+@app.route('/rebuild_model/<channel_name>', methods=['POST'])
+@require_channel_access('channel_name', 'edit')
+def rebuild_model(channel_name):
+    """Rebuild Markov model for a channel (alias for rebuild-cache)."""
+    try:
+        success = markov_handler.rebuild_cache_for_channel(channel_name, 'logs')
+        return jsonify({"success": success, "message": f"Model rebuild for {channel_name} " + ("succeeded" if success else "failed")})
+    except Exception as e:
+        app.logger.error(f"Error rebuilding model for {channel_name}: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/rebuild-all-caches', methods=['POST'])
 def rebuild_all_caches():
