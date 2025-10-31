@@ -24,6 +24,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initTtsPopup();
     initTrustedUsers();
     loadRecentMessages();
+    loadLastBuildTime();
 
     // Auto-refresh every 30 seconds
     setInterval(() => {
@@ -257,8 +258,10 @@ function rebuildModel() {
         .then(data => {
             if (data.success) {
                 showNotification('Model rebuilt successfully', 'success');
+                // Reload the last build time
+                loadLastBuildTime();
             } else {
-                showNotification('Failed to rebuild model: ' + (data.error || 'Unknown error'), 'error');
+                showNotification('Failed to rebuild model: ' + (data.error || data.message || 'Unknown error'), 'error');
             }
         })
         .catch(error => {
@@ -269,6 +272,54 @@ function rebuildModel() {
             btn.disabled = false;
             btn.innerHTML = '<i class="fas fa-sync-alt me-2"></i>Rebuild Markov Model';
             progress.style.display = 'none';
+        });
+}
+
+// Load last build time for model
+function loadLastBuildTime() {
+    if (!channelName) return;
+
+    const timeEl = document.getElementById('lastTrainedTime');
+    if (!timeEl) return;
+
+    fetch(`/api/channel/${channelName}/last_build`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.timestamp) {
+                const buildDate = new Date(data.timestamp * 1000); // Convert Unix timestamp to JS Date
+                const now = new Date();
+                const diffSeconds = Math.floor((now - buildDate) / 1000);
+
+                let timeStr;
+                if (diffSeconds < 60) {
+                    timeStr = 'Just now';
+                } else if (diffSeconds < 3600) {
+                    const mins = Math.floor(diffSeconds / 60);
+                    timeStr = `${mins} minute${mins !== 1 ? 's' : ''} ago`;
+                } else if (diffSeconds < 86400) {
+                    const hours = Math.floor(diffSeconds / 3600);
+                    timeStr = `${hours} hour${hours !== 1 ? 's' : ''} ago`;
+                } else if (diffSeconds < 604800) {
+                    const days = Math.floor(diffSeconds / 86400);
+                    timeStr = `${days} day${days !== 1 ? 's' : ''} ago`;
+                } else {
+                    // Show full date if older than a week
+                    timeStr = buildDate.toLocaleDateString() + ' ' + buildDate.toLocaleTimeString();
+                }
+
+                timeEl.textContent = timeStr;
+
+                // Add duration info if available
+                if (data.duration) {
+                    timeEl.title = `Took ${data.duration.toFixed(2)}s to build`;
+                }
+            } else {
+                timeEl.textContent = 'Never';
+            }
+        })
+        .catch(error => {
+            console.error('[Streamer Dashboard] Error loading last build time:', error);
+            timeEl.textContent = 'Unknown';
         });
 }
 

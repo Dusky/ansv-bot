@@ -2112,6 +2112,42 @@ def api_update_trusted_users(channel_name):
         app.logger.error(f"Error updating trusted users for {channel_name}: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/api/channel/<channel_name>/last_build', methods=['GET'])
+@require_channel_access('channel_name', 'view')
+def api_get_last_build(channel_name):
+    """Get last model build time for a channel."""
+    try:
+        conn = sqlite3.connect(db_file)
+        conn.row_factory = sqlite3.Row
+
+        # Get most recent successful build from cache_build_log
+        build_log = conn.execute("""
+            SELECT timestamp, duration, success
+            FROM cache_build_log
+            WHERE channel_name = ? AND success = 1
+            ORDER BY timestamp DESC
+            LIMIT 1
+        """, (channel_name,)).fetchone()
+
+        conn.close()
+
+        if build_log:
+            return jsonify({
+                'success': True,
+                'timestamp': build_log['timestamp'],
+                'duration': build_log['duration']
+            })
+        else:
+            return jsonify({
+                'success': True,
+                'timestamp': None,
+                'duration': None
+            })
+
+    except Exception as e:
+        app.logger.error(f"Error fetching last build for {channel_name}: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/channel/<channel_name>')
 @require_permission(Permissions.CHANNELS_VIEW)
 def channel_page(channel_name):
