@@ -1937,8 +1937,44 @@ def logs_page():
     streamer_redirect = redirect_streamers_to_channel()
     if streamer_redirect:
         return streamer_redirect
-        
+
     return render_template("logs.html")
+
+@app.route('/tts-popup')
+@require_auth
+def tts_popup():
+    """Render TTS popup window for stream capture."""
+    return render_template("tts_popup.html")
+
+@app.route('/api/channel/<channel_name>/recent_messages')
+@require_channel_access('channel_name', 'view')
+def api_channel_recent_messages(channel_name):
+    """Get recent bot-generated messages for a channel."""
+    try:
+        conn = sqlite3.connect(db_file)
+        conn.row_factory = sqlite3.Row
+
+        # Get recent bot messages from the channel (last 20)
+        messages = conn.execute("""
+            SELECT message, timestamp, voice_enabled
+            FROM messages
+            WHERE channel_name = ? AND is_bot_message = 1
+            ORDER BY timestamp DESC
+            LIMIT 20
+        """, (channel_name,)).fetchall()
+
+        conn.close()
+
+        messages_list = [dict(row) for row in messages]
+
+        return jsonify({
+            'success': True,
+            'messages': messages_list
+        })
+
+    except Exception as e:
+        app.logger.error(f"Error fetching recent messages for {channel_name}: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/channel/<channel_name>')
 @require_permission(Permissions.CHANNELS_VIEW)
@@ -3124,14 +3160,25 @@ def beta_dashboard():
         c = conn.cursor()
 
         if user and user.get('role_name') == 'streamer':
-            # Streamers see only their managed channel
+            # Streamers get redirected to dedicated streamer dashboard
             managed_channel = user.get('managed_channel')
             if managed_channel:
                 c.execute("SELECT * FROM channel_configs WHERE channel_name = ?", (managed_channel,))
                 channel_row = c.fetchone()
-                channels_data = [dict(channel_row)] if channel_row else []
-            else:
-                channels_data = []
+                if channel_row:
+                    channel = dict(channel_row)
+                    conn.close()
+
+                    # Get recent TTS activity for streamer
+                    recent_tts, _ = get_last_10_tts_files_with_last_id(db_file)
+
+                    return render_template("beta/streamer_dashboard.html",
+                                         channel=channel,
+                                         bot_running=bot_running,
+                                         subscription_status=subscription_status,
+                                         has_premium=has_premium,
+                                         recent_tts=recent_tts[:10])
+            channels_data = []
         else:
             # Super admins see all channels
             c.execute("SELECT * FROM channel_configs ORDER BY channel_name")
