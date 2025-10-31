@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ANSV TTS - Stream Overlay</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            margin: 0;
+            padding: 1rem;
+            background: #1a1a1a;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden;
+        }
+
+        .tts-container {
+            display: flex;
+            flex-direction: column;
+            height: calc(100vh - 2rem);
+        }
+
+        .tts-header {
+            text-align: center;
+            padding: 1rem;
+            background: linear-gradient(135deg, rgba(145, 70, 255, 0.2), rgba(100, 65, 165, 0.2));
+            border-radius: 8px;
+            margin-bottom: 1rem;
+        }
+
+        .tts-header h1 {
+            font-size: 1.25rem;
+            margin: 0;
+            color: #9146FF;
+        }
+
+        .tts-header p {
+            margin: 0;
+            font-size: 0.75rem;
+            color: #aaa;
+        }
+
+        .tts-display {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            padding: 2rem;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .tts-idle {
+            color: #666;
+        }
+
+        .tts-idle i {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            opacity: 0.5;
+        }
+
+        .tts-active {
+            display: none;
+        }
+
+        .tts-active.playing {
+            display: flex;
+            flex-direction: column;
+            animation: fadeIn 0.3s ease-in-out;
+        }
+
+        .tts-message {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            line-height: 1.4;
+            word-wrap: break-word;
+        }
+
+        .tts-visualizer {
+            display: flex;
+            gap: 4px;
+            justify-content: center;
+            align-items: flex-end;
+            height: 60px;
+            margin-top: 1rem;
+        }
+
+        .tts-bar {
+            width: 8px;
+            background: linear-gradient(to top, #9146FF, #6441a5);
+            border-radius: 4px;
+            animation: pulse 0.8s ease-in-out infinite;
+        }
+
+        .tts-bar:nth-child(2) { animation-delay: 0.1s; }
+        .tts-bar:nth-child(3) { animation-delay: 0.2s; }
+        .tts-bar:nth-child(4) { animation-delay: 0.3s; }
+        .tts-bar:nth-child(5) { animation-delay: 0.4s; }
+        .tts-bar:nth-child(6) { animation-delay: 0.3s; }
+        .tts-bar:nth-child(7) { animation-delay: 0.2s; }
+        .tts-bar:nth-child(8) { animation-delay: 0.1s; }
+
+        @keyframes pulse {
+            0%, 100% { height: 20px; opacity: 0.5; }
+            50% { height: 60px; opacity: 1; }
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.9); }
+            to { opacity: 1; transform: scale(1); }
+        }
+
+        .tts-status {
+            position: absolute;
+            bottom: 1rem;
+            right: 1rem;
+            font-size: 0.75rem;
+            color: #666;
+        }
+
+        .tts-status.connected {
+            color: #00ff00;
+        }
+
+        .tts-controls {
+            display: flex;
+            gap: 0.5rem;
+            justify-content: center;
+            margin-top: 1rem;
+        }
+
+        .btn-sm {
+            font-size: 0.875rem;
+            padding: 0.375rem 0.75rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="tts-container">
+        <div class="tts-header">
+            <h1><i class="fas fa-volume-up me-2"></i>ANSV TTS Stream Overlay</h1>
+            <p>Position this window in your OBS/stream capture</p>
+        </div>
+
+        <div class="tts-display">
+            <div class="tts-idle" id="ttsIdle">
+                <i class="fas fa-volume-mute"></i>
+                <p>Waiting for TTS...</p>
+            </div>
+
+            <div class="tts-active" id="ttsActive">
+                <div class="tts-message" id="ttsMessage"></div>
+                <div class="tts-visualizer">
+                    <div class="tts-bar"></div>
+                    <div class="tts-bar"></div>
+                    <div class="tts-bar"></div>
+                    <div class="tts-bar"></div>
+                    <div class="tts-bar"></div>
+                    <div class="tts-bar"></div>
+                    <div class="tts-bar"></div>
+                    <div class="tts-bar"></div>
+                </div>
+            </div>
+
+            <div class="tts-status" id="ttsStatus">
+                <i class="fas fa-circle"></i> Disconnected
+            </div>
+        </div>
+
+        <div class="tts-controls">
+            <button class="btn btn-sm btn-outline-primary" id="testTtsBtn">
+                <i class="fas fa-play me-1"></i>Test TTS
+            </button>
+            <button class="btn btn-sm btn-outline-secondary" id="refreshBtn">
+                <i class="fas fa-sync-alt me-1"></i>Refresh
+            </button>
+        </div>
+    </div>
+
+    <audio id="ttsPlayer" style="display: none;"></audio>
+
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script>
+        let socket = null;
+        let isPlaying = false;
+
+        // Initialize on load
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('[TTS Popup] Initializing...');
+            connectWebSocket();
+            initButtons();
+        });
+
+        // Connect to WebSocket for real-time TTS updates
+        function connectWebSocket() {
+            try {
+                socket = io();
+
+                socket.on('connect', function() {
+                    console.log('[TTS Popup] WebSocket connected');
+                    updateStatus(true);
+                });
+
+                socket.on('disconnect', function() {
+                    console.log('[TTS Popup] WebSocket disconnected');
+                    updateStatus(false);
+                });
+
+                // Listen for TTS generation events
+                socket.on('tts_generated', function(data) {
+                    console.log('[TTS Popup] TTS generated:', data);
+                    playTts(data.message, data.file);
+                });
+
+            } catch (error) {
+                console.error('[TTS Popup] WebSocket error:', error);
+                updateStatus(false);
+            }
+        }
+
+        // Update connection status
+        function updateStatus(connected) {
+            const status = document.getElementById('ttsStatus');
+            if (connected) {
+                status.innerHTML = '<i class="fas fa-circle"></i> Connected';
+                status.classList.add('connected');
+            } else {
+                status.innerHTML = '<i class="fas fa-circle"></i> Disconnected';
+                status.classList.remove('connected');
+            }
+        }
+
+        // Play TTS
+        function playTts(message, file) {
+            if (isPlaying) {
+                console.log('[TTS Popup] Already playing, queueing...');
+                // TODO: Implement queue if needed
+                return;
+            }
+
+            isPlaying = true;
+            const messageEl = document.getElementById('ttsMessage');
+            const idle = document.getElementById('ttsIdle');
+            const active = document.getElementById('ttsActive');
+            const player = document.getElementById('ttsPlayer');
+
+            // Update UI
+            messageEl.textContent = message;
+            idle.style.display = 'none';
+            active.classList.add('playing');
+
+            // Play audio
+            player.src = `/tts/${file}`;
+            player.play()
+                .then(() => {
+                    console.log('[TTS Popup] Playing:', file);
+                })
+                .catch(error => {
+                    console.error('[TTS Popup] Playback error:', error);
+                    stopTts();
+                });
+
+            // Handle playback end
+            player.onended = function() {
+                console.log('[TTS Popup] Playback ended');
+                stopTts();
+            };
+        }
+
+        // Stop TTS
+        function stopTts() {
+            isPlaying = false;
+            const idle = document.getElementById('ttsIdle');
+            const active = document.getElementById('ttsActive');
+
+            setTimeout(() => {
+                idle.style.display = 'block';
+                active.classList.remove('playing');
+            }, 500);
+        }
+
+        // Initialize buttons
+        function initButtons() {
+            const testBtn = document.getElementById('testTtsBtn');
+            if (testBtn) {
+                testBtn.addEventListener('click', function() {
+                    playTts('This is a test TTS message for stream capture!', 'test.wav');
+                });
+            }
+
+            const refreshBtn = document.getElementById('refreshBtn');
+            if (refreshBtn) {
+                refreshBtn.addEventListener('click', function() {
+                    location.reload();
+                });
+            }
+        }
+    </script>
+</body>
+</html>

@@ -11,7 +11,7 @@ import traceback
 import signal # Added import for signal
 import requests
 from urllib.parse import urlencode
-from flask import Flask, render_template, request, jsonify, redirect, url_for, send_from_directory, make_response, session
+from flask import Flask, render_template, request, jsonify, redirect, url_for, send_from_directory, make_response, session, g
 from flask_socketio import SocketIO # Import SocketIO
 from datetime import datetime, timedelta
 import configparser
@@ -697,10 +697,20 @@ def auth_twitch_callback():
             conn.commit()
             conn.close()
 
-            # Create session
+            # Create proper session in database (like login_user does)
+            session_id = user_db.create_session(
+                user_dict['id'],
+                request.remote_addr,
+                request.headers.get('User-Agent', 'Unknown'),
+                24  # 24 hours session duration
+            )
+
+            # Store in Flask session
+            session.permanent = False
+            session['session_id'] = session_id
             session['user_id'] = user_dict['id']
             session['username'] = user_dict['username']
-            session.permanent = False
+            session['role'] = user_dict.get('role_name', 'streamer')
 
             app.logger.info(f"Existing user logged in via OAuth: {user_dict['username']}")
 
@@ -758,10 +768,20 @@ def auth_twitch_callback():
                 if new_user:
                     user_dict = dict(new_user)
 
-                    # Create session
+                    # Create proper session in database (like login_user does)
+                    session_id = user_db.create_session(
+                        user_dict['id'],
+                        request.remote_addr,
+                        request.headers.get('User-Agent', 'Unknown'),
+                        24  # 24 hours session duration
+                    )
+
+                    # Store in Flask session
+                    session.permanent = False
+                    session['session_id'] = session_id
                     session['user_id'] = user_dict['id']
                     session['username'] = user_dict['username']
-                    session.permanent = False
+                    session['role'] = user_dict.get('role_name', 'streamer')
 
                     app.logger.info(f"New user created via OAuth: {twitch_username}")
 
@@ -799,8 +819,8 @@ def premium_page():
     if not user:
         return redirect(url_for('login'))
 
-    subscription_status = user_db.get_subscription_status(user['id']) if user else None
-    has_premium = user_db.has_tts_access(user['id']) if user else False
+    subscription_status = user_db.get_subscription_status(user['user_id']) if user else None
+    has_premium = user_db.has_tts_access(user['user_id']) if user else False
 
     return render_template('beta/premium.html',
                          user=user,
@@ -817,7 +837,7 @@ def create_checkout():
         return jsonify({'success': False, 'error': 'Not authenticated'}), 401
 
     # Check if already has premium
-    if user_db.has_tts_access(user['id']):
+    if user_db.has_tts_access(user['user_id']):
         return jsonify({'success': False, 'error': 'Already subscribed to Premium'}), 400
 
     try:
@@ -829,7 +849,7 @@ def create_checkout():
         cancel_url = url_for('checkout_cancel', _external=True)
 
         result = stripe_service.create_checkout_session(
-            user_id=user['id'],
+            user_id=user['user_id'],
             user_email=user_email,
             success_url=success_url,
             cancel_url=cancel_url
@@ -877,7 +897,7 @@ def billing_portal():
         return jsonify({'success': False, 'error': 'Not authenticated'}), 401
 
     # Get subscription status to find customer ID
-    subscription_status = user_db.get_subscription_status(user['id'])
+    subscription_status = user_db.get_subscription_status(user['user_id'])
 
     if not subscription_status or not subscription_status.get('stripe_customer_id'):
         return jsonify({'success': False, 'error': 'No active subscription found'}), 400
@@ -1130,10 +1150,23 @@ def onboarding_channel_confirm():
         return jsonify({'success': False, 'error': 'Not authenticated'}), 401
 
     try:
+        # DEBUG: Log what we have in the user object
+        app.logger.info(f"Onboarding channel check - User fields: {list(user.keys())}")
+        app.logger.info(f"Onboarding channel check - managed_channel value: {user.get('managed_channel')}")
+
         # Channel is already set from OAuth (managed_channel)
         # Just confirm it exists
         managed_channel = user.get('managed_channel')
         if not managed_channel:
+            # If managed_channel is missing from session, try to fetch from database directly
+            conn = user_db.get_connection()
+            db_user = conn.execute("SELECT managed_channel FROM users WHERE id = ?", (user['user_id'],)).fetchone()
+            conn.close()
+
+            if db_user and db_user['managed_channel']:
+                app.logger.info(f"Found managed_channel in DB but not in session: {db_user['managed_channel']}")
+                return jsonify({'success': False, 'error': 'Session outdated. Please log out and log in again.'}), 400
+
             return jsonify({'success': False, 'error': 'No managed channel found'}), 400
 
         return jsonify({'success': True})
@@ -1188,7 +1221,7 @@ def onboarding_settings_save():
                     ) VALUES (?, ?, ?, ?, ?, ?)
                 """, (
                     managed_channel,
-                    user['id'],
+                    user['user_id'],
                     data.get('join_channel', True),
                     data.get('voice_enabled', True),
                     False,  # TTS disabled by default (Premium only)
@@ -1226,14 +1259,20 @@ def onboarding_complete():
         return jsonify({'success': False, 'error': 'Not authenticated'}), 401
 
     try:
-        # Mark onboarding as complete
+        # Mark onboarding as complete in database
         conn = user_db.get_connection()
         c = conn.cursor()
-        c.execute("UPDATE users SET onboarding_completed = 1 WHERE id = ?", (user['id'],))
+        # IMPORTANT: user['user_id'] is the actual user ID, user['id'] is the session ID!
+        c.execute("UPDATE users SET onboarding_completed = 1 WHERE id = ?", (user['user_id'],))
         conn.commit()
         conn.close()
 
-        app.logger.info(f"User {user['id']} completed onboarding")
+        app.logger.info(f"User {user['user_id']} (username: {user.get('username')}) completed onboarding")
+
+        # Clear any cached user data in Flask's g object to force a refresh
+        # This ensures the next get_current_user() call will fetch updated data from DB
+        if hasattr(g, 'current_user'):
+            delattr(g, 'current_user')
 
         return jsonify({'success': True})
 
@@ -1675,12 +1714,63 @@ def rebuild_general_cache():
         return jsonify({"success": False, "message": str(e)}), 500
 
 @app.route('/rebuild-cache/<channel_name>', methods=['POST'])
+@require_channel_access('channel_name', 'edit')
 def rebuild_cache(channel_name):
     try:
         success = markov_handler.rebuild_cache_for_channel(channel_name, 'logs')
         return jsonify({"success": success, "message": f"Cache rebuild for {channel_name} " + ("succeeded" if success else "failed")})
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
+
+@app.route('/rebuild_model/<channel_name>', methods=['POST'])
+@require_channel_access('channel_name', 'edit')
+def rebuild_model(channel_name):
+    """Rebuild Markov model for a channel (alias for rebuild-cache)."""
+    import os
+
+    try:
+        # Check if log file exists first
+        log_file_path = os.path.join('logs', f'{channel_name}.txt')
+
+        if not os.path.exists(log_file_path):
+            app.logger.warning(f"Log file not found for {channel_name}: {log_file_path}")
+            return jsonify({
+                "success": False,
+                "error": f"No chat log file found for #{channel_name}",
+                "message": "The bot needs to collect chat messages first before building a model. Make sure the bot is connected and chat messages are being logged."
+            }), 404
+
+        # Check if log file has content
+        file_size = os.path.getsize(log_file_path)
+        if file_size < 100:
+            return jsonify({
+                "success": False,
+                "error": "Chat log file is too small",
+                "message": f"The log file for #{channel_name} only has {file_size} bytes. More chat messages are needed to build a model."
+            }), 400
+
+        # Attempt rebuild
+        success = markov_handler.rebuild_cache_for_channel(channel_name, 'logs')
+
+        if success:
+            return jsonify({
+                "success": True,
+                "message": f"Model rebuilt successfully for #{channel_name}"
+            })
+        else:
+            return jsonify({
+                "success": False,
+                "error": "Rebuild failed",
+                "message": "Check the server logs for details"
+            }), 500
+
+    except Exception as e:
+        app.logger.error(f"Error rebuilding model for {channel_name}: {e}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "message": "An unexpected error occurred during rebuild"
+        }), 500
 
 @app.route('/rebuild-all-caches', methods=['POST'])
 def rebuild_all_caches():
@@ -1689,6 +1779,21 @@ def rebuild_all_caches():
         return jsonify({"success": success, "message": "All caches rebuild " + ("succeeded" if success else "failed")})
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
+
+@app.route('/bot_status')
+@require_auth
+def bot_status():
+    """Get current bot status."""
+    try:
+        running = is_bot_actually_running()
+        return jsonify({
+            'success': True,
+            'running': running,
+            'timestamp': time.time()
+        })
+    except Exception as e:
+        app.logger.error(f"Error getting bot status: {e}")
+        return jsonify({'success': False, 'running': False, 'error': str(e)}), 500
 
 @app.route('/start_bot', methods=['POST'])
 @require_permission(Permissions.BOT_START)
@@ -1898,8 +2003,150 @@ def logs_page():
     streamer_redirect = redirect_streamers_to_channel()
     if streamer_redirect:
         return streamer_redirect
-        
+
     return render_template("logs.html")
+
+@app.route('/tts-popup')
+@require_auth
+def tts_popup():
+    """Render TTS popup window for stream capture."""
+    return render_template("tts_popup.html")
+
+@app.route('/api/channel/<channel_name>/recent_messages')
+@require_channel_access('channel_name', 'view')
+def api_channel_recent_messages(channel_name):
+    """Get recent bot-generated messages for a channel."""
+    try:
+        conn = sqlite3.connect(db_file)
+        conn.row_factory = sqlite3.Row
+
+        # Get recent bot-generated messages from the channel (last 20)
+        # The column is 'is_bot_response' not 'is_bot_message'
+        messages = conn.execute("""
+            SELECT message, timestamp, author_name
+            FROM messages
+            WHERE channel = ? AND is_bot_response = 1
+            ORDER BY id DESC
+            LIMIT 20
+        """, (channel_name,)).fetchall()
+
+        conn.close()
+
+        # Reverse to show oldest first (chronological order)
+        messages_list = [dict(row) for row in reversed(messages)]
+
+        return jsonify({
+            'success': True,
+            'messages': messages_list
+        })
+
+    except Exception as e:
+        app.logger.error(f"Error fetching recent messages for {channel_name}: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/channel/<channel_name>/trusted_users', methods=['GET'])
+@require_channel_access('channel_name', 'view')
+def api_get_trusted_users(channel_name):
+    """Get list of trusted users for a channel."""
+    try:
+        conn = sqlite3.connect(db_file)
+        conn.row_factory = sqlite3.Row
+
+        channel_config = conn.execute("""
+            SELECT trusted_users
+            FROM channel_configs
+            WHERE channel_name = ?
+        """, (channel_name,)).fetchone()
+
+        conn.close()
+
+        if channel_config:
+            trusted_users_str = channel_config['trusted_users'] or ''
+            trusted_users = [u.strip() for u in trusted_users_str.split(',') if u.strip()]
+            return jsonify({
+                'success': True,
+                'trusted_users': trusted_users
+            })
+        else:
+            return jsonify({'success': False, 'error': 'Channel not found'}), 404
+
+    except Exception as e:
+        app.logger.error(f"Error fetching trusted users for {channel_name}: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/channel/<channel_name>/trusted_users', methods=['POST'])
+@require_channel_access('channel_name', 'edit')
+def api_update_trusted_users(channel_name):
+    """Update list of trusted users for a channel."""
+    try:
+        data = request.json
+        trusted_users = data.get('trusted_users', [])
+
+        # Validate and clean usernames
+        cleaned_users = []
+        for username in trusted_users:
+            username = username.strip().lower()
+            if username and username.isalnum() or '_' in username:
+                cleaned_users.append(username)
+
+        # Convert to comma-separated string
+        trusted_users_str = ','.join(cleaned_users)
+
+        conn = sqlite3.connect(db_file)
+        conn.execute("""
+            UPDATE channel_configs
+            SET trusted_users = ?
+            WHERE channel_name = ?
+        """, (trusted_users_str, channel_name))
+        conn.commit()
+        conn.close()
+
+        app.logger.info(f"Updated trusted users for {channel_name}: {cleaned_users}")
+
+        return jsonify({
+            'success': True,
+            'trusted_users': cleaned_users
+        })
+
+    except Exception as e:
+        app.logger.error(f"Error updating trusted users for {channel_name}: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/channel/<channel_name>/last_build', methods=['GET'])
+@require_channel_access('channel_name', 'view')
+def api_get_last_build(channel_name):
+    """Get last model build time for a channel."""
+    try:
+        conn = sqlite3.connect(db_file)
+        conn.row_factory = sqlite3.Row
+
+        # Get most recent successful build from cache_build_log
+        build_log = conn.execute("""
+            SELECT timestamp, duration, success
+            FROM cache_build_log
+            WHERE channel_name = ? AND success = 1
+            ORDER BY timestamp DESC
+            LIMIT 1
+        """, (channel_name,)).fetchone()
+
+        conn.close()
+
+        if build_log:
+            return jsonify({
+                'success': True,
+                'timestamp': build_log['timestamp'],
+                'duration': build_log['duration']
+            })
+        else:
+            return jsonify({
+                'success': True,
+                'timestamp': None,
+                'duration': None
+            })
+
+    except Exception as e:
+        app.logger.error(f"Error fetching last build for {channel_name}: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/channel/<channel_name>')
 @require_permission(Permissions.CHANNELS_VIEW)
@@ -1910,7 +2157,7 @@ def channel_page(channel_name):
     if user and user.get('role_name') == 'streamer':
         from utils.user_db import UserDatabase
         user_db = UserDatabase('users.db')
-        user_channels = user_db.get_user_channels_from_db(user['id'])
+        user_channels = user_db.get_user_channels_from_db(user['user_id'])
         if user_channels and channel_name in user_channels:
             # Redirect to beta channel page for their channel
             return redirect(f'/beta/channel/{channel_name}')
@@ -3073,8 +3320,8 @@ def beta_dashboard():
         if user and not user.get('onboarding_completed'):
             return redirect(url_for('onboarding_welcome'))
 
-        subscription_status = user_db.get_subscription_status(user['id']) if user else None
-        has_premium = user_db.has_tts_access(user['id']) if user else False
+        subscription_status = user_db.get_subscription_status(user['user_id']) if user else None
+        has_premium = user_db.has_tts_access(user['user_id']) if user else False
 
         # Get bot status and basic info for the beta dashboard
         bot_running = is_bot_actually_running()
@@ -3085,14 +3332,25 @@ def beta_dashboard():
         c = conn.cursor()
 
         if user and user.get('role_name') == 'streamer':
-            # Streamers see only their managed channel
+            # Streamers get redirected to dedicated streamer dashboard
             managed_channel = user.get('managed_channel')
             if managed_channel:
                 c.execute("SELECT * FROM channel_configs WHERE channel_name = ?", (managed_channel,))
                 channel_row = c.fetchone()
-                channels_data = [dict(channel_row)] if channel_row else []
-            else:
-                channels_data = []
+                if channel_row:
+                    channel = dict(channel_row)
+                    conn.close()
+
+                    # Get recent TTS activity for streamer
+                    recent_tts, _ = get_last_10_tts_files_with_last_id(db_file)
+
+                    return render_template("beta/streamer_dashboard.html",
+                                         channel=channel,
+                                         bot_running=bot_running,
+                                         subscription_status=subscription_status,
+                                         has_premium=has_premium,
+                                         recent_tts=recent_tts[:10])
+            channels_data = []
         else:
             # Super admins see all channels
             c.execute("SELECT * FROM channel_configs ORDER BY channel_name")
@@ -3168,8 +3426,8 @@ def beta_settings_page():
     try:
         # Get current user and subscription status
         user = get_current_user()
-        subscription_status = user_db.get_subscription_status(user['id']) if user else None
-        has_premium = user_db.has_tts_access(user['id']) if user else False
+        subscription_status = user_db.get_subscription_status(user['user_id']) if user else None
+        has_premium = user_db.has_tts_access(user['user_id']) if user else False
 
         bot_running = is_bot_actually_running()
 
@@ -3249,8 +3507,8 @@ def beta_channel_page(channel_name):
     try:
         # Get current user and subscription status
         user = get_current_user()
-        subscription_status = user_db.get_subscription_status(user['id']) if user else None
-        has_premium = user_db.has_tts_access(user['id']) if user else False
+        subscription_status = user_db.get_subscription_status(user['user_id']) if user else None
+        has_premium = user_db.has_tts_access(user['user_id']) if user else False
 
         # Validate channel exists
         conn = sqlite3.connect(db_file)
@@ -3311,7 +3569,7 @@ def api_channel_tts(channel_name):
     """Generate TTS for a specific channel (Premium feature)."""
     # Check if user has TTS access (Premium subscription)
     user = get_current_user()
-    if user and not user_db.has_tts_access(user['id']):
+    if user and not user_db.has_tts_access(user['user_id']):
         app.logger.warning(f"User {user['username']} attempted TTS without Premium subscription")
         return jsonify({
             'success': False,

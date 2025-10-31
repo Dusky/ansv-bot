@@ -485,7 +485,8 @@ class UserDatabase:
         conn = self.get_connection()
         try:
             session = conn.execute("""
-                SELECT s.*, u.username, u.status as user_status,
+                SELECT s.*, u.username, u.status as user_status, u.email,
+                       u.managed_channel, u.onboarding_completed, u.avatar_url,
                        r.name as role_name, r.permissions as role_permissions
                 FROM user_sessions s
                 JOIN users u ON s.user_id = u.id

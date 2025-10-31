@@ -1,0 +1,493 @@
+{% extends "beta/base.html" %}
+
+{% block title %}My Channel - ANSV Bot{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-4 py-3">
+    <!-- Channel Hero Section -->
+    <div class="streamer-hero mb-4">
+        <div class="hero-content">
+            <h1 class="hero-title">
+                <i class="fas fa-hashtag me-2"></i>#{{ channel.channel_name }}
+            </h1>
+            <p class="hero-subtitle">Your ANSV Bot Control Center</p>
+        </div>
+        <div class="hero-actions">
+            <button class="btn btn-success btn-lg" id="startBotBtn" style="display: none;">
+                <i class="fas fa-play me-2"></i>Start Bot
+            </button>
+            <button class="btn btn-danger btn-lg" id="stopBotBtn" style="display: none;">
+                <i class="fas fa-stop me-2"></i>Stop Bot
+            </button>
+            <button class="btn btn-primary btn-lg" id="openTtsPopupBtn">
+                <i class="fas fa-external-link-alt me-2"></i>TTS Stream Window
+            </button>
+        </div>
+    </div>
+
+    <!-- Premium Banner -->
+    {% if not has_premium %}
+    <div class="alert alert-info mb-4" style="border-left: 4px solid #9146FF;">
+        <div class="d-flex align-items-center justify-content-between">
+            <div>
+                <h5 class="mb-1"><i class="fas fa-star me-2"></i>Unlock TTS with Premium</h5>
+                <p class="mb-0">Get janky AI voices for just $2/month</p>
+            </div>
+            <a href="/premium" class="btn btn-primary">
+                <i class="fas fa-arrow-right me-2"></i>Upgrade Now
+            </a>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Main Content Grid -->
+    <div class="row">
+        <!-- Left Column: Status & Settings -->
+        <div class="col-lg-6 mb-4">
+            <!-- Bot Status Card -->
+            <div class="dashboard-panel mb-4">
+                <div class="panel-header">
+                    <h2 class="panel-title">
+                        <i class="fas fa-robot me-2"></i>Bot Status
+                    </h2>
+                    <button class="btn btn-outline-primary btn-sm" id="refreshStatusBtn">
+                        <i class="fas fa-sync-alt"></i>
+                    </button>
+                </div>
+                <div class="panel-body">
+                    <div class="status-grid">
+                        <div class="status-item">
+                            <div class="status-label">Connection</div>
+                            <div class="status-value" id="botStatusValue">
+                                <span class="badge bg-secondary">Checking...</span>
+                            </div>
+                        </div>
+                        <div class="status-item">
+                            <div class="status-label">Auto-Reply</div>
+                            <div class="status-value">
+                                <span class="badge {{ 'bg-success' if channel.voice_enabled else 'bg-secondary' }}">
+                                    {{ 'Enabled' if channel.voice_enabled else 'Disabled' }}
+                                </span>
+                            </div>
+                        </div>
+                        <div class="status-item">
+                            <div class="status-label">TTS</div>
+                            <div class="status-value">
+                                <span class="badge {{ 'bg-success' if channel.tts_enabled else 'bg-secondary' }}">
+                                    {{ 'Enabled' if channel.tts_enabled else 'Disabled' }}
+                                </span>
+                            </div>
+                        </div>
+                        <div class="status-item">
+                            <div class="status-label">Messages Today</div>
+                            <div class="status-value" id="messagesToday">-</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Quick Settings Card -->
+            <div class="dashboard-panel mb-4">
+                <div class="panel-header">
+                    <h2 class="panel-title">
+                        <i class="fas fa-sliders-h me-2"></i>Quick Settings
+                    </h2>
+                </div>
+                <div class="panel-body">
+                    <div class="settings-list">
+                        <div class="setting-item">
+                            <div class="setting-info">
+                                <div class="setting-label">
+                                    <i class="fas fa-sign-in-alt me-2 text-primary"></i>
+                                    Join Channel on Startup
+                                </div>
+                                <div class="setting-description">Bot will automatically connect to your channel</div>
+                            </div>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="joinChannelToggle"
+                                       {% if channel.join_channel %}checked{% endif %}>
+                            </div>
+                        </div>
+
+                        <div class="setting-item">
+                            <div class="setting-info">
+                                <div class="setting-label">
+                                    <i class="fas fa-comments me-2 text-success"></i>
+                                    Auto-Reply Mode
+                                </div>
+                                <div class="setting-description">Bot responds automatically using Markov chain</div>
+                            </div>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="autoReplyToggle"
+                                       {% if channel.voice_enabled %}checked{% endif %}>
+                            </div>
+                        </div>
+
+                        <div class="setting-item">
+                            <div class="setting-info">
+                                <div class="setting-label">
+                                    <i class="fas {% if has_premium %}fa-volume-up text-warning{% else %}fa-lock text-muted{% endif %} me-2"></i>
+                                    TTS Mode {% if not has_premium %}(Premium){% endif %}
+                                </div>
+                                <div class="setting-description">
+                                    {% if has_premium %}
+                                    Generate text-to-speech for messages
+                                    {% else %}
+                                    Upgrade to Premium to unlock TTS
+                                    {% endif %}
+                                </div>
+                            </div>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="ttsToggle"
+                                       {% if channel.tts_enabled %}checked{% endif %}
+                                       {% if not has_premium %}disabled{% endif %}>
+                            </div>
+                        </div>
+
+                        <div class="setting-item">
+                            <div class="setting-info">
+                                <div class="setting-label">
+                                    <i class="fas fa-clock me-2 text-info"></i>
+                                    Lines Between Messages
+                                </div>
+                                <div class="setting-description">How many chat lines before bot responds</div>
+                            </div>
+                            <div class="input-group input-group-sm" style="max-width: 150px;">
+                                <input type="number" class="form-control" id="linesBetweenInput"
+                                       value="{{ channel.lines_between_messages or 100 }}" min="1" max="1000">
+                                <button class="btn btn-outline-primary" id="updateLinesBtn">
+                                    <i class="fas fa-check"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Model Training Card -->
+            <div class="dashboard-panel mb-4">
+                <div class="panel-header">
+                    <h2 class="panel-title">
+                        <i class="fas fa-brain me-2"></i>Model Training
+                    </h2>
+                </div>
+                <div class="panel-body">
+                    <p class="text-muted mb-3">
+                        <small>Last trained: <span id="lastTrainedTime">Unknown</span></small>
+                    </p>
+                    <button class="btn btn-primary w-100" id="rebuildModelBtn">
+                        <i class="fas fa-sync-alt me-2"></i>Rebuild Markov Model
+                    </button>
+                    <div class="mt-3" id="rebuildProgress" style="display: none;">
+                        <div class="progress">
+                            <div class="progress-bar progress-bar-striped progress-bar-animated"
+                                 role="progressbar" style="width: 100%">
+                            </div>
+                        </div>
+                        <small class="text-muted">Rebuilding model...</small>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Trusted Members Card -->
+            <div class="dashboard-panel">
+                <div class="panel-header">
+                    <h2 class="panel-title">
+                        <i class="fas fa-user-shield me-2"></i>Trusted Members
+                    </h2>
+                </div>
+                <div class="panel-body">
+                    <p class="text-muted mb-3">
+                        <small>Viewers who can use !ansv commands in your chat</small>
+                    </p>
+                    <div class="trusted-users-list mb-3" id="trustedUsersList">
+                        <div class="text-center py-2 text-muted">
+                            <i class="fas fa-spinner fa-spin"></i> Loading...
+                        </div>
+                    </div>
+                    <div class="input-group">
+                        <input type="text" class="form-control" id="newTrustedUserInput"
+                               placeholder="Enter username" autocomplete="off">
+                        <button class="btn btn-success" id="addTrustedUserBtn">
+                            <i class="fas fa-plus me-1"></i>Add
+                        </button>
+                    </div>
+                    <small class="text-muted d-block mt-2">
+                        <i class="fas fa-info-circle me-1"></i>Press Enter or click Add to add a user
+                    </small>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Column: Activity & Messages -->
+        <div class="col-lg-6 mb-4">
+            <!-- Recent Bot Messages -->
+            <div class="dashboard-panel mb-4">
+                <div class="panel-header">
+                    <h2 class="panel-title">
+                        <i class="fas fa-robot me-2"></i>Recent Bot Messages
+                    </h2>
+                    <button class="btn btn-outline-primary btn-sm" id="refreshMessagesBtn">
+                        <i class="fas fa-sync-alt"></i>
+                    </button>
+                </div>
+                <div class="panel-body">
+                    <div class="messages-feed" id="botMessagesFeed">
+                        <div class="text-center py-4 text-muted">
+                            <i class="fas fa-spinner fa-spin fa-2x mb-3"></i>
+                            <p>Loading recent messages...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TTS Activity -->
+            {% if has_premium %}
+            <div class="dashboard-panel">
+                <div class="panel-header">
+                    <h2 class="panel-title">
+                        <i class="fas fa-volume-up me-2"></i>Recent TTS
+                    </h2>
+                </div>
+                <div class="panel-body">
+                    <div class="tts-feed" id="ttsFeed">
+                        {% for tts in recent_tts %}
+                        <div class="tts-item">
+                            <div class="tts-info">
+                                <div class="tts-text">{{ tts.message[:60] }}{% if tts.message|length > 60 %}...{% endif %}</div>
+                                <div class="tts-meta">
+                                    <small class="text-muted">{{ tts.timestamp }}</small>
+                                </div>
+                            </div>
+                            <div class="tts-actions">
+                                {% if tts.file %}
+                                <button class="btn btn-sm btn-outline-primary play-tts-btn" data-file="{{ tts.file }}">
+                                    <i class="fas fa-play"></i>
+                                </button>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endfor %}
+                        {% if not recent_tts %}
+                        <div class="empty-state py-4 text-center">
+                            <i class="fas fa-volume-mute fa-2x text-muted mb-2"></i>
+                            <p class="text-muted mb-0">No TTS activity yet</p>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Hidden Audio Player -->
+<audio id="ttsAudioPlayer" style="display: none;"></audio>
+
+<style>
+.streamer-hero {
+    background: linear-gradient(135deg, rgba(145, 70, 255, 0.1), rgba(100, 65, 165, 0.1));
+    border-radius: 12px;
+    padding: 2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border: 1px solid rgba(145, 70, 255, 0.2);
+}
+
+.hero-title {
+    font-size: 2rem;
+    font-weight: 700;
+    margin: 0;
+}
+
+.hero-subtitle {
+    color: var(--bs-secondary-color);
+    margin: 0;
+}
+
+.hero-actions {
+    display: flex;
+    gap: 0.75rem;
+}
+
+.status-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1.5rem;
+}
+
+.status-item {
+    text-align: center;
+    padding: 1rem;
+    background: var(--bs-secondary-bg);
+    border-radius: 8px;
+}
+
+.status-label {
+    font-size: 0.875rem;
+    color: var(--bs-secondary-color);
+    margin-bottom: 0.5rem;
+}
+
+.status-value {
+    font-size: 1.25rem;
+    font-weight: 600;
+}
+
+.settings-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.setting-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem;
+    background: var(--bs-secondary-bg);
+    border-radius: 8px;
+    gap: 1rem;
+}
+
+.setting-info {
+    flex: 1;
+}
+
+.setting-label {
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+}
+
+.setting-description {
+    font-size: 0.875rem;
+    color: var(--bs-secondary-color);
+}
+
+.form-check-input {
+    width: 3rem;
+    height: 1.5rem;
+}
+
+.messages-feed {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.message-item {
+    padding: 1rem;
+    border-bottom: 1px solid var(--bs-border-color);
+}
+
+.message-item:last-child {
+    border-bottom: none;
+}
+
+.message-text {
+    margin-bottom: 0.5rem;
+}
+
+.message-meta {
+    display: flex;
+    gap: 1rem;
+    font-size: 0.875rem;
+    color: var(--bs-secondary-color);
+}
+
+.tts-feed {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.tts-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem;
+    border-bottom: 1px solid var(--bs-border-color);
+    gap: 1rem;
+}
+
+.tts-item:last-child {
+    border-bottom: none;
+}
+
+.tts-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.tts-text {
+    font-size: 0.9rem;
+    margin-bottom: 0.25rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.tts-meta {
+    font-size: 0.75rem;
+}
+
+.trusted-users-list {
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.trusted-user-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: var(--bs-secondary-bg);
+    padding: 0.5rem 0.75rem;
+    border-radius: 6px;
+    margin: 0.25rem;
+}
+
+.trusted-user-badge .username {
+    font-weight: 500;
+}
+
+.trusted-user-badge .remove-btn {
+    background: none;
+    border: none;
+    color: var(--bs-danger);
+    cursor: pointer;
+    padding: 0;
+    font-size: 0.875rem;
+    opacity: 0.7;
+    transition: opacity 0.2s;
+}
+
+.trusted-user-badge .remove-btn:hover {
+    opacity: 1;
+}
+
+@media (max-width: 768px) {
+    .streamer-hero {
+        flex-direction: column;
+        text-align: center;
+        gap: 1rem;
+    }
+
+    .hero-actions {
+        flex-direction: column;
+        width: 100%;
+    }
+
+    .status-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .setting-item {
+        flex-direction: column;
+        text-align: center;
+    }
+}
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='scripts/streamer-dashboard.js') }}"></script>
+{% endblock %}
