@@ -283,6 +283,24 @@ def set_enable_tts(status: bool):
     app.logger.info(f"Webapp TTS status set by ansv.py to: {_enable_tts_webapp}")
 
 
+def get_today_message_count():
+    """Get count of messages sent today"""
+    try:
+        conn = sqlite3.connect(db_file)
+        cursor = conn.cursor()
+        today = datetime.now().strftime('%Y-%m-%d')
+        cursor.execute("""
+            SELECT COUNT(*) as count
+            FROM messages
+            WHERE DATE(timestamp) = ?
+        """, (today,))
+        result = cursor.fetchone()
+        conn.close()
+        return result[0] if result else 0
+    except Exception as e:
+        app.logger.error(f"Error getting today's message count: {e}")
+        return 0
+
 def get_last_10_tts_files_with_last_id(db_file_path): # Renamed db_file to db_file_path for clarity
     try:
         conn = sqlite3.connect(db_file_path)
@@ -1615,6 +1633,460 @@ def api_user_channels(user_id):
     except Exception as e:
         app.logger.error(f"Error getting channels for user {user_id}: {e}")
         return jsonify({'success': False, 'error': 'Error getting user channels'}), 500
+
+@app.route('/admin/users/<int:user_id>/toggle-pro', methods=['POST'])
+@require_role('admin')
+def admin_toggle_pro_status(user_id):
+    """Toggle pro status for a user"""
+    try:
+        data = request.get_json()
+        is_pro = data.get('is_pro', False)
+
+        # Get user
+        user = user_db.get_user_by_id(user_id)
+        if not user:
+            return jsonify({'success': False, 'error': 'User not found'}), 404
+
+        # Update subscription status
+        if is_pro:
+            # Set to premium/active
+            success = user_db.update_subscription(
+                user_id,
+                subscription_tier='premium',
+                subscription_status='active'
+            )
+            message = f"User {user['username']} upgraded to Pro (manual)"
+        else:
+            # Set to free/inactive
+            success = user_db.update_subscription(
+                user_id,
+                subscription_tier='free',
+                subscription_status='inactive'
+            )
+            message = f"User {user['username']} downgraded to Free (manual)"
+
+        if success:
+            # Log action
+            current_user = get_current_user()
+            user_db.log_action(
+                current_user['user_id'], 'user.pro_status_changed', 'user', str(user_id),
+                {'target_username': user['username'], 'is_pro': is_pro, 'manual': True},
+                request.remote_addr, request.headers.get('User-Agent', 'Unknown')
+            )
+            return jsonify({'success': True, 'message': message})
+        else:
+            return jsonify({'success': False, 'error': 'Failed to update pro status'}), 500
+
+    except Exception as e:
+        app.logger.error(f"Error toggling pro status for user {user_id}: {e}")
+        return jsonify({'success': False, 'error': 'Error updating pro status'}), 500
+
+##############################
+# Admin Panel Routes
+##############################
+
+@app.route('/admin')
+@require_role('admin')
+def admin_dashboard():
+    """Main admin dashboard"""
+    try:
+        # Get stats
+        stats = {
+            'total_users': user_db.get_total_users(),
+            'total_channels': len(get_all_channel_configs()),
+            'pro_users': user_db.get_pro_users_count(),
+            'total_messages': get_today_message_count()
+        }
+
+        # Get recent activity
+        recent_activity = user_db.get_recent_audit_logs(limit=10)
+
+        return render_template('admin_dashboard.html', stats=stats, recent_activity=recent_activity)
+    except Exception as e:
+        app.logger.error(f"Error loading admin dashboard: {e}")
+        return render_template("500.html", error_message=f"Error loading dashboard: {str(e)}"), 500
+
+@app.route('/admin/bot-control')
+@require_role('admin')
+def admin_bot_control():
+    """Bot control page"""
+    return render_template('admin_bot_control.html')
+
+@app.route('/admin/message-tools')
+@require_role('admin')
+def admin_message_tools():
+    """Message generation and sending tools"""
+    try:
+        channels = get_all_channel_configs()
+        return render_template('admin_message_tools.html', channels=channels)
+    except Exception as e:
+        app.logger.error(f"Error loading message tools: {e}")
+        return render_template("500.html", error_message=f"Error loading message tools: {str(e)}"), 500
+
+@app.route('/admin/channels')
+@require_role('admin')
+def admin_channels():
+    """Channel management page"""
+    try:
+        channels = get_all_channel_configs()
+        return render_template('admin_channels.html', channels=channels)
+    except Exception as e:
+        app.logger.error(f"Error loading channel management: {e}")
+        return render_template("500.html", error_message=f"Error loading channels: {str(e)}"), 500
+
+@app.route('/admin/monitoring')
+@require_role('admin')
+def admin_monitoring():
+    """System monitoring page"""
+    return render_template('admin_monitoring.html')
+
+@app.route('/admin/audit-logs')
+@require_role('admin')
+def admin_audit_logs():
+    """Audit logs page"""
+    try:
+        logs = user_db.get_recent_audit_logs(limit=100)
+        return render_template('admin_audit_logs.html', logs=logs)
+    except Exception as e:
+        app.logger.error(f"Error loading audit logs: {e}")
+        return render_template("500.html", error_message=f"Error loading audit logs: {str(e)}"), 500
+
+@app.route('/admin/settings')
+@require_role('admin')
+def admin_settings():
+    """Admin settings page"""
+    return render_template('admin_settings.html')
+
+@app.route('/admin/tts')
+@require_role('admin')
+def admin_tts():
+    """TTS generation page"""
+    try:
+        channels = get_all_channel_configs()
+        return render_template('admin_tts.html', channels=channels)
+    except Exception as e:
+        app.logger.error(f"Error loading TTS page: {e}")
+        return render_template("500.html", error_message=f"Error loading TTS: {str(e)}"), 500
+
+##############################
+# Admin API Routes
+##############################
+
+@app.route('/api/admin/stats')
+@require_role('admin')
+def api_admin_stats():
+    """Get admin dashboard statistics"""
+    try:
+        stats = {
+            'total_users': user_db.get_total_users(),
+            'total_channels': len(get_all_channel_configs()),
+            'pro_users': user_db.get_pro_users_count(),
+            'total_messages': get_today_message_count()
+        }
+        return jsonify({'success': True, 'stats': stats})
+    except Exception as e:
+        app.logger.error(f"Error getting admin stats: {e}")
+        return jsonify({'success': False, 'error': 'Error getting stats'}), 500
+
+@app.route('/api/bot/status')
+@require_role('admin')
+def api_bot_status():
+    """Get bot status"""
+    try:
+        bot_running = is_bot_actually_running()
+
+        if bot_running:
+            # Try to read heartbeat file
+            heartbeat_data = {}
+            if os.path.exists('bot_heartbeat.json'):
+                with open('bot_heartbeat.json', 'r') as f:
+                    heartbeat_data = json.load(f)
+
+            return jsonify({
+                'success': True,
+                'bot_running': True,
+                'uptime': heartbeat_data.get('uptime', 0),
+                'connected_channels': heartbeat_data.get('channels', []),
+                'tts_enabled': heartbeat_data.get('tts_enabled', False),
+                'last_heartbeat': heartbeat_data.get('timestamp')
+            })
+        else:
+            return jsonify({
+                'success': True,
+                'bot_running': False
+            })
+    except Exception as e:
+        app.logger.error(f"Error getting bot status: {e}")
+        return jsonify({'success': False, 'error': 'Error getting bot status'}), 500
+
+@app.route('/api/bot/start', methods=['POST'])
+@require_role('admin')
+def api_bot_start():
+    """Start the bot"""
+    try:
+        # Check if bot is already running
+        if is_bot_actually_running():
+            return jsonify({'success': False, 'error': 'Bot is already running'}), 400
+
+        # Start bot in background
+        import subprocess
+        subprocess.Popen(['python3', 'ansv.py', '--web', '--tts'],
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        start_new_session=True)
+
+        # Log action
+        current_user = get_current_user()
+        user_db.log_action(
+            current_user['user_id'], 'bot.started', 'system', 'bot',
+            {'started_by': current_user['username']},
+            request.remote_addr, request.headers.get('User-Agent', 'Unknown')
+        )
+
+        return jsonify({'success': True, 'message': 'Bot starting...'})
+    except Exception as e:
+        app.logger.error(f"Error starting bot: {e}")
+        return jsonify({'success': False, 'error': 'Error starting bot'}), 500
+
+@app.route('/api/bot/stop', methods=['POST'])
+@require_role('admin')
+def api_bot_stop():
+    """Stop the bot"""
+    try:
+        # Check if bot is running
+        if not is_bot_actually_running():
+            return jsonify({'success': False, 'error': 'Bot is not running'}), 400
+
+        # Read PID file
+        if os.path.exists('bot.pid'):
+            with open('bot.pid', 'r') as f:
+                pid = int(f.read().strip())
+
+            # Send SIGTERM to bot process
+            os.kill(pid, signal.SIGTERM)
+
+            # Log action
+            current_user = get_current_user()
+            user_db.log_action(
+                current_user['user_id'], 'bot.stopped', 'system', 'bot',
+                {'stopped_by': current_user['username']},
+                request.remote_addr, request.headers.get('User-Agent', 'Unknown')
+            )
+
+            return jsonify({'success': True, 'message': 'Bot stopping...'})
+        else:
+            return jsonify({'success': False, 'error': 'Bot PID file not found'}), 500
+
+    except Exception as e:
+        app.logger.error(f"Error stopping bot: {e}")
+        return jsonify({'success': False, 'error': 'Error stopping bot'}), 500
+
+@app.route('/api/bot/restart', methods=['POST'])
+@require_role('admin')
+def api_bot_restart():
+    """Restart the bot"""
+    try:
+        # Stop bot first
+        if is_bot_actually_running():
+            if os.path.exists('bot.pid'):
+                with open('bot.pid', 'r') as f:
+                    pid = int(f.read().strip())
+                os.kill(pid, signal.SIGTERM)
+                time.sleep(2)
+
+        # Start bot
+        import subprocess
+        subprocess.Popen(['python3', 'ansv.py', '--web', '--tts'],
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        start_new_session=True)
+
+        # Log action
+        current_user = get_current_user()
+        user_db.log_action(
+            current_user['user_id'], 'bot.restarted', 'system', 'bot',
+            {'restarted_by': current_user['username']},
+            request.remote_addr, request.headers.get('User-Agent', 'Unknown')
+        )
+
+        return jsonify({'success': True, 'message': 'Bot restarting...'})
+    except Exception as e:
+        app.logger.error(f"Error restarting bot: {e}")
+        return jsonify({'success': False, 'error': 'Error restarting bot'}), 500
+
+@app.route('/api/bot/reconnect', methods=['POST'])
+@require_role('admin')
+def api_bot_reconnect():
+    """Reconnect bot to all channels"""
+    try:
+        # Write reconnect command to database
+        conn = sqlite3.connect(db_file)
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO bot_commands (command, status) VALUES (?, ?)",
+            ('reconnect', 'pending')
+        )
+        conn.commit()
+        conn.close()
+
+        # Log action
+        current_user = get_current_user()
+        user_db.log_action(
+            current_user['user_id'], 'bot.reconnect_requested', 'system', 'bot',
+            {'requested_by': current_user['username']},
+            request.remote_addr, request.headers.get('User-Agent', 'Unknown')
+        )
+
+        return jsonify({'success': True, 'message': 'Reconnect command sent to bot'})
+    except Exception as e:
+        app.logger.error(f"Error reconnecting bot: {e}")
+        return jsonify({'success': False, 'error': 'Error reconnecting bot'}), 500
+
+@app.route('/api/bot/logs')
+@require_role('admin')
+def api_bot_logs():
+    """Get recent bot logs"""
+    try:
+        logs = []
+        log_file = 'ansv_bot.log'
+
+        if os.path.exists(log_file):
+            with open(log_file, 'r') as f:
+                lines = f.readlines()[-50:]  # Last 50 lines
+                for line in lines:
+                    # Parse log line
+                    logs.append({
+                        'timestamp': datetime.now().isoformat(),
+                        'level': 'info',
+                        'message': line.strip()
+                    })
+
+        return jsonify({'success': True, 'logs': logs})
+    except Exception as e:
+        app.logger.error(f"Error getting bot logs: {e}")
+        return jsonify({'success': False, 'error': 'Error getting logs'}), 500
+
+@app.route('/api/admin/generate-message', methods=['POST'])
+@require_role('admin')
+def api_admin_generate_message():
+    """Generate a message using Markov model"""
+    try:
+        data = request.get_json()
+        channel = data.get('channel')
+        attempts = data.get('attempts', 8)
+
+        if not channel:
+            return jsonify({'success': False, 'error': 'Channel is required'}), 400
+
+        # Generate message
+        markov_handler = MarkovHandler(db_file)
+
+        if channel == 'general':
+            message = markov_handler.generate_message(None, attempts)
+        else:
+            message = markov_handler.generate_message(channel, attempts)
+
+        if message:
+            return jsonify({'success': True, 'message': message})
+        else:
+            return jsonify({'success': False, 'error': 'Failed to generate message'}), 500
+
+    except Exception as e:
+        app.logger.error(f"Error generating message: {e}")
+        return jsonify({'success': False, 'error': 'Error generating message'}), 500
+
+@app.route('/api/admin/send-message', methods=['POST'])
+@require_role('admin')
+def api_admin_send_message():
+    """Send a message to a channel"""
+    try:
+        data = request.get_json()
+        channel = data.get('channel')
+        message = data.get('message')
+        generate_tts = data.get('generate_tts', False)
+
+        if not channel or not message:
+            return jsonify({'success': False, 'error': 'Channel and message are required'}), 400
+
+        # Write message request to JSON file for bot to pick up
+        message_request = {
+            'channel': channel,
+            'message': message,
+            'generate_tts': generate_tts,
+            'timestamp': datetime.now().isoformat(),
+            'requested_by': get_current_user()['username']
+        }
+
+        with open('bot_message_request.json', 'w') as f:
+            json.dump(message_request, f)
+
+        # Log action
+        current_user = get_current_user()
+        user_db.log_action(
+            current_user['user_id'], 'message.sent_via_admin', 'channel', channel,
+            {'message': message, 'generate_tts': generate_tts},
+            request.remote_addr, request.headers.get('User-Agent', 'Unknown')
+        )
+
+        return jsonify({'success': True, 'message': 'Message sent to bot for delivery'})
+    except Exception as e:
+        app.logger.error(f"Error sending message: {e}")
+        return jsonify({'success': False, 'error': 'Error sending message'}), 500
+
+@app.route('/api/admin/generate-tts', methods=['POST'])
+@require_role('admin')
+def api_admin_generate_tts():
+    """Generate TTS audio"""
+    try:
+        data = request.get_json()
+        text = data.get('text')
+        voice_preset = data.get('voice_preset', 'v2/en_speaker_5')
+        channel = data.get('channel')
+
+        if not text:
+            return jsonify({'success': False, 'error': 'Text is required'}), 400
+
+        # Generate TTS (async, won't block)
+        start_tts_processing(text, voice_preset, channel or 'admin', db_file)
+
+        # Log action
+        current_user = get_current_user()
+        user_db.log_action(
+            current_user['user_id'], 'tts.generated_via_admin', 'system', 'tts',
+            {'text': text[:50], 'voice_preset': voice_preset, 'channel': channel},
+            request.remote_addr, request.headers.get('User-Agent', 'Unknown')
+        )
+
+        return jsonify({'success': True, 'message': 'TTS generation started'})
+    except Exception as e:
+        app.logger.error(f"Error generating TTS: {e}")
+        return jsonify({'success': False, 'error': 'Error generating TTS'}), 500
+
+@app.route('/api/admin/message-history')
+@require_role('admin')
+def api_admin_message_history():
+    """Get recent messages sent via admin panel"""
+    try:
+        # Get recent bot messages from database
+        conn = sqlite3.connect(db_file)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT channel, message, timestamp
+            FROM messages
+            WHERE is_bot_response = 1
+            ORDER BY timestamp DESC
+            LIMIT 20
+        """)
+
+        messages = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+
+        return jsonify({'success': True, 'messages': messages})
+    except Exception as e:
+        app.logger.error(f"Error getting message history: {e}")
+        return jsonify({'success': False, 'error': 'Error getting message history'}), 500
 
 @app.route('/')
 def index():

@@ -1,0 +1,37 @@
+{% extends "admin_base.html" %}
+
+{% block title %}Channel Management - Admin Panel{% endblock %}
+{% block page_title %}Channel Management{% endblock %}
+
+{% block content %}
+<div class="alert alert-info">
+    <i class="fas fa-info-circle me-2"></i>
+    <strong>Coming Soon:</strong> This page will allow you to manage channel configurations.
+    For now, use the <a href="/beta/settings" class="alert-link">Settings page</a> to manage channel settings.
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <h3>Available Channels</h3>
+        <div class="list-group">
+            {% for channel in channels %}
+            <div class="list-group-item">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h5 class="mb-1">#{{ channel.channel_name }}</h5>
+                        <small class="text-muted">
+                            {% if channel.currently_connected %}
+                            <span class="badge bg-success">Connected</span>
+                            {% else %}
+                            <span class="badge bg-secondary">Disconnected</span>
+                            {% endif %}
+                        </small>
+                    </div>
+                    <a href="/beta/settings" class="btn btn-primary btn-sm">Configure</a>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endblock %}

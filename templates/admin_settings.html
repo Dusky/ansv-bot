@@ -1,0 +1,28 @@
+{% extends "admin_base.html" %}
+
+{% block title %}Admin Settings - Admin Panel{% endblock %}
+{% block page_title %}Admin Settings{% endblock %}
+
+{% block content %}
+<div class="alert alert-info">
+    <i class="fas fa-info-circle me-2"></i>
+    <strong>Coming Soon:</strong> Admin configuration settings will be available here.
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <h5 class="card-title">Quick Links</h5>
+        <ul class="list-group list-group-flush">
+            <li class="list-group-item">
+                <a href="/admin/bot-control">Bot Control Panel</a>
+            </li>
+            <li class="list-group-item">
+                <a href="/admin/users">User Management</a>
+            </li>
+            <li class="list-group-item">
+                <a href="/admin/message-tools">Message Tools</a>
+            </li>
+        </ul>
+    </div>
+</div>
+{% endblock %}

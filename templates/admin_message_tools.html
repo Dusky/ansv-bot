@@ -1,0 +1,638 @@
+{% extends "admin_base.html" %}
+
+{% block title %}Message Tools - Admin Panel{% endblock %}
+{% block page_title %}Message Tools{% endblock %}
+
+{% block head %}
+{{ super() }}
+<style>
+.tool-card {
+    background: var(--bs-body-bg);
+    border: 1px solid var(--bs-border-color);
+    border-radius: 15px;
+    padding: 2rem;
+    margin-bottom: 1.5rem;
+}
+
+.tool-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    padding-bottom: 1rem;
+    border-bottom: 2px solid var(--bs-border-color);
+}
+
+.tool-icon {
+    width: 50px;
+    height: 50px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+}
+
+.tool-header h3 {
+    margin: 0;
+    font-size: 1.5rem;
+}
+
+.form-label {
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+}
+
+.generated-message {
+    background: rgba(var(--bs-primary-rgb), 0.05);
+    border: 1px solid var(--bs-primary);
+    border-radius: 10px;
+    padding: 1.5rem;
+    min-height: 100px;
+    margin-top: 1rem;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    line-height: 1.6;
+}
+
+.generated-message.empty {
+    color: var(--bs-secondary-color);
+    font-style: italic;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.btn-generate {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    padding: 0.75rem 2rem;
+    border-radius: 10px;
+    font-weight: 600;
+    transition: all 0.3s;
+}
+
+.btn-generate:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+    color: white;
+}
+
+.btn-send {
+    background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+    color: white;
+    border: none;
+    padding: 0.75rem 2rem;
+    border-radius: 10px;
+    font-weight: 600;
+    transition: all 0.3s;
+}
+
+.btn-send:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(17, 153, 142, 0.4);
+    color: white;
+}
+
+.btn-tts {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    color: white;
+    border: none;
+    padding: 0.75rem 2rem;
+    border-radius: 10px;
+    font-weight: 600;
+    transition: all 0.3s;
+}
+
+.btn-tts:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(240, 147, 251, 0.4);
+    color: white;
+}
+
+.action-buttons {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-top: 1rem;
+}
+
+.spinner-icon {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.message-history {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.history-item {
+    padding: 1rem;
+    border-bottom: 1px solid var(--bs-border-color);
+    transition: background 0.2s;
+}
+
+.history-item:hover {
+    background: rgba(var(--bs-primary-rgb), 0.05);
+}
+
+.history-item:last-child {
+    border-bottom: none;
+}
+
+.history-time {
+    font-size: 0.875rem;
+    color: var(--bs-secondary-color);
+}
+
+.history-channel {
+    font-weight: 600;
+    color: var(--bs-primary);
+}
+
+.history-message {
+    margin-top: 0.5rem;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.tts-controls {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+@media (max-width: 768px) {
+    .tts-controls {
+        grid-template-columns: 1fr;
+    }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Generate Message Tool -->
+<div class="tool-card">
+    <div class="tool-header">
+        <div class="tool-icon">
+            <i class="fas fa-magic"></i>
+        </div>
+        <div>
+            <h3>Generate Message</h3>
+            <p class="text-muted mb-0">Generate messages using Markov models</p>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-6 mb-3">
+            <label for="generateChannel" class="form-label">
+                <i class="fas fa-hashtag me-1"></i>Channel
+            </label>
+            <select class="form-select" id="generateChannel">
+                <option value="">Select a channel...</option>
+                <option value="general">General Model (All Channels)</option>
+                {% for channel in channels %}
+                <option value="{{ channel.channel_name }}">{{ channel.channel_name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="col-md-6 mb-3">
+            <label for="generateAttempts" class="form-label">
+                <i class="fas fa-redo me-1"></i>Generation Attempts
+            </label>
+            <input type="number" class="form-control" id="generateAttempts" value="8" min="1" max="20">
+            <small class="form-text text-muted">Number of tries before giving up</small>
+        </div>
+    </div>
+
+    <button class="btn btn-generate" onclick="generateMessage()">
+        <i class="fas fa-magic me-2"></i>Generate Message
+    </button>
+
+    <div class="generated-message empty" id="generatedMessage">
+        Generated message will appear here...
+    </div>
+
+    <div class="action-buttons">
+        <button class="btn btn-send" onclick="sendGeneratedMessage()" id="sendBtn" disabled>
+            <i class="fas fa-paper-plane me-2"></i>Send to Channel
+        </button>
+        <button class="btn btn-tts" onclick="generateTTS()" id="ttsBtn" disabled>
+            <i class="fas fa-volume-up me-2"></i>Generate TTS
+        </button>
+        <button class="btn btn-secondary" onclick="copyMessage()" id="copyBtn" disabled>
+            <i class="fas fa-copy me-2"></i>Copy
+        </button>
+    </div>
+</div>
+
+<!-- Send Custom Message Tool -->
+<div class="tool-card">
+    <div class="tool-header">
+        <div class="tool-icon">
+            <i class="fas fa-paper-plane"></i>
+        </div>
+        <div>
+            <h3>Send Custom Message</h3>
+            <p class="text-muted mb-0">Send a custom message to any channel</p>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-6 mb-3">
+            <label for="customChannel" class="form-label">
+                <i class="fas fa-hashtag me-1"></i>Channel
+            </label>
+            <select class="form-select" id="customChannel">
+                <option value="">Select a channel...</option>
+                {% for channel in channels %}
+                <option value="{{ channel.channel_name }}">{{ channel.channel_name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="col-md-6 mb-3">
+            <label class="form-label">Options</label>
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="customTTS">
+                <label class="form-check-label" for="customTTS">
+                    Generate TTS for this message
+                </label>
+            </div>
+        </div>
+    </div>
+
+    <div class="mb-3">
+        <label for="customMessage" class="form-label">
+            <i class="fas fa-comment me-1"></i>Message
+        </label>
+        <textarea class="form-control" id="customMessage" rows="4" placeholder="Enter your message here..." maxlength="500"></textarea>
+        <small class="form-text text-muted">Maximum 500 characters</small>
+    </div>
+
+    <button class="btn btn-send" onclick="sendCustomMessage()">
+        <i class="fas fa-paper-plane me-2"></i>Send Message
+    </button>
+</div>
+
+<!-- TTS Generation Tool -->
+<div class="tool-card">
+    <div class="tool-header">
+        <div class="tool-icon">
+            <i class="fas fa-volume-up"></i>
+        </div>
+        <div>
+            <h3>TTS Generator</h3>
+            <p class="text-muted mb-0">Generate text-to-speech audio</p>
+        </div>
+    </div>
+
+    <div class="mb-3">
+        <label for="ttsText" class="form-label">
+            <i class="fas fa-comment me-1"></i>Text
+        </label>
+        <textarea class="form-control" id="ttsText" rows="3" placeholder="Enter text for TTS generation..." maxlength="500"></textarea>
+    </div>
+
+    <div class="tts-controls">
+        <div>
+            <label for="ttsVoice" class="form-label">
+                <i class="fas fa-microphone me-1"></i>Voice Preset
+            </label>
+            <select class="form-select" id="ttsVoice">
+                <option value="v2/en_speaker_5">Speaker 5 (Default)</option>
+                <option value="v2/en_speaker_6">Speaker 6</option>
+                <option value="v2/en_speaker_9">Speaker 9</option>
+                <option value="v2/en_speaker_0">Speaker 0</option>
+                <option value="v2/en_speaker_1">Speaker 1</option>
+                <option value="v2/en_speaker_2">Speaker 2</option>
+                <option value="v2/en_speaker_3">Speaker 3</option>
+                <option value="v2/en_speaker_4">Speaker 4</option>
+                <option value="v2/en_speaker_7">Speaker 7</option>
+                <option value="v2/en_speaker_8">Speaker 8</option>
+            </select>
+        </div>
+
+        <div>
+            <label for="ttsChannel" class="form-label">
+                <i class="fas fa-hashtag me-1"></i>Channel (Optional)
+            </label>
+            <select class="form-select" id="ttsChannel">
+                <option value="">No specific channel</option>
+                {% for channel in channels %}
+                <option value="{{ channel.channel_name }}">{{ channel.channel_name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+
+    <button class="btn btn-tts mt-3" onclick="generateStandaloneTTS()">
+        <i class="fas fa-volume-up me-2"></i>Generate TTS
+    </button>
+
+    <div id="ttsResult" class="mt-3" style="display: none;">
+        <div class="alert alert-success">
+            <i class="fas fa-check-circle me-2"></i>
+            TTS generated successfully!
+            <audio controls class="d-block mt-2 w-100" id="ttsAudio"></audio>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Messages -->
+<div class="tool-card">
+    <div class="tool-header">
+        <div class="tool-icon">
+            <i class="fas fa-history"></i>
+        </div>
+        <div>
+            <h3>Recent Sent Messages</h3>
+            <p class="text-muted mb-0">History of messages sent from admin panel</p>
+        </div>
+    </div>
+
+    <div class="message-history" id="messageHistory">
+        <div class="text-center text-muted py-4">
+            <i class="fas fa-inbox fa-3x mb-3 opacity-25"></i>
+            <p>No recent messages</p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+let currentGeneratedMessage = '';
+let currentChannel = '';
+
+// Generate message using Markov model
+async function generateMessage() {
+    const channel = document.getElementById('generateChannel').value;
+    const attempts = document.getElementById('generateAttempts').value;
+
+    if (!channel) {
+        window.notificationSystem.showToast('Please select a channel', 'error');
+        return;
+    }
+
+    const btn = event.target;
+    const originalHtml = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner spinner-icon"></i> Generating...';
+    btn.disabled = true;
+
+    try {
+        const response = await fetch('/api/admin/generate-message', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ channel, attempts: parseInt(attempts) })
+        });
+        const data = await response.json();
+
+        const messageDiv = document.getElementById('generatedMessage');
+        if (data.success && data.message) {
+            messageDiv.textContent = data.message;
+            messageDiv.classList.remove('empty');
+            currentGeneratedMessage = data.message;
+            currentChannel = channel;
+
+            // Enable action buttons
+            document.getElementById('sendBtn').disabled = false;
+            document.getElementById('ttsBtn').disabled = false;
+            document.getElementById('copyBtn').disabled = false;
+
+            window.notificationSystem.showToast('Message generated successfully', 'success');
+        } else {
+            window.notificationSystem.showToast(data.error || 'Failed to generate message', 'error');
+        }
+    } catch (error) {
+        console.error('Error generating message:', error);
+        window.notificationSystem.showToast('Error generating message', 'error');
+    } finally {
+        btn.innerHTML = originalHtml;
+        btn.disabled = false;
+    }
+}
+
+// Send generated message
+async function sendGeneratedMessage() {
+    if (!currentGeneratedMessage || !currentChannel) {
+        window.notificationSystem.showToast('No message to send', 'error');
+        return;
+    }
+
+    if (currentChannel === 'general') {
+        window.notificationSystem.showToast('Cannot send to "general" - please select a specific channel', 'error');
+        return;
+    }
+
+    const btn = document.getElementById('sendBtn');
+    const originalHtml = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner spinner-icon"></i> Sending...';
+    btn.disabled = true;
+
+    try {
+        const response = await fetch('/api/admin/send-message', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                channel: currentChannel,
+                message: currentGeneratedMessage,
+                generate_tts: false
+            })
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            window.notificationSystem.showToast('Message sent successfully', 'success');
+            loadMessageHistory();
+        } else {
+            window.notificationSystem.showToast(data.error || 'Failed to send message', 'error');
+        }
+    } catch (error) {
+        console.error('Error sending message:', error);
+        window.notificationSystem.showToast('Error sending message', 'error');
+    } finally {
+        btn.innerHTML = originalHtml;
+        btn.disabled = false;
+    }
+}
+
+// Generate TTS for generated message
+async function generateTTS() {
+    if (!currentGeneratedMessage) {
+        window.notificationSystem.showToast('No message to generate TTS for', 'error');
+        return;
+    }
+
+    const btn = document.getElementById('ttsBtn');
+    const originalHtml = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner spinner-icon"></i> Generating...';
+    btn.disabled = true;
+
+    try {
+        const response = await fetch('/api/admin/generate-tts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                text: currentGeneratedMessage,
+                channel: currentChannel !== 'general' ? currentChannel : null,
+                voice_preset: 'v2/en_speaker_5'
+            })
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            window.notificationSystem.showToast('TTS generated successfully', 'success');
+        } else {
+            window.notificationSystem.showToast(data.error || 'Failed to generate TTS', 'error');
+        }
+    } catch (error) {
+        console.error('Error generating TTS:', error);
+        window.notificationSystem.showToast('Error generating TTS', 'error');
+    } finally {
+        btn.innerHTML = originalHtml;
+        btn.disabled = false;
+    }
+}
+
+// Copy message to clipboard
+function copyMessage() {
+    if (!currentGeneratedMessage) return;
+
+    navigator.clipboard.writeText(currentGeneratedMessage).then(() => {
+        window.notificationSystem.showToast('Message copied to clipboard', 'success');
+    }).catch(err => {
+        console.error('Error copying message:', err);
+        window.notificationSystem.showToast('Failed to copy message', 'error');
+    });
+}
+
+// Send custom message
+async function sendCustomMessage() {
+    const channel = document.getElementById('customChannel').value;
+    const message = document.getElementById('customMessage').value.trim();
+    const generateTts = document.getElementById('customTTS').checked;
+
+    if (!channel || !message) {
+        window.notificationSystem.showToast('Please select a channel and enter a message', 'error');
+        return;
+    }
+
+    const btn = event.target;
+    const originalHtml = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner spinner-icon"></i> Sending...';
+    btn.disabled = true;
+
+    try {
+        const response = await fetch('/api/admin/send-message', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ channel, message, generate_tts: generateTts })
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            window.notificationSystem.showToast('Message sent successfully', 'success');
+            document.getElementById('customMessage').value = '';
+            loadMessageHistory();
+        } else {
+            window.notificationSystem.showToast(data.error || 'Failed to send message', 'error');
+        }
+    } catch (error) {
+        console.error('Error sending message:', error);
+        window.notificationSystem.showToast('Error sending message', 'error');
+    } finally {
+        btn.innerHTML = originalHtml;
+        btn.disabled = false;
+    }
+}
+
+// Generate standalone TTS
+async function generateStandaloneTTS() {
+    const text = document.getElementById('ttsText').value.trim();
+    const voice = document.getElementById('ttsVoice').value;
+    const channel = document.getElementById('ttsChannel').value;
+
+    if (!text) {
+        window.notificationSystem.showToast('Please enter text for TTS', 'error');
+        return;
+    }
+
+    const btn = event.target;
+    const originalHtml = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner spinner-icon"></i> Generating...';
+    btn.disabled = true;
+
+    try {
+        const response = await fetch('/api/admin/generate-tts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text, voice_preset: voice, channel: channel || null })
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            window.notificationSystem.showToast('TTS generated successfully', 'success');
+
+            // Show audio player
+            const resultDiv = document.getElementById('ttsResult');
+            const audio = document.getElementById('ttsAudio');
+            audio.src = data.file_path;
+            resultDiv.style.display = 'block';
+        } else {
+            window.notificationSystem.showToast(data.error || 'Failed to generate TTS', 'error');
+        }
+    } catch (error) {
+        console.error('Error generating TTS:', error);
+        window.notificationSystem.showToast('Error generating TTS', 'error');
+    } finally {
+        btn.innerHTML = originalHtml;
+        btn.disabled = false;
+    }
+}
+
+// Load message history
+async function loadMessageHistory() {
+    try {
+        const response = await fetch('/api/admin/message-history');
+        const data = await response.json();
+
+        const historyDiv = document.getElementById('messageHistory');
+        if (data.success && data.messages && data.messages.length > 0) {
+            historyDiv.innerHTML = data.messages.map(msg => `
+                <div class="history-item">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <span class="history-channel">#${msg.channel}</span>
+                        <span class="history-time">${new Date(msg.timestamp).toLocaleString()}</span>
+                    </div>
+                    <div class="history-message">${msg.message}</div>
+                </div>
+            `).join('');
+        } else {
+            historyDiv.innerHTML = `
+                <div class="text-center text-muted py-4">
+                    <i class="fas fa-inbox fa-3x mb-3 opacity-25"></i>
+                    <p>No recent messages</p>
+                </div>
+            `;
+        }
+    } catch (error) {
+        console.error('Error loading message history:', error);
+    }
+}
+
+// Initialize
+document.addEventListener('DOMContentLoaded', function() {
+    loadMessageHistory();
+});
+</script>
+{% endblock %}

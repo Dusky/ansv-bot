@@ -1,0 +1,32 @@
+{% extends "admin_base.html" %}
+
+{% block title %}System Monitoring - Admin Panel{% endblock %}
+{% block page_title %}System Monitoring{% endblock %}
+
+{% block content %}
+<div class="alert alert-info">
+    <i class="fas fa-info-circle me-2"></i>
+    <strong>Note:</strong> Advanced monitoring features are under development.
+</div>
+
+<div class="row g-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title"><i class="fas fa-server me-2"></i>System Status</h5>
+                <p>System is operational</p>
+                <a href="/admin/bot-control" class="btn btn-primary">View Bot Control</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title"><i class="fas fa-chart-line me-2"></i>Statistics</h5>
+                <p>View detailed statistics on the dashboard</p>
+                <a href="/admin" class="btn btn-primary">View Dashboard</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

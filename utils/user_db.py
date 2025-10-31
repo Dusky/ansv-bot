@@ -1292,3 +1292,51 @@ class UserDatabase:
             return False
         finally:
             conn.close()
+
+    def get_total_users(self) -> int:
+        """Get total number of users"""
+        conn = self.get_connection()
+        try:
+            result = conn.execute("SELECT COUNT(*) as count FROM users WHERE status = 'active'").fetchone()
+            return result['count'] if result else 0
+        except Exception as e:
+            logger.error(f"Error getting total users: {e}")
+            return 0
+        finally:
+            conn.close()
+
+    def get_pro_users_count(self) -> int:
+        """Get count of users with active pro subscriptions"""
+        conn = self.get_connection()
+        try:
+            result = conn.execute("""
+                SELECT COUNT(*) as count
+                FROM users
+                WHERE subscription_tier = 'premium'
+                AND subscription_status = 'active'
+                AND status = 'active'
+            """).fetchone()
+            return result['count'] if result else 0
+        except Exception as e:
+            logger.error(f"Error getting pro users count: {e}")
+            return 0
+        finally:
+            conn.close()
+
+    def get_recent_audit_logs(self, limit: int = 50) -> List[dict]:
+        """Get recent audit logs"""
+        conn = self.get_connection()
+        try:
+            logs = conn.execute("""
+                SELECT al.*, u.username
+                FROM audit_log al
+                LEFT JOIN users u ON al.user_id = u.id
+                ORDER BY al.timestamp DESC
+                LIMIT ?
+            """, (limit,)).fetchall()
+            return [dict(log) for log in logs]
+        except Exception as e:
+            logger.error(f"Error getting recent audit logs: {e}")
+            return []
+        finally:
+            conn.close()
