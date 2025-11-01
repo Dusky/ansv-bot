@@ -73,6 +73,10 @@ show_help() {
     echo "  check             Verify system dependencies"
     echo "  update-deps       Update Python dependencies"
     echo ""
+    echo -e "${CYAN}User Management:${NC}"
+    echo "  make-admin [user] Promote user to admin (interactive if no user)"
+    echo "  create-admin      Create emergency admin account"
+    echo ""
     echo -e "${CYAN}Development:${NC}"
     echo "  dev               Start in development mode (hot reload)"
     echo "  shell             Open Python shell with app context"
@@ -588,6 +592,34 @@ cmd_test() {
     fi
 }
 
+# Promote user to admin
+cmd_make_admin() {
+    if [[ ! -d "$VENV_DIR" ]]; then
+        echo -e "${RED}Run ./launch.sh setup first${NC}"
+        exit 1
+    fi
+
+    if [[ ! -f "users.db" ]]; then
+        echo -e "${RED}users.db not found${NC}"
+        echo -e "${YELLOW}Please register a user account first via the web interface${NC}"
+        exit 1
+    fi
+
+    source "$VENV_DIR/bin/activate"
+    python promote_admin.py "$1"
+}
+
+# Create emergency admin
+cmd_create_admin() {
+    if [[ ! -d "$VENV_DIR" ]]; then
+        echo -e "${RED}Run ./launch.sh setup first${NC}"
+        exit 1
+    fi
+
+    source "$VENV_DIR/bin/activate"
+    python create_admin.py
+}
+
 # Main
 main() {
     local command="${1:-}"
@@ -609,6 +641,8 @@ main() {
         dev) cmd_dev ;;
         shell) cmd_shell ;;
         test) cmd_test ;;
+        make-admin) cmd_make_admin "$2" ;;
+        create-admin) cmd_create_admin ;;
         --help|-h|help|"") show_help ;;
         *)
             echo -e "${RED}Unknown command: $command${NC}"
