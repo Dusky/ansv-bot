@@ -301,6 +301,20 @@ def get_today_message_count():
         app.logger.error(f"Error getting today's message count: {e}")
         return 0
 
+def get_all_channel_configs():
+    """Get all channel configurations from database"""
+    try:
+        conn = sqlite3.connect(db_file)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM channel_configs ORDER BY channel_name")
+        channels = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return channels
+    except Exception as e:
+        app.logger.error(f"Error getting channel configs: {e}")
+        return []
+
 def get_last_10_tts_files_with_last_id(db_file_path): # Renamed db_file to db_file_path for clarity
     try:
         conn = sqlite3.connect(db_file_path)
