@@ -448,20 +448,8 @@
                         <span class="nav-link-text">Message Tools</span>
                     </a>
                 </li>
-                <li class="nav-item">
-                    <a href="/admin/tts" class="nav-link {% if request.path == '/admin/tts' %}active{% endif %}">
-                        <i class="fas fa-volume-up"></i>
-                        <span class="nav-link-text">TTS Generator</span>
-                    </a>
-                </li>
 
                 <li class="nav-section-title">System</li>
-                <li class="nav-item">
-                    <a href="/admin/monitoring" class="nav-link {% if 'monitoring' in request.path %}active{% endif %}">
-                        <i class="fas fa-chart-line"></i>
-                        <span class="nav-link-text">Monitoring</span>
-                    </a>
-                </li>
                 <li class="nav-item">
                     <a href="/admin/audit-logs" class="nav-link {% if 'audit-logs' in request.path %}active{% endif %}">
                         <i class="fas fa-clipboard-list"></i>
@@ -471,7 +459,7 @@
                 <li class="nav-item">
                     <a href="/admin/settings" class="nav-link {% if request.path == '/admin/settings' %}active{% endif %}">
                         <i class="fas fa-cog"></i>
-                        <span class="nav-link-text">Settings</span>
+                        <span class="nav-link-text">System Settings</span>
                     </a>
                 </li>
 

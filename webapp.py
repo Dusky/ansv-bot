@@ -2108,6 +2108,196 @@ def api_admin_message_history():
         app.logger.error(f"Error getting message history: {e}")
         return jsonify({'success': False, 'error': 'Error getting message history'}), 500
 
+##############################
+# Channel Management API Routes
+##############################
+
+@app.route('/api/admin/channels/create', methods=['POST'])
+@require_role('admin')
+def api_admin_create_channel():
+    """Create a new channel configuration"""
+    try:
+        data = request.get_json()
+        channel_name = data.get('channel_name', '').strip()
+
+        if not channel_name:
+            return jsonify({'success': False, 'error': 'Channel name is required'}), 400
+
+        conn = sqlite3.connect(db_file)
+        cursor = conn.cursor()
+
+        # Check if channel already exists
+        cursor.execute("SELECT 1 FROM channel_configs WHERE channel_name = ?", (channel_name,))
+        if cursor.fetchone():
+            conn.close()
+            return jsonify({'success': False, 'error': 'Channel already exists'}), 400
+
+        # Insert new channel
+        cursor.execute("""
+            INSERT INTO channel_configs (
+                channel_name, owner, lines_between_messages, time_between_messages,
+                voice_preset, join_channel, tts_enabled, use_general_model,
+                currently_connected, voice_enabled
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 1)
+        """, (
+            channel_name,
+            data.get('owner', ''),
+            data.get('lines_between_messages', 30),
+            data.get('time_between_messages', 120),
+            data.get('voice_preset', 'v2/en_speaker_5'),
+            data.get('join_channel', 1),
+            data.get('tts_enabled', 0),
+            data.get('use_general_model', 1)
+        ))
+
+        conn.commit()
+        conn.close()
+
+        # Log action
+        current_user = get_current_user()
+        user_db.log_action(
+            current_user['user_id'], 'channel.created', 'channel', channel_name,
+            {'channel_name': channel_name},
+            request.remote_addr, request.headers.get('User-Agent', 'Unknown')
+        )
+
+        return jsonify({'success': True, 'message': f'Channel {channel_name} created'})
+    except Exception as e:
+        app.logger.error(f"Error creating channel: {e}")
+        return jsonify({'success': False, 'error': 'Error creating channel'}), 500
+
+@app.route('/api/admin/channels/<channel_name>')
+@require_role('admin')
+def api_admin_get_channel(channel_name):
+    """Get channel configuration"""
+    try:
+        conn = sqlite3.connect(db_file)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT * FROM channel_configs WHERE channel_name = ?", (channel_name,))
+        channel = cursor.fetchone()
+        conn.close()
+
+        if not channel:
+            return jsonify({'success': False, 'error': 'Channel not found'}), 404
+
+        return jsonify({'success': True, 'channel': dict(channel)})
+    except Exception as e:
+        app.logger.error(f"Error getting channel: {e}")
+        return jsonify({'success': False, 'error': 'Error getting channel'}), 500
+
+@app.route('/api/admin/channels/<channel_name>/update', methods=['POST'])
+@require_role('admin')
+def api_admin_update_channel(channel_name):
+    """Update channel configuration"""
+    try:
+        data = request.get_json()
+
+        conn = sqlite3.connect(db_file)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            UPDATE channel_configs
+            SET owner = ?, voice_preset = ?, lines_between_messages = ?,
+                time_between_messages = ?, join_channel = ?, tts_enabled = ?,
+                use_general_model = ?
+            WHERE channel_name = ?
+        """, (
+            data.get('owner', ''),
+            data.get('voice_preset'),
+            data.get('lines_between_messages'),
+            data.get('time_between_messages'),
+            data.get('join_channel'),
+            data.get('tts_enabled'),
+            data.get('use_general_model'),
+            channel_name
+        ))
+
+        conn.commit()
+        conn.close()
+
+        # Log action
+        current_user = get_current_user()
+        user_db.log_action(
+            current_user['user_id'], 'channel.updated', 'channel', channel_name,
+            {'changes': data},
+            request.remote_addr, request.headers.get('User-Agent', 'Unknown')
+        )
+
+        return jsonify({'success': True, 'message': 'Channel updated'})
+    except Exception as e:
+        app.logger.error(f"Error updating channel: {e}")
+        return jsonify({'success': False, 'error': 'Error updating channel'}), 500
+
+@app.route('/api/admin/channels/<channel_name>/toggle-join', methods=['POST'])
+@require_role('admin')
+def api_admin_toggle_join(channel_name):
+    """Toggle auto-join for channel"""
+    try:
+        data = request.get_json()
+        join_channel = data.get('join_channel', 0)
+
+        conn = sqlite3.connect(db_file)
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE channel_configs SET join_channel = ? WHERE channel_name = ?",
+            (join_channel, channel_name)
+        )
+        conn.commit()
+        conn.close()
+
+        return jsonify({'success': True, 'message': 'Auto-join updated'})
+    except Exception as e:
+        app.logger.error(f"Error toggling join: {e}")
+        return jsonify({'success': False, 'error': 'Error updating setting'}), 500
+
+@app.route('/api/admin/channels/<channel_name>/toggle-tts', methods=['POST'])
+@require_role('admin')
+def api_admin_toggle_tts(channel_name):
+    """Toggle TTS for channel"""
+    try:
+        data = request.get_json()
+        tts_enabled = data.get('tts_enabled', 0)
+
+        conn = sqlite3.connect(db_file)
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE channel_configs SET tts_enabled = ? WHERE channel_name = ?",
+            (tts_enabled, channel_name)
+        )
+        conn.commit()
+        conn.close()
+
+        return jsonify({'success': True, 'message': 'TTS updated'})
+    except Exception as e:
+        app.logger.error(f"Error toggling TTS: {e}")
+        return jsonify({'success': False, 'error': 'Error updating TTS'}), 500
+
+@app.route('/api/admin/channels/<channel_name>/delete', methods=['POST'])
+@require_role('admin')
+def api_admin_delete_channel(channel_name):
+    """Delete channel configuration"""
+    try:
+        conn = sqlite3.connect(db_file)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM channel_configs WHERE channel_name = ?", (channel_name,))
+        conn.commit()
+        conn.close()
+
+        # Log action
+        current_user = get_current_user()
+        user_db.log_action(
+            current_user['user_id'], 'channel.deleted', 'channel', channel_name,
+            {'channel_name': channel_name},
+            request.remote_addr, request.headers.get('User-Agent', 'Unknown')
+        )
+
+        return jsonify({'success': True, 'message': 'Channel deleted'})
+    except Exception as e:
+        app.logger.error(f"Error deleting channel: {e}")
+        return jsonify({'success': False, 'error': 'Error deleting channel'}), 500
+
 @app.route('/')
 def index():
     """Landing page for public visitors, redirect to dashboard for authenticated users."""

@@ -3,35 +3,459 @@
 {% block title %}Channel Management - Admin Panel{% endblock %}
 {% block page_title %}Channel Management{% endblock %}
 
+{% block head %}
+{{ super() }}
+<style>
+.channel-card {
+    background: var(--bs-body-bg);
+    border: 1px solid var(--bs-border-color);
+    border-radius: 15px;
+    padding: 1.5rem;
+    margin-bottom: 1rem;
+    transition: all 0.3s;
+}
+
+.channel-card:hover {
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+}
+
+.channel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.channel-name {
+    font-size: 1.3rem;
+    font-weight: 700;
+}
+
+.channel-status {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.status-badge {
+    padding: 0.25rem 0.75rem;
+    border-radius: 50px;
+    font-size: 0.875rem;
+    font-weight: 600;
+}
+
+.channel-settings {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+.setting-item {
+    display: flex;
+    flex-direction: column;
+}
+
+.setting-label {
+    font-size: 0.875rem;
+    color: var(--bs-secondary-color);
+    margin-bottom: 0.25rem;
+}
+
+.setting-value {
+    font-weight: 600;
+}
+
+.channel-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--bs-border-color);
+}
+</style>
+{% endblock %}
+
 {% block content %}
-<div class="alert alert-info">
-    <i class="fas fa-info-circle me-2"></i>
-    <strong>Coming Soon:</strong> This page will allow you to manage channel configurations.
-    For now, use the <a href="/beta/settings" class="alert-link">Settings page</a> to manage channel settings.
+<div class="row mb-4">
+    <div class="col-12">
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addChannelModal">
+            <i class="fas fa-plus me-2"></i>Add New Channel
+        </button>
+    </div>
 </div>
 
-<div class="card">
-    <div class="card-body">
-        <h3>Available Channels</h3>
-        <div class="list-group">
+<div class="row">
+    <div class="col-12">
+        {% if channels %}
             {% for channel in channels %}
-            <div class="list-group-item">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <h5 class="mb-1">#{{ channel.channel_name }}</h5>
-                        <small class="text-muted">
-                            {% if channel.currently_connected %}
-                            <span class="badge bg-success">Connected</span>
-                            {% else %}
-                            <span class="badge bg-secondary">Disconnected</span>
-                            {% endif %}
-                        </small>
+            <div class="channel-card">
+                <div class="channel-header">
+                    <div class="channel-name">#{{ channel.channel_name }}</div>
+                    <div class="channel-status">
+                        {% if channel.currently_connected %}
+                        <span class="status-badge bg-success">Connected</span>
+                        {% else %}
+                        <span class="status-badge bg-secondary">Disconnected</span>
+                        {% endif %}
+
+                        {% if channel.join_channel %}
+                        <span class="status-badge bg-primary">Auto-Join</span>
+                        {% endif %}
+
+                        {% if channel.tts_enabled %}
+                        <span class="status-badge bg-info">TTS</span>
+                        {% endif %}
                     </div>
-                    <a href="/beta/settings" class="btn btn-primary btn-sm">Configure</a>
+                </div>
+
+                <div class="channel-settings">
+                    <div class="setting-item">
+                        <div class="setting-label">Owner</div>
+                        <div class="setting-value">{{ channel.owner or 'Not set' }}</div>
+                    </div>
+                    <div class="setting-item">
+                        <div class="setting-label">Lines Between Messages</div>
+                        <div class="setting-value">{{ channel.lines_between_messages }}</div>
+                    </div>
+                    <div class="setting-item">
+                        <div class="setting-label">Time Between Messages (s)</div>
+                        <div class="setting-value">{{ channel.time_between_messages }}</div>
+                    </div>
+                    <div class="setting-item">
+                        <div class="setting-label">Voice Preset</div>
+                        <div class="setting-value">{{ channel.voice_preset }}</div>
+                    </div>
+                    <div class="setting-item">
+                        <div class="setting-label">Model</div>
+                        <div class="setting-value">{{ 'General' if channel.use_general_model else 'Channel-Specific' }}</div>
+                    </div>
+                </div>
+
+                <div class="channel-actions">
+                    <button class="btn btn-sm btn-primary" onclick="editChannel('{{ channel.channel_name }}')">
+                        <i class="fas fa-edit me-1"></i>Edit Settings
+                    </button>
+                    <button class="btn btn-sm btn-warning" onclick="toggleJoinChannel('{{ channel.channel_name }}', {{ 'true' if channel.join_channel else 'false' }})">
+                        <i class="fas fa-power-off me-1"></i>{{ 'Disable' if channel.join_channel else 'Enable' }} Auto-Join
+                    </button>
+                    <button class="btn btn-sm btn-info" onclick="toggleTTS('{{ channel.channel_name }}', {{ 'true' if channel.tts_enabled else 'false' }})">
+                        <i class="fas fa-volume-up me-1"></i>{{ 'Disable' if channel.tts_enabled else 'Enable' }} TTS
+                    </button>
+                    <button class="btn btn-sm btn-danger" onclick="deleteChannel('{{ channel.channel_name }}')">
+                        <i class="fas fa-trash me-1"></i>Delete
+                    </button>
                 </div>
             </div>
             {% endfor %}
+        {% else %}
+        <div class="text-center text-muted py-5">
+            <i class="fas fa-hashtag fa-3x mb-3 opacity-25"></i>
+            <p>No channels configured</p>
+            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addChannelModal">
+                <i class="fas fa-plus me-2"></i>Add Your First Channel
+            </button>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Add Channel Modal -->
+<div class="modal fade" id="addChannelModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Add New Channel</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="addChannelForm">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Channel Name (without #)</label>
+                            <input type="text" class="form-control" id="newChannelName" required>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Owner</label>
+                            <input type="text" class="form-control" id="newChannelOwner">
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Lines Between Messages</label>
+                            <input type="number" class="form-control" id="newLinesBetween" value="30">
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Time Between Messages (s)</label>
+                            <input type="number" class="form-control" id="newTimeBetween" value="120">
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label">Voice Preset</label>
+                            <select class="form-select" id="newVoicePreset">
+                                <option value="v2/en_speaker_5">Speaker 5 (Default)</option>
+                                <option value="v2/en_speaker_6">Speaker 6</option>
+                                <option value="v2/en_speaker_9">Speaker 9</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="newAutoJoin" checked>
+                                <label class="form-check-label" for="newAutoJoin">Auto-Join Channel</label>
+                            </div>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="newTTSEnabled">
+                                <label class="form-check-label" for="newTTSEnabled">Enable TTS</label>
+                            </div>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="newUseGeneral" checked>
+                                <label class="form-check-label" for="newUseGeneral">Use General Model</label>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="addChannel()">Add Channel</button>
+            </div>
         </div>
     </div>
 </div>
+
+<!-- Edit Channel Modal -->
+<div class="modal fade" id="editChannelModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Edit Channel Settings</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="editChannelForm">
+                    <input type="hidden" id="editChannelName">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Owner</label>
+                            <input type="text" class="form-control" id="editChannelOwner">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Voice Preset</label>
+                            <select class="form-select" id="editVoicePreset">
+                                <option value="v2/en_speaker_5">Speaker 5 (Default)</option>
+                                <option value="v2/en_speaker_6">Speaker 6</option>
+                                <option value="v2/en_speaker_9">Speaker 9</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Lines Between Messages</label>
+                            <input type="number" class="form-control" id="editLinesBetween">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Time Between Messages (s)</label>
+                            <input type="number" class="form-control" id="editTimeBetween">
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="editAutoJoin">
+                                <label class="form-check-label" for="editAutoJoin">Auto-Join Channel</label>
+                            </div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="editTTSEnabled">
+                                <label class="form-check-label" for="editTTSEnabled">Enable TTS</label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="editUseGeneral">
+                                <label class="form-check-label" for="editUseGeneral">Use General Model</label>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn-primary" onclick="saveChannelSettings()">Save Changes</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+async function addChannel() {
+    const channelName = document.getElementById('newChannelName').value.trim();
+    if (!channelName) {
+        window.notificationSystem.showToast('Please enter a channel name', 'error');
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/admin/channels/create', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                channel_name: channelName,
+                owner: document.getElementById('newChannelOwner').value,
+                lines_between_messages: parseInt(document.getElementById('newLinesBetween').value),
+                time_between_messages: parseInt(document.getElementById('newTimeBetween').value),
+                voice_preset: document.getElementById('newVoicePreset').value,
+                join_channel: document.getElementById('newAutoJoin').checked ? 1 : 0,
+                tts_enabled: document.getElementById('newTTSEnabled').checked ? 1 : 0,
+                use_general_model: document.getElementById('newUseGeneral').checked ? 1 : 0
+            })
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            window.notificationSystem.showToast('Channel added successfully', 'success');
+            bootstrap.Modal.getInstance(document.getElementById('addChannelModal')).hide();
+            location.reload();
+        } else {
+            window.notificationSystem.showToast(data.error || 'Failed to add channel', 'error');
+        }
+    } catch (error) {
+        console.error('Error adding channel:', error);
+        window.notificationSystem.showToast('Error adding channel', 'error');
+    }
+}
+
+async function editChannel(channelName) {
+    try {
+        const response = await fetch(`/api/admin/channels/${channelName}`);
+        const data = await response.json();
+
+        if (data.success) {
+            const channel = data.channel;
+            document.getElementById('editChannelName').value = channelName;
+            document.getElementById('editChannelOwner').value = channel.owner || '';
+            document.getElementById('editVoicePreset').value = channel.voice_preset;
+            document.getElementById('editLinesBetween').value = channel.lines_between_messages;
+            document.getElementById('editTimeBetween').value = channel.time_between_messages;
+            document.getElementById('editAutoJoin').checked = channel.join_channel == 1;
+            document.getElementById('editTTSEnabled').checked = channel.tts_enabled == 1;
+            document.getElementById('editUseGeneral').checked = channel.use_general_model == 1;
+
+            new bootstrap.Modal(document.getElementById('editChannelModal')).show();
+        }
+    } catch (error) {
+        console.error('Error loading channel:', error);
+        window.notificationSystem.showToast('Error loading channel', 'error');
+    }
+}
+
+async function saveChannelSettings() {
+    const channelName = document.getElementById('editChannelName').value;
+
+    try {
+        const response = await fetch(`/api/admin/channels/${channelName}/update`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                owner: document.getElementById('editChannelOwner').value,
+                voice_preset: document.getElementById('editVoicePreset').value,
+                lines_between_messages: parseInt(document.getElementById('editLinesBetween').value),
+                time_between_messages: parseInt(document.getElementById('editTimeBetween').value),
+                join_channel: document.getElementById('editAutoJoin').checked ? 1 : 0,
+                tts_enabled: document.getElementById('editTTSEnabled').checked ? 1 : 0,
+                use_general_model: document.getElementById('editUseGeneral').checked ? 1 : 0
+            })
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            window.notificationSystem.showToast('Channel updated successfully', 'success');
+            bootstrap.Modal.getInstance(document.getElementById('editChannelModal')).hide();
+            location.reload();
+        } else {
+            window.notificationSystem.showToast(data.error || 'Failed to update channel', 'error');
+        }
+    } catch (error) {
+        console.error('Error updating channel:', error);
+        window.notificationSystem.showToast('Error updating channel', 'error');
+    }
+}
+
+async function toggleJoinChannel(channelName, currentState) {
+    try {
+        const response = await fetch(`/api/admin/channels/${channelName}/toggle-join`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ join_channel: currentState ? 0 : 1 })
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            window.notificationSystem.showToast('Auto-join updated', 'success');
+            location.reload();
+        } else {
+            window.notificationSystem.showToast(data.error || 'Failed to update', 'error');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        window.notificationSystem.showToast('Error updating setting', 'error');
+    }
+}
+
+async function toggleTTS(channelName, currentState) {
+    try {
+        const response = await fetch(`/api/admin/channels/${channelName}/toggle-tts`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tts_enabled: currentState ? 0 : 1 })
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            window.notificationSystem.showToast('TTS updated', 'success');
+            location.reload();
+        } else {
+            window.notificationSystem.showToast(data.error || 'Failed to update', 'error');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        window.notificationSystem.showToast('Error updating TTS', 'error');
+    }
+}
+
+async function deleteChannel(channelName) {
+    if (!confirm(`Are you sure you want to delete channel #${channelName}? This cannot be undone.`)) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/admin/channels/${channelName}/delete`, {
+            method: 'POST'
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            window.notificationSystem.showToast('Channel deleted', 'success');
+            location.reload();
+        } else {
+            window.notificationSystem.showToast(data.error || 'Failed to delete channel', 'error');
+        }
+    } catch (error) {
+        console.error('Error deleting channel:', error);
+        window.notificationSystem.showToast('Error deleting channel', 'error');
+    }
+}
+</script>
 {% endblock %}
