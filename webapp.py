@@ -2298,6 +2298,322 @@ def api_admin_delete_channel(channel_name):
         app.logger.error(f"Error deleting channel: {e}")
         return jsonify({'success': False, 'error': 'Error deleting channel'}), 500
 
+##############################
+# Settings & System API Routes
+##############################
+
+def get_bot_uptime():
+    """Get bot uptime if bot is running"""
+    try:
+        if not os.path.exists('bot.pid'):
+            return None
+        with open('bot.pid', 'r') as f:
+            pid = int(f.read().strip())
+        process = psutil.Process(pid)
+        create_time = process.create_time()
+        uptime_seconds = time.time() - create_time
+        hours = int(uptime_seconds // 3600)
+        minutes = int((uptime_seconds % 3600) // 60)
+        return f"{hours}h {minutes}m"
+    except:
+        return None
+
+def ensure_settings_table():
+    """Ensure app_settings table exists"""
+    try:
+        conn = sqlite3.connect(db_file)
+        cursor = conn.cursor()
+        cursor.execute('''CREATE TABLE IF NOT EXISTS app_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )''')
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        app.logger.error(f"Error creating settings table: {e}")
+
+def get_setting(key, default=None):
+    """Get a setting value"""
+    try:
+        ensure_settings_table()
+        conn = sqlite3.connect(db_file)
+        cursor = conn.cursor()
+        cursor.execute("SELECT value FROM app_settings WHERE key = ?", (key,))
+        result = cursor.fetchone()
+        conn.close()
+        if result:
+            # Try to parse as JSON, fall back to string
+            try:
+                return json.loads(result[0])
+            except:
+                return result[0]
+        return default
+    except Exception as e:
+        app.logger.error(f"Error getting setting {key}: {e}")
+        return default
+
+def set_setting(key, value):
+    """Set a setting value"""
+    try:
+        ensure_settings_table()
+        conn = sqlite3.connect(db_file)
+        cursor = conn.cursor()
+        # Convert to JSON if not a string
+        value_str = json.dumps(value) if not isinstance(value, str) else value
+        cursor.execute("""
+            INSERT OR REPLACE INTO app_settings (key, value, updated_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+        """, (key, value_str))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        app.logger.error(f"Error setting {key}: {e}")
+        return False
+
+@app.route('/api/admin/system-info')
+@require_role('admin')
+def api_admin_system_info():
+    """Get system information"""
+    try:
+        import sys
+
+        # Check if bot is running
+        bot_running = False
+        if os.path.exists('bot.pid'):
+            try:
+                with open('bot.pid', 'r') as f:
+                    pid = int(f.read().strip())
+                bot_running = psutil.pid_exists(pid)
+            except:
+                pass
+
+        # Get total channels
+        channels = get_all_channel_configs()
+
+        # Get total messages
+        conn = sqlite3.connect(db_file)
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM messages")
+        total_messages = cursor.fetchone()[0]
+        conn.close()
+
+        # Get database size
+        db_size = os.path.getsize(db_file) if os.path.exists(db_file) else 0
+
+        return jsonify({
+            'success': True,
+            'bot_running': bot_running,
+            'total_channels': len(channels),
+            'total_messages': total_messages,
+            'db_size': db_size,
+            'python_version': f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
+            'bot_uptime': get_bot_uptime(),
+            'db_path': db_file
+        })
+    except Exception as e:
+        app.logger.error(f"Error getting system info: {e}")
+        return jsonify({'success': False, 'error': 'Error getting system info'}), 500
+
+@app.route('/api/admin/settings')
+@require_role('admin')
+def api_admin_get_settings():
+    """Get all settings"""
+    try:
+        settings = {
+            # Bot settings
+            'default_voice_preset': get_setting('default_voice_preset', 'v2/en_speaker_5'),
+            'default_lines_between': get_setting('default_lines_between', 20),
+            'default_time_between': get_setting('default_time_between', 300),
+            'markov_attempts': get_setting('markov_attempts', 8),
+            'tts_enabled_default': get_setting('tts_enabled_default', True),
+            'auto_join_default': get_setting('auto_join_default', True),
+            # App settings
+            'log_level': get_setting('log_level', 'INFO'),
+            'session_timeout': get_setting('session_timeout', 24),
+            'maintenance_mode': get_setting('maintenance_mode', False)
+        }
+        return jsonify({'success': True, 'settings': settings})
+    except Exception as e:
+        app.logger.error(f"Error getting settings: {e}")
+        return jsonify({'success': False, 'error': 'Error getting settings'}), 500
+
+@app.route('/api/admin/settings/update', methods=['POST'])
+@require_role('admin')
+def api_admin_update_settings():
+    """Update settings"""
+    try:
+        data = request.get_json()
+
+        # Update each setting
+        for key, value in data.items():
+            set_setting(key, value)
+
+        # Log action
+        current_user = get_current_user()
+        user_db.log_action(
+            current_user['user_id'], 'settings.updated', 'system', 'settings',
+            {'updated_keys': list(data.keys())},
+            request.remote_addr, request.headers.get('User-Agent', 'Unknown')
+        )
+
+        return jsonify({'success': True, 'message': 'Settings updated'})
+    except Exception as e:
+        app.logger.error(f"Error updating settings: {e}")
+        return jsonify({'success': False, 'error': 'Error updating settings'}), 500
+
+@app.route('/api/admin/settings/reset', methods=['POST'])
+@require_role('admin')
+def api_admin_reset_settings():
+    """Reset all settings to defaults"""
+    try:
+        ensure_settings_table()
+        conn = sqlite3.connect(db_file)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM app_settings")
+        conn.commit()
+        conn.close()
+
+        # Log action
+        current_user = get_current_user()
+        user_db.log_action(
+            current_user['user_id'], 'settings.reset', 'system', 'settings',
+            {},
+            request.remote_addr, request.headers.get('User-Agent', 'Unknown')
+        )
+
+        return jsonify({'success': True, 'message': 'Settings reset to defaults'})
+    except Exception as e:
+        app.logger.error(f"Error resetting settings: {e}")
+        return jsonify({'success': False, 'error': 'Error resetting settings'}), 500
+
+@app.route('/api/admin/database-stats')
+@require_role('admin')
+def api_admin_database_stats():
+    """Get database table statistics"""
+    try:
+        conn = sqlite3.connect(db_file)
+        cursor = conn.cursor()
+
+        # Get list of tables
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+        tables = [row[0] for row in cursor.fetchall()]
+
+        stats = []
+        for table in tables:
+            cursor.execute(f"SELECT COUNT(*) FROM {table}")
+            count = cursor.fetchone()[0]
+
+            # Try to get last updated timestamp if table has a timestamp column
+            last_updated = None
+            try:
+                cursor.execute(f"SELECT timestamp FROM {table} ORDER BY timestamp DESC LIMIT 1")
+                result = cursor.fetchone()
+                if result and result[0]:
+                    last_updated = result[0]
+            except:
+                pass
+
+            stats.append({
+                'name': table,
+                'count': count,
+                'last_updated': last_updated
+            })
+
+        conn.close()
+        return jsonify({'success': True, 'tables': stats})
+    except Exception as e:
+        app.logger.error(f"Error getting database stats: {e}")
+        return jsonify({'success': False, 'error': 'Error getting database stats'}), 500
+
+@app.route('/api/admin/database/backup', methods=['POST'])
+@require_role('admin')
+def api_admin_backup_database():
+    """Create database backup"""
+    try:
+        import shutil
+
+        # Create backups directory if it doesn't exist
+        backup_dir = 'backups'
+        os.makedirs(backup_dir, exist_ok=True)
+
+        # Create backup with timestamp
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        backup_file = f"{backup_dir}/messages_backup_{timestamp}.db"
+
+        shutil.copy2(db_file, backup_file)
+
+        # Also backup users database
+        if os.path.exists('users.db'):
+            users_backup = f"{backup_dir}/users_backup_{timestamp}.db"
+            shutil.copy2('users.db', users_backup)
+
+        # Log action
+        current_user = get_current_user()
+        user_db.log_action(
+            current_user['user_id'], 'database.backup', 'system', 'database',
+            {'backup_file': backup_file},
+            request.remote_addr, request.headers.get('User-Agent', 'Unknown')
+        )
+
+        return jsonify({
+            'success': True,
+            'message': 'Backup created successfully',
+            'backup_file': backup_file
+        })
+    except Exception as e:
+        app.logger.error(f"Error creating backup: {e}")
+        return jsonify({'success': False, 'error': 'Error creating backup'}), 500
+
+@app.route('/api/admin/database/vacuum', methods=['POST'])
+@require_role('admin')
+def api_admin_vacuum_database():
+    """Vacuum database to optimize"""
+    try:
+        conn = sqlite3.connect(db_file)
+        cursor = conn.cursor()
+        cursor.execute("VACUUM")
+        conn.commit()
+        conn.close()
+
+        # Log action
+        current_user = get_current_user()
+        user_db.log_action(
+            current_user['user_id'], 'database.vacuum', 'system', 'database',
+            {},
+            request.remote_addr, request.headers.get('User-Agent', 'Unknown')
+        )
+
+        return jsonify({'success': True, 'message': 'Database optimized'})
+    except Exception as e:
+        app.logger.error(f"Error vacuuming database: {e}")
+        return jsonify({'success': False, 'error': 'Error optimizing database'}), 500
+
+@app.route('/api/admin/database/clear-messages', methods=['POST'])
+@require_role('admin')
+def api_admin_clear_messages():
+    """Clear all messages from database"""
+    try:
+        conn = sqlite3.connect(db_file)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM messages")
+        conn.commit()
+        conn.close()
+
+        # Log action
+        current_user = get_current_user()
+        user_db.log_action(
+            current_user['user_id'], 'database.clear_messages', 'system', 'database',
+            {'warning': 'All messages deleted'},
+            request.remote_addr, request.headers.get('User-Agent', 'Unknown')
+        )
+
+        return jsonify({'success': True, 'message': 'All messages cleared'})
+    except Exception as e:
+        app.logger.error(f"Error clearing messages: {e}")
+        return jsonify({'success': False, 'error': 'Error clearing messages'}), 500
+
 @app.route('/')
 def index():
     """Landing page for public visitors, redirect to dashboard for authenticated users."""

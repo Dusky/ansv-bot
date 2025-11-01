@@ -1,28 +1,606 @@
 {% extends "admin_base.html" %}
 
-{% block title %}Admin Settings - Admin Panel{% endblock %}
-{% block page_title %}Admin Settings{% endblock %}
+{% block title %}System Settings - Admin Panel{% endblock %}
+{% block page_title %}System Settings{% endblock %}
+
+{% block head %}
+{{ super() }}
+<style>
+.settings-card {
+    background: var(--bs-body-bg);
+    border: 1px solid var(--bs-border-color);
+    border-radius: 15px;
+    padding: 2rem;
+    margin-bottom: 1.5rem;
+}
+
+.settings-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    padding-bottom: 1rem;
+    border-bottom: 2px solid var(--bs-border-color);
+}
+
+.settings-icon {
+    width: 50px;
+    height: 50px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+}
+
+.settings-header h3 {
+    margin: 0;
+    font-size: 1.5rem;
+}
+
+.stat-box {
+    background: rgba(var(--bs-primary-rgb), 0.05);
+    border: 1px solid var(--bs-primary);
+    border-radius: 10px;
+    padding: 1.5rem;
+    text-align: center;
+}
+
+.stat-value {
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--bs-primary);
+    margin-bottom: 0.5rem;
+}
+
+.stat-label {
+    font-size: 0.875rem;
+    color: var(--bs-secondary-color);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.action-btn {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 10px;
+    font-weight: 600;
+    transition: all 0.3s;
+}
+
+.action-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+    color: white;
+}
+
+.danger-btn {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+}
+
+.danger-btn:hover {
+    box-shadow: 0 8px 20px rgba(240, 147, 251, 0.4);
+}
+
+.spinner-icon {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+</style>
+{% endblock %}
 
 {% block content %}
-<div class="alert alert-info">
-    <i class="fas fa-info-circle me-2"></i>
-    <strong>Coming Soon:</strong> Admin configuration settings will be available here.
-</div>
+<!-- System Information -->
+<div class="settings-card">
+    <div class="settings-header">
+        <div class="settings-icon">
+            <i class="fas fa-info-circle"></i>
+        </div>
+        <div>
+            <h3>System Information</h3>
+            <p class="text-muted mb-0">Current system status and statistics</p>
+        </div>
+    </div>
 
-<div class="card">
-    <div class="card-body">
-        <h5 class="card-title">Quick Links</h5>
-        <ul class="list-group list-group-flush">
-            <li class="list-group-item">
-                <a href="/admin/bot-control">Bot Control Panel</a>
-            </li>
-            <li class="list-group-item">
-                <a href="/admin/users">User Management</a>
-            </li>
-            <li class="list-group-item">
-                <a href="/admin/message-tools">Message Tools</a>
-            </li>
-        </ul>
+    <div class="row g-3">
+        <div class="col-md-3 col-sm-6">
+            <div class="stat-box">
+                <div class="stat-value" id="botStatus">
+                    <i class="fas fa-spinner spinner-icon"></i>
+                </div>
+                <div class="stat-label">Bot Status</div>
+            </div>
+        </div>
+        <div class="col-md-3 col-sm-6">
+            <div class="stat-box">
+                <div class="stat-value" id="totalChannels">0</div>
+                <div class="stat-label">Channels</div>
+            </div>
+        </div>
+        <div class="col-md-3 col-sm-6">
+            <div class="stat-box">
+                <div class="stat-value" id="totalMessages">0</div>
+                <div class="stat-label">Total Messages</div>
+            </div>
+        </div>
+        <div class="col-md-3 col-sm-6">
+            <div class="stat-box">
+                <div class="stat-value" id="dbSize">0 MB</div>
+                <div class="stat-label">Database Size</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-3 mt-3">
+        <div class="col-md-4">
+            <p class="mb-1"><strong>Python Version:</strong></p>
+            <p class="text-muted" id="pythonVersion">Loading...</p>
+        </div>
+        <div class="col-md-4">
+            <p class="mb-1"><strong>Bot Uptime:</strong></p>
+            <p class="text-muted" id="botUptime">Loading...</p>
+        </div>
+        <div class="col-md-4">
+            <p class="mb-1"><strong>Database Path:</strong></p>
+            <p class="text-muted" id="dbPath">Loading...</p>
+        </div>
     </div>
 </div>
+
+<!-- Bot Default Settings -->
+<div class="settings-card">
+    <div class="settings-header">
+        <div class="settings-icon">
+            <i class="fas fa-robot"></i>
+        </div>
+        <div>
+            <h3>Bot Default Settings</h3>
+            <p class="text-muted mb-0">Configure default behavior for new channels</p>
+        </div>
+    </div>
+
+    <form id="botSettingsForm">
+        <div class="row">
+            <div class="col-md-6 mb-3">
+                <label for="defaultVoicePreset" class="form-label">
+                    <i class="fas fa-microphone me-1"></i>Default TTS Voice
+                </label>
+                <select class="form-select" id="defaultVoicePreset" name="default_voice_preset">
+                    <option value="v2/en_speaker_5">Speaker 5 (Default)</option>
+                    <option value="v2/en_speaker_6">Speaker 6</option>
+                    <option value="v2/en_speaker_9">Speaker 9</option>
+                    <option value="v2/en_speaker_0">Speaker 0</option>
+                    <option value="v2/en_speaker_1">Speaker 1</option>
+                    <option value="v2/en_speaker_2">Speaker 2</option>
+                    <option value="v2/en_speaker_3">Speaker 3</option>
+                    <option value="v2/en_speaker_4">Speaker 4</option>
+                    <option value="v2/en_speaker_7">Speaker 7</option>
+                    <option value="v2/en_speaker_8">Speaker 8</option>
+                </select>
+            </div>
+
+            <div class="col-md-6 mb-3">
+                <label for="defaultLinesBetween" class="form-label">
+                    <i class="fas fa-list-ol me-1"></i>Default Lines Between Messages
+                </label>
+                <input type="number" class="form-control" id="defaultLinesBetween" name="default_lines_between" value="20" min="1" max="100">
+            </div>
+
+            <div class="col-md-6 mb-3">
+                <label for="defaultTimeBetween" class="form-label">
+                    <i class="fas fa-clock me-1"></i>Default Time Between Messages (seconds)
+                </label>
+                <input type="number" class="form-control" id="defaultTimeBetween" name="default_time_between" value="300" min="30" max="3600">
+            </div>
+
+            <div class="col-md-6 mb-3">
+                <label for="markovAttempts" class="form-label">
+                    <i class="fas fa-redo me-1"></i>Markov Generation Attempts
+                </label>
+                <input type="number" class="form-control" id="markovAttempts" name="markov_attempts" value="8" min="1" max="50">
+            </div>
+
+            <div class="col-md-12 mb-3">
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="ttsEnabledDefault" name="tts_enabled_default" checked>
+                    <label class="form-check-label" for="ttsEnabledDefault">
+                        <i class="fas fa-volume-up me-1"></i>Enable TTS by default for new channels
+                    </label>
+                </div>
+            </div>
+
+            <div class="col-md-12 mb-3">
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="autoJoinDefault" name="auto_join_default" checked>
+                    <label class="form-check-label" for="autoJoinDefault">
+                        <i class="fas fa-sign-in-alt me-1"></i>Auto-join new channels by default
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <button type="submit" class="btn action-btn">
+            <i class="fas fa-save me-2"></i>Save Bot Settings
+        </button>
+    </form>
+</div>
+
+<!-- Database Management -->
+<div class="settings-card">
+    <div class="settings-header">
+        <div class="settings-icon">
+            <i class="fas fa-database"></i>
+        </div>
+        <div>
+            <h3>Database Management</h3>
+            <p class="text-muted mb-0">Backup, optimize, and manage database</p>
+        </div>
+    </div>
+
+    <div class="row g-3">
+        <div class="col-md-6">
+            <h5><i class="fas fa-download me-2"></i>Backup Database</h5>
+            <p class="text-muted">Create a backup of all bot data</p>
+            <button class="btn action-btn" onclick="backupDatabase()">
+                <i class="fas fa-download me-2"></i>Create Backup
+            </button>
+        </div>
+
+        <div class="col-md-6">
+            <h5><i class="fas fa-broom me-2"></i>Optimize Database</h5>
+            <p class="text-muted">Run VACUUM to optimize database performance</p>
+            <button class="btn action-btn" onclick="vacuumDatabase()">
+                <i class="fas fa-magic me-2"></i>Optimize Now
+            </button>
+        </div>
+    </div>
+
+    <div class="row g-3 mt-3">
+        <div class="col-12">
+            <h5><i class="fas fa-chart-bar me-2"></i>Database Statistics</h5>
+            <div class="table-responsive">
+                <table class="table table-bordered">
+                    <thead>
+                        <tr>
+                            <th>Table</th>
+                            <th>Row Count</th>
+                            <th>Last Updated</th>
+                        </tr>
+                    </thead>
+                    <tbody id="dbStatsTable">
+                        <tr>
+                            <td colspan="3" class="text-center">
+                                <i class="fas fa-spinner spinner-icon me-2"></i>Loading...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Application Settings -->
+<div class="settings-card">
+    <div class="settings-header">
+        <div class="settings-icon">
+            <i class="fas fa-cog"></i>
+        </div>
+        <div>
+            <h3>Application Settings</h3>
+            <p class="text-muted mb-0">Configure web application behavior</p>
+        </div>
+    </div>
+
+    <form id="appSettingsForm">
+        <div class="row">
+            <div class="col-md-6 mb-3">
+                <label for="logLevel" class="form-label">
+                    <i class="fas fa-file-alt me-1"></i>Log Level
+                </label>
+                <select class="form-select" id="logLevel" name="log_level">
+                    <option value="DEBUG">DEBUG</option>
+                    <option value="INFO" selected>INFO</option>
+                    <option value="WARNING">WARNING</option>
+                    <option value="ERROR">ERROR</option>
+                </select>
+            </div>
+
+            <div class="col-md-6 mb-3">
+                <label for="sessionTimeout" class="form-label">
+                    <i class="fas fa-clock me-1"></i>Session Timeout (hours)
+                </label>
+                <input type="number" class="form-control" id="sessionTimeout" name="session_timeout" value="24" min="1" max="168">
+            </div>
+
+            <div class="col-md-12 mb-3">
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="maintenanceMode" name="maintenance_mode">
+                    <label class="form-check-label" for="maintenanceMode">
+                        <i class="fas fa-exclamation-triangle me-1"></i>Maintenance Mode (blocks non-admin users)
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <button type="submit" class="btn action-btn">
+            <i class="fas fa-save me-2"></i>Save Application Settings
+        </button>
+    </form>
+</div>
+
+<!-- Danger Zone -->
+<div class="settings-card border-danger">
+    <div class="settings-header">
+        <div class="settings-icon" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+            <i class="fas fa-exclamation-triangle"></i>
+        </div>
+        <div>
+            <h3 class="text-danger">Danger Zone</h3>
+            <p class="text-muted mb-0">Destructive actions - use with caution</p>
+        </div>
+    </div>
+
+    <div class="alert alert-danger">
+        <i class="fas fa-exclamation-triangle me-2"></i>
+        <strong>Warning:</strong> These actions cannot be undone. Make sure you have a backup before proceeding.
+    </div>
+
+    <div class="row g-3">
+        <div class="col-md-6">
+            <h5>Clear All Message History</h5>
+            <p class="text-muted">Delete all messages from database (keeps Markov data)</p>
+            <button class="btn danger-btn" onclick="clearMessages()">
+                <i class="fas fa-trash me-2"></i>Clear Messages
+            </button>
+        </div>
+
+        <div class="col-md-6">
+            <h5>Reset All Settings</h5>
+            <p class="text-muted">Reset all settings to default values</p>
+            <button class="btn danger-btn" onclick="resetSettings()">
+                <i class="fas fa-undo me-2"></i>Reset Settings
+            </button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+// Load system information
+async function loadSystemInfo() {
+    try {
+        const response = await fetch('/api/admin/system-info');
+        const data = await response.json();
+
+        if (data.success) {
+            // Update bot status
+            const statusEl = document.getElementById('botStatus');
+            if (data.bot_running) {
+                statusEl.innerHTML = '<i class="fas fa-check-circle text-success"></i>';
+            } else {
+                statusEl.innerHTML = '<i class="fas fa-times-circle text-danger"></i>';
+            }
+
+            document.getElementById('totalChannels').textContent = data.total_channels || 0;
+            document.getElementById('totalMessages').textContent = data.total_messages.toLocaleString();
+            document.getElementById('dbSize').textContent = (data.db_size / 1024 / 1024).toFixed(2) + ' MB';
+            document.getElementById('pythonVersion').textContent = data.python_version;
+            document.getElementById('botUptime').textContent = data.bot_uptime || 'Not running';
+            document.getElementById('dbPath').textContent = data.db_path;
+        }
+    } catch (error) {
+        console.error('Error loading system info:', error);
+    }
+}
+
+// Load current settings
+async function loadSettings() {
+    try {
+        const response = await fetch('/api/admin/settings');
+        const data = await response.json();
+
+        if (data.success && data.settings) {
+            // Bot settings
+            document.getElementById('defaultVoicePreset').value = data.settings.default_voice_preset || 'v2/en_speaker_5';
+            document.getElementById('defaultLinesBetween').value = data.settings.default_lines_between || 20;
+            document.getElementById('defaultTimeBetween').value = data.settings.default_time_between || 300;
+            document.getElementById('markovAttempts').value = data.settings.markov_attempts || 8;
+            document.getElementById('ttsEnabledDefault').checked = data.settings.tts_enabled_default !== false;
+            document.getElementById('autoJoinDefault').checked = data.settings.auto_join_default !== false;
+
+            // App settings
+            document.getElementById('logLevel').value = data.settings.log_level || 'INFO';
+            document.getElementById('sessionTimeout').value = data.settings.session_timeout || 24;
+            document.getElementById('maintenanceMode').checked = data.settings.maintenance_mode === true;
+        }
+    } catch (error) {
+        console.error('Error loading settings:', error);
+    }
+}
+
+// Load database statistics
+async function loadDatabaseStats() {
+    try {
+        const response = await fetch('/api/admin/database-stats');
+        const data = await response.json();
+
+        if (data.success && data.tables) {
+            const tbody = document.getElementById('dbStatsTable');
+            tbody.innerHTML = data.tables.map(table => `
+                <tr>
+                    <td><i class="fas fa-table me-2"></i>${table.name}</td>
+                    <td>${table.count.toLocaleString()}</td>
+                    <td>${table.last_updated || 'N/A'}</td>
+                </tr>
+            `).join('');
+        }
+    } catch (error) {
+        console.error('Error loading database stats:', error);
+    }
+}
+
+// Save bot settings
+document.getElementById('botSettingsForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const formData = new FormData(e.target);
+    const settings = Object.fromEntries(formData);
+
+    // Convert checkboxes
+    settings.tts_enabled_default = document.getElementById('ttsEnabledDefault').checked;
+    settings.auto_join_default = document.getElementById('autoJoinDefault').checked;
+
+    try {
+        const response = await fetch('/api/admin/settings/update', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(settings)
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            window.notificationSystem.showToast('Bot settings saved successfully', 'success');
+        } else {
+            window.notificationSystem.showToast(data.error || 'Failed to save settings', 'error');
+        }
+    } catch (error) {
+        console.error('Error saving settings:', error);
+        window.notificationSystem.showToast('Error saving settings', 'error');
+    }
+});
+
+// Save app settings
+document.getElementById('appSettingsForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const formData = new FormData(e.target);
+    const settings = Object.fromEntries(formData);
+
+    settings.maintenance_mode = document.getElementById('maintenanceMode').checked;
+
+    try {
+        const response = await fetch('/api/admin/settings/update', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(settings)
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            window.notificationSystem.showToast('Application settings saved successfully', 'success');
+        } else {
+            window.notificationSystem.showToast(data.error || 'Failed to save settings', 'error');
+        }
+    } catch (error) {
+        console.error('Error saving settings:', error);
+        window.notificationSystem.showToast('Error saving settings', 'error');
+    }
+});
+
+// Backup database
+async function backupDatabase() {
+    if (!confirm('Create a backup of the database? This may take a moment.')) return;
+
+    try {
+        const response = await fetch('/api/admin/database/backup', { method: 'POST' });
+        const data = await response.json();
+
+        if (data.success) {
+            window.notificationSystem.showToast('Database backup created: ' + data.backup_file, 'success');
+        } else {
+            window.notificationSystem.showToast(data.error || 'Failed to create backup', 'error');
+        }
+    } catch (error) {
+        console.error('Error creating backup:', error);
+        window.notificationSystem.showToast('Error creating backup', 'error');
+    }
+}
+
+// Vacuum database
+async function vacuumDatabase() {
+    if (!confirm('Optimize the database? This may take a moment and will temporarily lock the database.')) return;
+
+    try {
+        const response = await fetch('/api/admin/database/vacuum', { method: 'POST' });
+        const data = await response.json();
+
+        if (data.success) {
+            window.notificationSystem.showToast('Database optimized successfully', 'success');
+            loadSystemInfo();
+            loadDatabaseStats();
+        } else {
+            window.notificationSystem.showToast(data.error || 'Failed to optimize database', 'error');
+        }
+    } catch (error) {
+        console.error('Error optimizing database:', error);
+        window.notificationSystem.showToast('Error optimizing database', 'error');
+    }
+}
+
+// Clear messages
+async function clearMessages() {
+    if (!confirm('DELETE ALL MESSAGE HISTORY? This cannot be undone!\n\nType "DELETE" to confirm:')) return;
+
+    const confirmation = prompt('Type DELETE to confirm:');
+    if (confirmation !== 'DELETE') {
+        window.notificationSystem.showToast('Action cancelled', 'info');
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/admin/database/clear-messages', { method: 'POST' });
+        const data = await response.json();
+
+        if (data.success) {
+            window.notificationSystem.showToast('All messages deleted', 'success');
+            loadSystemInfo();
+            loadDatabaseStats();
+        } else {
+            window.notificationSystem.showToast(data.error || 'Failed to clear messages', 'error');
+        }
+    } catch (error) {
+        console.error('Error clearing messages:', error);
+        window.notificationSystem.showToast('Error clearing messages', 'error');
+    }
+}
+
+// Reset settings
+async function resetSettings() {
+    if (!confirm('Reset ALL settings to default values? This cannot be undone!')) return;
+
+    try {
+        const response = await fetch('/api/admin/settings/reset', { method: 'POST' });
+        const data = await response.json();
+
+        if (data.success) {
+            window.notificationSystem.showToast('Settings reset to defaults', 'success');
+            loadSettings();
+        } else {
+            window.notificationSystem.showToast(data.error || 'Failed to reset settings', 'error');
+        }
+    } catch (error) {
+        console.error('Error resetting settings:', error);
+        window.notificationSystem.showToast('Error resetting settings', 'error');
+    }
+}
+
+// Initialize
+document.addEventListener('DOMContentLoaded', function() {
+    loadSystemInfo();
+    loadSettings();
+    loadDatabaseStats();
+
+    // Refresh system info every 30 seconds
+    setInterval(loadSystemInfo, 30000);
+});
+</script>
 {% endblock %}
