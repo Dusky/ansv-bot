@@ -2345,7 +2345,7 @@ def stop_bot_route():
         return jsonify({"success": False, "message": f"Error stopping bot: {str(e)}"}), 500
 
 @app.route('/api/bot-status')
-def api_bot_status():
+def api_bot_status_legacy():
     bot_running = is_bot_actually_running()
     is_connected = False  # Default to not connected
     current_uptime_seconds = 0
