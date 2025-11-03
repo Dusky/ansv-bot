@@ -1,0 +1,423 @@
+<!-- Notification Bell Component -->
+<style>
+.notification-bell {
+    position: relative;
+    cursor: pointer;
+    padding: 0.5rem;
+    border-radius: 8px;
+    transition: background 0.2s;
+}
+
+.notification-bell:hover {
+    background: rgba(var(--bs-primary-rgb), 0.1);
+}
+
+.notification-bell-icon {
+    font-size: 1.25rem;
+    color: var(--bs-body-color);
+}
+
+.notification-badge {
+    position: absolute;
+    top: 0.25rem;
+    right: 0.25rem;
+    background: #dc3545;
+    color: white;
+    border-radius: 10px;
+    padding: 0.125rem 0.375rem;
+    font-size: 0.675rem;
+    font-weight: 700;
+    min-width: 18px;
+    text-align: center;
+}
+
+.notification-dropdown {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 0.5rem;
+    width: 400px;
+    max-width: 90vw;
+    background: var(--bs-body-bg);
+    border: 1px solid var(--bs-border-color);
+    border-radius: 12px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+    z-index: 1050;
+    display: none;
+}
+
+.notification-dropdown.show {
+    display: block;
+}
+
+.notification-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem;
+    border-bottom: 1px solid var(--bs-border-color);
+}
+
+.notification-header h6 {
+    margin: 0;
+    font-weight: 700;
+}
+
+.notification-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.notification-actions button {
+    background: none;
+    border: none;
+    color: var(--bs-primary);
+    font-size: 0.875rem;
+    cursor: pointer;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    transition: background 0.2s;
+}
+
+.notification-actions button:hover {
+    background: rgba(var(--bs-primary-rgb), 0.1);
+}
+
+.notification-list {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.notification-item {
+    padding: 1rem;
+    border-bottom: 1px solid var(--bs-border-color);
+    transition: background 0.2s;
+    cursor: pointer;
+    display: flex;
+    gap: 0.75rem;
+    align-items: flex-start;
+}
+
+.notification-item:hover {
+    background: rgba(var(--bs-primary-rgb), 0.05);
+}
+
+.notification-item:last-child {
+    border-bottom: none;
+}
+
+.notification-item.unread {
+    background: rgba(var(--bs-primary-rgb), 0.08);
+}
+
+.notification-item.unread::before {
+    content: '';
+    width: 8px;
+    height: 8px;
+    background: var(--bs-primary);
+    border-radius: 50%;
+    flex-shrink: 0;
+    margin-top: 0.5rem;
+}
+
+.notification-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    font-size: 1.125rem;
+}
+
+.notification-icon.info { background: #d1ecf1; color: #0c5460; }
+.notification-icon.success { background: #d4edda; color: #155724; }
+.notification-icon.warning { background: #fff3cd; color: #856404; }
+.notification-icon.error { background: #f8d7da; color: #721c24; }
+.notification-icon.system { background: #e2e3e5; color: #383d41; }
+
+.notification-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.notification-title {
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+    font-size: 0.9375rem;
+}
+
+.notification-message {
+    font-size: 0.875rem;
+    color: var(--bs-secondary-color);
+    margin-bottom: 0.25rem;
+}
+
+.notification-time {
+    font-size: 0.75rem;
+    color: var(--bs-secondary-color);
+}
+
+.notification-delete {
+    opacity: 0;
+    transition: opacity 0.2s;
+    background: none;
+    border: none;
+    color: var(--bs-danger);
+    cursor: pointer;
+    padding: 0.25rem;
+    border-radius: 4px;
+}
+
+.notification-item:hover .notification-delete {
+    opacity: 1;
+}
+
+.notification-delete:hover {
+    background: rgba(220, 53, 69, 0.1);
+}
+
+.notification-empty {
+    padding: 3rem 1rem;
+    text-align: center;
+    color: var(--bs-secondary-color);
+}
+
+.notification-footer {
+    padding: 0.75rem;
+    text-align: center;
+    border-top: 1px solid var(--bs-border-color);
+}
+
+.notification-footer a {
+    color: var(--bs-primary);
+    text-decoration: none;
+    font-size: 0.875rem;
+    font-weight: 600;
+}
+
+.notification-footer a:hover {
+    text-decoration: underline;
+}
+
+@media (max-width: 576px) {
+    .notification-dropdown {
+        width: 100vw;
+        left: 0;
+        right: 0;
+        margin-left: -1rem;
+        border-radius: 0;
+    }
+}
+</style>
+
+<!-- Notification Bell -->
+<div class="notification-bell" id="notificationBell" onclick="toggleNotifications()">
+    <i class="fas fa-bell notification-bell-icon"></i>
+    <span class="notification-badge" id="notificationCount" style="display: none;">0</span>
+</div>
+
+<!-- Notification Dropdown -->
+<div class="notification-dropdown" id="notificationDropdown">
+    <div class="notification-header">
+        <h6><i class="fas fa-bell me-2"></i>Notifications</h6>
+        <div class="notification-actions">
+            <button onclick="markAllAsRead()" title="Mark all as read">
+                <i class="fas fa-check-double"></i>
+            </button>
+            <button onclick="clearAllNotifications()" title="Clear all">
+                <i class="fas fa-trash"></i>
+            </button>
+        </div>
+    </div>
+    <div class="notification-list" id="notificationList">
+        <div class="notification-empty">
+            <i class="fas fa-bell-slash fa-3x mb-3 opacity-25"></i>
+            <p>No notifications</p>
+        </div>
+    </div>
+</div>
+
+<script>
+// Notification System
+(function() {
+    let notifications = [];
+    let unreadCount = 0;
+
+    // Toggle dropdown
+    window.toggleNotifications = function() {
+        const dropdown = document.getElementById('notificationDropdown');
+        dropdown.classList.toggle('show');
+
+        if (dropdown.classList.contains('show')) {
+            loadNotifications();
+        }
+    };
+
+    // Close dropdown when clicking outside
+    document.addEventListener('click', function(e) {
+        const bell = document.getElementById('notificationBell');
+        const dropdown = document.getElementById('notificationDropdown');
+
+        if (!bell.contains(e.target) && !dropdown.contains(e.target)) {
+            dropdown.classList.remove('show');
+        }
+    });
+
+    // Load notifications
+    async function loadNotifications() {
+        try {
+            const response = await fetch('/api/notifications');
+            const data = await response.json();
+
+            if (data.success) {
+                notifications = data.notifications;
+                unreadCount = data.unread_count;
+                renderNotifications();
+                updateBadge();
+            }
+        } catch (error) {
+            console.error('Error loading notifications:', error);
+        }
+    }
+
+    // Render notifications
+    function renderNotifications() {
+        const list = document.getElementById('notificationList');
+
+        if (notifications.length === 0) {
+            list.innerHTML = `
+                <div class="notification-empty">
+                    <i class="fas fa-bell-slash fa-3x mb-3 opacity-25"></i>
+                    <p>No notifications</p>
+                </div>
+            `;
+            return;
+        }
+
+        list.innerHTML = notifications.map(n => {
+            const iconClass = n.icon || getIconForType(n.type);
+            const typeClass = n.type || 'info';
+            const unreadClass = n.is_read ? '' : 'unread';
+            const timeAgo = formatTimeAgo(n.created_at);
+
+            return `
+                <div class="notification-item ${unreadClass}" onclick="handleNotificationClick(${n.id}, '${n.link || ''}', ${n.is_read})">
+                    <div class="notification-icon ${typeClass}">
+                        <i class="${iconClass}"></i>
+                    </div>
+                    <div class="notification-content">
+                        <div class="notification-title">${n.title}</div>
+                        <div class="notification-message">${n.message}</div>
+                        <div class="notification-time">${timeAgo}</div>
+                    </div>
+                    <button class="notification-delete" onclick="event.stopPropagation(); deleteNotification(${n.id})">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            `;
+        }).join('');
+    }
+
+    // Update badge
+    function updateBadge() {
+        const badge = document.getElementById('notificationCount');
+        if (unreadCount > 0) {
+            badge.textContent = unreadCount > 99 ? '99+' : unreadCount;
+            badge.style.display = 'block';
+        } else {
+            badge.style.display = 'none';
+        }
+    }
+
+    // Handle notification click
+    window.handleNotificationClick = async function(id, link, isRead) {
+        // Mark as read if unread
+        if (!isRead) {
+            await markAsRead(id);
+        }
+
+        // Navigate if has link
+        if (link) {
+            window.location.href = link;
+        }
+    };
+
+    // Mark as read
+    async function markAsRead(id) {
+        try {
+            await fetch(`/api/notifications/${id}/read`, { method: 'POST' });
+            loadNotifications();
+        } catch (error) {
+            console.error('Error marking notification as read:', error);
+        }
+    }
+
+    // Mark all as read
+    window.markAllAsRead = async function() {
+        try {
+            await fetch('/api/notifications/read-all', { method: 'POST' });
+            loadNotifications();
+        } catch (error) {
+            console.error('Error marking all as read:', error);
+        }
+    };
+
+    // Delete notification
+    window.deleteNotification = async function(id) {
+        try {
+            await fetch(`/api/notifications/${id}`, { method: 'DELETE' });
+            loadNotifications();
+        } catch (error) {
+            console.error('Error deleting notification:', error);
+        }
+    };
+
+    // Clear all notifications
+    window.clearAllNotifications = async function() {
+        if (!confirm('Clear all notifications?')) return;
+
+        try {
+            await fetch('/api/notifications/clear-all', { method: 'POST' });
+            loadNotifications();
+        } catch (error) {
+            console.error('Error clearing notifications:', error);
+        }
+    };
+
+    // Helper: Get icon for notification type
+    function getIconForType(type) {
+        const icons = {
+            'info': 'fas fa-info-circle',
+            'success': 'fas fa-check-circle',
+            'warning': 'fas fa-exclamation-triangle',
+            'error': 'fas fa-times-circle',
+            'system': 'fas fa-cog',
+            'bot': 'fas fa-robot',
+            'tts': 'fas fa-volume-up',
+            'user': 'fas fa-user',
+            'channel': 'fas fa-hashtag',
+            'subscription': 'fas fa-star'
+        };
+        return icons[type] || 'fas fa-bell';
+    }
+
+    // Helper: Format time ago
+    function formatTimeAgo(timestamp) {
+        const now = new Date();
+        const time = new Date(timestamp);
+        const diff = Math.floor((now - time) / 1000); // seconds
+
+        if (diff < 60) return 'Just now';
+        if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+        if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+        if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
+        return time.toLocaleDateString();
+    }
+
+    // Initial load and periodic refresh
+    loadNotifications();
+    setInterval(loadNotifications, 30000); // Refresh every 30 seconds
+})();
+</script>

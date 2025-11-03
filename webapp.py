@@ -2703,6 +2703,188 @@ def api_admin_audit_logs_export():
         app.logger.error(f"Error exporting audit logs: {e}")
         return jsonify({'success': False, 'error': 'Error exporting audit logs'}), 500
 
+##############################
+# Notification System
+##############################
+
+def ensure_notifications_table():
+    """Ensure notifications table exists"""
+    try:
+        conn = user_db.get_connection()
+        conn.execute('''CREATE TABLE IF NOT EXISTS notifications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            type TEXT NOT NULL,
+            title TEXT NOT NULL,
+            message TEXT NOT NULL,
+            link TEXT,
+            icon TEXT,
+            is_read INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )''')
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        app.logger.error(f"Error creating notifications table: {e}")
+
+def create_notification(user_id, type, title, message, link=None, icon=None):
+    """Create a new notification for a user"""
+    try:
+        ensure_notifications_table()
+        conn = user_db.get_connection()
+        conn.execute("""
+            INSERT INTO notifications (user_id, type, title, message, link, icon)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (user_id, type, title, message, link, icon))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        app.logger.error(f"Error creating notification: {e}")
+        return False
+
+def create_notification_for_role(role_name, type, title, message, link=None, icon=None):
+    """Create notification for all users with a specific role"""
+    try:
+        conn = user_db.get_connection()
+        users = conn.execute("""
+            SELECT u.id FROM users u
+            JOIN roles r ON u.role_id = r.id
+            WHERE r.name = ?
+        """, (role_name,)).fetchall()
+        conn.close()
+
+        for user in users:
+            create_notification(user[0], type, title, message, link, icon)
+        return True
+    except Exception as e:
+        app.logger.error(f"Error creating role notifications: {e}")
+        return False
+
+@app.route('/api/notifications')
+@require_auth
+def api_get_notifications():
+    """Get user notifications"""
+    try:
+        user = get_current_user()
+        if not user:
+            return jsonify({'success': False, 'error': 'Not authenticated'}), 401
+
+        ensure_notifications_table()
+        conn = user_db.get_connection()
+        notifications = conn.execute("""
+            SELECT * FROM notifications
+            WHERE user_id = ?
+            ORDER BY created_at DESC
+            LIMIT 50
+        """, (user['user_id'],)).fetchall()
+        conn.close()
+
+        notifications_list = [dict(n) for n in notifications]
+
+        # Count unread
+        unread_count = len([n for n in notifications_list if not n['is_read']])
+
+        return jsonify({
+            'success': True,
+            'notifications': notifications_list,
+            'unread_count': unread_count
+        })
+    except Exception as e:
+        app.logger.error(f"Error getting notifications: {e}")
+        return jsonify({'success': False, 'error': 'Error getting notifications'}), 500
+
+@app.route('/api/notifications/<int:notification_id>/read', methods=['POST'])
+@require_auth
+def api_mark_notification_read(notification_id):
+    """Mark notification as read"""
+    try:
+        user = get_current_user()
+        if not user:
+            return jsonify({'success': False, 'error': 'Not authenticated'}), 401
+
+        conn = user_db.get_connection()
+        conn.execute("""
+            UPDATE notifications
+            SET is_read = 1
+            WHERE id = ? AND user_id = ?
+        """, (notification_id, user['user_id']))
+        conn.commit()
+        conn.close()
+
+        return jsonify({'success': True})
+    except Exception as e:
+        app.logger.error(f"Error marking notification read: {e}")
+        return jsonify({'success': False, 'error': 'Error updating notification'}), 500
+
+@app.route('/api/notifications/read-all', methods=['POST'])
+@require_auth
+def api_mark_all_notifications_read():
+    """Mark all notifications as read"""
+    try:
+        user = get_current_user()
+        if not user:
+            return jsonify({'success': False, 'error': 'Not authenticated'}), 401
+
+        conn = user_db.get_connection()
+        conn.execute("""
+            UPDATE notifications
+            SET is_read = 1
+            WHERE user_id = ? AND is_read = 0
+        """, (user['user_id'],))
+        conn.commit()
+        conn.close()
+
+        return jsonify({'success': True})
+    except Exception as e:
+        app.logger.error(f"Error marking all notifications read: {e}")
+        return jsonify({'success': False, 'error': 'Error updating notifications'}), 500
+
+@app.route('/api/notifications/<int:notification_id>', methods=['DELETE'])
+@require_auth
+def api_delete_notification(notification_id):
+    """Delete a notification"""
+    try:
+        user = get_current_user()
+        if not user:
+            return jsonify({'success': False, 'error': 'Not authenticated'}), 401
+
+        conn = user_db.get_connection()
+        conn.execute("""
+            DELETE FROM notifications
+            WHERE id = ? AND user_id = ?
+        """, (notification_id, user['user_id']))
+        conn.commit()
+        conn.close()
+
+        return jsonify({'success': True})
+    except Exception as e:
+        app.logger.error(f"Error deleting notification: {e}")
+        return jsonify({'success': False, 'error': 'Error deleting notification'}), 500
+
+@app.route('/api/notifications/clear-all', methods=['POST'])
+@require_auth
+def api_clear_all_notifications():
+    """Delete all notifications for user"""
+    try:
+        user = get_current_user()
+        if not user:
+            return jsonify({'success': False, 'error': 'Not authenticated'}), 401
+
+        conn = user_db.get_connection()
+        conn.execute("""
+            DELETE FROM notifications
+            WHERE user_id = ?
+        """, (user['user_id'],))
+        conn.commit()
+        conn.close()
+
+        return jsonify({'success': True})
+    except Exception as e:
+        app.logger.error(f"Error clearing notifications: {e}")
+        return jsonify({'success': False, 'error': 'Error clearing notifications'}), 500
+
 @app.route('/')
 def index():
     """Landing page for public visitors, redirect to dashboard for authenticated users."""

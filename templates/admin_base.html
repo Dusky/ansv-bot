@@ -486,6 +486,10 @@
                     <span class="status-dot"></span>
                     <span>Checking...</span>
                 </div>
+
+                <!-- Notification Bell -->
+                {% include 'components/notification_bell.html' %}
+
                 <div class="user-menu" data-bs-toggle="dropdown">
                     <div class="user-avatar">
                         {{ current_user.username[0]|upper if current_user else 'A' }}
