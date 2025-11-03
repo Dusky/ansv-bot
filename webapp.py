@@ -2614,6 +2614,95 @@ def api_admin_clear_messages():
         app.logger.error(f"Error clearing messages: {e}")
         return jsonify({'success': False, 'error': 'Error clearing messages'}), 500
 
+##############################
+# Audit Logs API Routes
+##############################
+
+@app.route('/api/admin/audit-logs')
+@require_role('admin')
+def api_admin_audit_logs():
+    """Get audit logs with stats and filtering"""
+    try:
+        # Get all audit logs
+        logs = user_db.get_recent_audit_logs(limit=10000)  # Get more for client-side filtering
+
+        # Calculate stats
+        today = datetime.now().date()
+        stats = {
+            'total': len(logs),
+            'today': len([log for log in logs if datetime.fromisoformat(log['timestamp']).date() == today]),
+            'unique_users': len(set(log['username'] for log in logs if log.get('username'))),
+            'failed': 0  # Can be enhanced to track failed actions
+        }
+
+        return jsonify({'success': True, 'logs': logs, 'stats': stats})
+    except Exception as e:
+        app.logger.error(f"Error getting audit logs: {e}")
+        return jsonify({'success': False, 'error': 'Error getting audit logs'}), 500
+
+@app.route('/api/admin/audit-logs/export', methods=['POST'])
+@require_role('admin')
+def api_admin_audit_logs_export():
+    """Export audit logs as CSV or JSON"""
+    try:
+        import csv
+        from io import StringIO
+
+        data = request.get_json()
+        format_type = request.args.get('format', 'csv')
+        filters = data.get('filters', {})
+
+        # Get logs
+        logs = user_db.get_recent_audit_logs(limit=10000)
+
+        # Apply filters (simplified version, same logic as frontend)
+        if filters.get('action'):
+            logs = [log for log in logs if log['action'] == filters['action']]
+        if filters.get('user'):
+            logs = [log for log in logs if log.get('username') == filters['user']]
+        if filters.get('search'):
+            search_term = filters['search'].lower()
+            logs = [log for log in logs if any(
+                search_term in str(v).lower() for v in log.values() if v
+            )]
+
+        # Log export action
+        current_user = get_current_user()
+        user_db.log_action(
+            current_user['user_id'], 'audit_logs.exported', 'system', 'audit_logs',
+            {'format': format_type, 'count': len(logs)},
+            request.remote_addr, request.headers.get('User-Agent', 'Unknown')
+        )
+
+        if format_type == 'csv':
+            # Generate CSV
+            output = StringIO()
+            if logs:
+                fieldnames = ['timestamp', 'username', 'action', 'resource_type', 'resource_id', 'ip_address', 'user_agent']
+                writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction='ignore')
+                writer.writeheader()
+                for log in logs:
+                    writer.writerow(log)
+
+            response = make_response(output.getvalue())
+            response.headers['Content-Type'] = 'text/csv'
+            response.headers['Content-Disposition'] = f'attachment; filename=audit-logs-{datetime.now().strftime("%Y%m%d")}.csv'
+            return response
+
+        elif format_type == 'json':
+            # Generate JSON
+            response = make_response(json.dumps(logs, indent=2, default=str))
+            response.headers['Content-Type'] = 'application/json'
+            response.headers['Content-Disposition'] = f'attachment; filename=audit-logs-{datetime.now().strftime("%Y%m%d")}.json'
+            return response
+
+        else:
+            return jsonify({'success': False, 'error': 'Invalid format'}), 400
+
+    except Exception as e:
+        app.logger.error(f"Error exporting audit logs: {e}")
+        return jsonify({'success': False, 'error': 'Error exporting audit logs'}), 500
+
 @app.route('/')
 def index():
     """Landing page for public visitors, redirect to dashboard for authenticated users."""
