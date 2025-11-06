@@ -365,6 +365,12 @@ cmd_setup() {
         exit 1
     }
 
+    # Download NLTK data (required for TTS)
+    echo -e "${CYAN}Downloading NLTK data...${NC}"
+    python -c "import nltk; nltk.download('punkt', quiet=True); nltk.download('punkt_tab', quiet=True); nltk.download('averaged_perceptron_tagger', quiet=True)" 2>/dev/null || {
+        echo -e "${YELLOW}Note: NLTK data will be downloaded on first use${NC}"
+    }
+
     # Install TTS dependencies if available
     if [[ -f "requirements-tts.txt" ]]; then
         echo -e "${CYAN}Installing TTS dependencies...${NC}"
@@ -515,7 +521,7 @@ cmd_setup_tts() {
 
     # Download NLTK data
     echo -e "${CYAN}Downloading NLTK data...${NC}"
-    python -c "import nltk; nltk.download('punkt', quiet=True); nltk.download('averaged_perceptron_tagger', quiet=True)" || {
+    python -c "import nltk; nltk.download('punkt', quiet=True); nltk.download('punkt_tab', quiet=True); nltk.download('averaged_perceptron_tagger', quiet=True)" || {
         echo -e "${YELLOW}Warning: NLTK data download had issues${NC}"
     }
     echo -e "${GREEN}✓ NLTK data downloaded${NC}\n"
