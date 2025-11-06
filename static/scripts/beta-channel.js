@@ -591,15 +591,29 @@ function initializeTTSHistory() {
 
 async function loadTTSHistory() {
     const channelName = window.channelData.name;
-    
+
     try {
+        console.log('[Beta Channel] Loading TTS history for channel:', channelName);
         const response = await betaUtils.apiRequest(`/api/tts-logs?channel_filter=${encodeURIComponent(channelName)}&per_page=20&page=1&sort_by=timestamp&sort_order=desc`);
-        
+
+        console.log('[Beta Channel] TTS history response:', response);
+
         if (response.logs) {
+            console.log(`[Beta Channel] Loaded ${response.logs.length} TTS entries`);
+            response.logs.forEach((entry, idx) => {
+                console.log(`[Beta Channel] TTS #${idx}:`, {
+                    id: entry.id,
+                    message: entry.message?.substring(0, 30),
+                    file_path: entry.file_path,
+                    voice: entry.voice_preset
+                });
+            });
             updateTTSDisplay(response.logs);
             updateVoiceFilter(response.logs);
+        } else {
+            console.warn('[Beta Channel] No logs in TTS response');
         }
-        
+
     } catch (error) {
         console.error('[Beta Channel] Error loading TTS history:', error);
         showTTSError();
@@ -644,25 +658,37 @@ function createTTSItem(entry) {
     const timestamp = betaUtils.formatTimestamp(entry.timestamp);
     const voicePreset = entry.voice_preset || 'Unknown';
     const isPlaying = currentlyPlayingId === entry.id;
-    
+
+    console.log('[Beta Channel] Creating TTS item:', {
+        id: entry.id,
+        hasFilePath: !!entry.file_path,
+        filePath: entry.file_path,
+        message: entry.message?.substring(0, 30)
+    });
+
     return `
-        <div class="tts-item ${isPlaying ? 'playing' : ''}">
+        <div class="tts-item ${isPlaying ? 'playing' : ''}" data-tts-id="${entry.id}">
             <div class="tts-content">
                 <p class="tts-text">${betaUtils.escapeHtml(entry.message)}</p>
                 <div class="tts-meta">
                     <span><i class="fas fa-microphone me-1"></i>${betaUtils.escapeHtml(voicePreset)}</span>
                     <span><i class="fas fa-clock me-1"></i>${timestamp}</span>
+                    ${!entry.file_path ? '<span class="text-warning"><i class="fas fa-exclamation-triangle me-1"></i>No audio file</span>' : ''}
                 </div>
             </div>
             <div class="tts-controls">
                 ${entry.file_path ? `
-                    <button class="tts-play-btn ${isPlaying ? 'playing' : ''}" 
-                            data-tts-id="${entry.id}" 
-                            data-file-path="${entry.file_path}"
+                    <button class="tts-play-btn ${isPlaying ? 'playing' : ''}"
+                            data-tts-id="${entry.id}"
+                            data-file-path="${betaUtils.escapeHtml(entry.file_path)}"
                             title="${isPlaying ? 'Pause' : 'Play'} TTS">
                         <i class="fas ${isPlaying ? 'fa-pause' : 'fa-play'}"></i>
                     </button>
-                ` : ''}
+                ` : `
+                    <span class="text-muted small">
+                        <i class="fas fa-hourglass-half"></i>
+                    </span>
+                `}
             </div>
         </div>
     `;
@@ -709,30 +735,58 @@ function filterTTSHistory() {
 
 function toggleTTSPlayback(ttsId, filePath) {
     const player = document.getElementById('ttsAudioPlayer');
-    if (!player || !filePath) return;
-    
+
+    console.log('[Beta Channel] toggleTTSPlayback called:', { ttsId, filePath, playerExists: !!player });
+
+    if (!player) {
+        console.error('[Beta Channel] TTS audio player element not found!');
+        showToast('TTS player not found', 'error');
+        return;
+    }
+
+    if (!filePath) {
+        console.error('[Beta Channel] No file path provided for TTS playback');
+        showToast('No TTS file available', 'warning');
+        return;
+    }
+
     // If this TTS is currently playing, pause it
     if (currentlyPlayingId === ttsId && !player.paused) {
+        console.log('[Beta Channel] Pausing currently playing TTS');
         player.pause();
         return;
     }
-    
+
     // Otherwise, play this TTS
     const audioUrl = `/static/${filePath}`;
+    console.log('[Beta Channel] Playing TTS audio from:', audioUrl);
+
     player.src = audioUrl;
     currentlyPlayingId = ttsId;
-    
+
     player.play().then(() => {
+        console.log('[Beta Channel] TTS playback started successfully');
         updatePlayingStates();
     }).catch(error => {
         console.error('[Beta Channel] TTS playback failed:', error);
-        showToast('TTS playback failed', 'warning');
+        console.error('[Beta Channel] Failed audio URL:', audioUrl);
+        showToast(`TTS playback failed: ${error.message}`, 'error');
         currentlyPlayingId = null;
         updatePlayingStates();
     });
-    
+
     // Handle audio end
     player.onended = () => {
+        console.log('[Beta Channel] TTS playback ended');
+        currentlyPlayingId = null;
+        updatePlayingStates();
+    };
+
+    // Handle audio errors
+    player.onerror = (e) => {
+        console.error('[Beta Channel] TTS audio error:', e);
+        console.error('[Beta Channel] Player error code:', player.error?.code, player.error?.message);
+        showToast('TTS audio file not found or cannot be played', 'error');
         currentlyPlayingId = null;
         updatePlayingStates();
     };
