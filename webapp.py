@@ -5552,15 +5552,29 @@ def api_channel_tts(channel_name):
         
         if not channel_config['tts_enabled']:
             return jsonify({"error": "TTS not enabled for this channel"}), 400
-        
-        
+
+        # Check if TTS dependencies are available before starting background processing
+        try:
+            import torch
+            from transformers import AutoProcessor, BarkModel
+            import scipy
+            app.logger.info(f"TTS dependencies check passed: torch={torch.__version__}")
+        except ImportError as e:
+            app.logger.error(f"TTS dependencies not available: {e}")
+            return jsonify({
+                "success": False,
+                "error": "TTS system not configured",
+                "message": f"Missing required dependencies: {str(e)}. Please install torch, transformers, and scipy.",
+                "details": "The TTS feature requires PyTorch and transformers libraries to be installed on the server."
+            }), 503
+
         # Use start_tts_processing for consistency with bot's TTS generation
         # This will process TTS in a background thread and use the notification system.
-        
+
         # Generate a synthetic message_id for this web-initiated TTS
         synthetic_message_id = f"webtts_{channel_name}_{int(time.time())}"
         current_timestamp_str = datetime.now().isoformat()
-        
+
         app.logger.info(f"Web UI TTS request for channel '{channel_name}'. Text: '{text[:30]}...'. Voice: '{channel_config['voice_preset']}'. MsgID: {synthetic_message_id}")
 
         start_tts_processing(
