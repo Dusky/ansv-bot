@@ -336,16 +336,24 @@ function showGeneratedMessage(message) {
 }
 
 async function sendGeneratedMessage() {
-    if (!currentMessage) return;
-    
+    if (!currentMessage) {
+        console.error('[Beta Channel] No message to send - currentMessage is empty');
+        showToast('No message to send', 'error');
+        return;
+    }
+
     const channelName = window.channelData.name;
     const btn = document.getElementById('sendGeneratedBtn');
-    
+
+    if (!btn) return;
+
     const originalText = btn.innerHTML;
     btn.disabled = true;
     btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Sending...';
-    
+
     try {
+        console.log('[Beta Channel] Sending generated message:', currentMessage.substring(0, 50) + '...');
+
         await betaUtils.apiRequest(`/send_markov_message/${channelName}`, {
             method: 'POST',
             body: JSON.stringify({
@@ -353,19 +361,22 @@ async function sendGeneratedMessage() {
                 custom_message: currentMessage
             })
         });
-        
+
         showToast(`Message sent to #${channelName}!`, 'success');
-        
+
         // Close modal
         const modal = bootstrap.Modal.getInstance(document.getElementById('generatedMessageModal'));
         if (modal) modal.hide();
-        
+
+        // Clear currentMessage after sending
+        currentMessage = null;
+
         // Refresh chat
         setTimeout(loadChatMessages, 1000);
-        
+
     } catch (error) {
         console.error('[Beta Channel] Error sending message:', error);
-        showToast('Failed to send message', 'error');
+        showToast('Failed to send message: ' + (error.message || 'Unknown error'), 'error');
     } finally {
         btn.disabled = false;
         btn.innerHTML = originalText;
@@ -425,15 +436,15 @@ function initializeChatStream() {
 
 async function loadChatMessages() {
     const channelName = window.channelData.name;
-    
+
     try {
         const response = await betaUtils.apiRequest(`/api/chat-logs?channel=${encodeURIComponent(channelName)}&per_page=50&page=1`);
-        
+
         if (response.logs) {
-            const newMessages = response.logs.filter(msg => !msg.is_bot_response);
-            updateChatDisplay(newMessages);
+            // Show ALL messages including bot responses
+            updateChatDisplay(response.logs);
         }
-        
+
     } catch (error) {
         console.error('[Beta Channel] Error loading chat messages:', error);
         showChatError();
@@ -480,11 +491,14 @@ function updateChatDisplay(messages) {
 function createChatMessage(message) {
     const timestamp = new Date(message.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
     const username = message.username || 'Anonymous';
-    
+    const isBot = message.is_bot_response || false;
+    const botClass = isBot ? 'chat-line-bot' : '';
+    const botBadge = isBot ? '<span class="badge bg-primary ms-1">BOT</span>' : '';
+
     return `
-        <div class="chat-line">
+        <div class="chat-line ${botClass}">
             <span class="chat-time">${timestamp}</span>
-            <span class="chat-user">${betaUtils.escapeHtml(username)}:</span>
+            <span class="chat-user">${betaUtils.escapeHtml(username)}${botBadge}:</span>
             <span class="chat-msg">${betaUtils.escapeHtml(message.message)}</span>
         </div>
     `;
