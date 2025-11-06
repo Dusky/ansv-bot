@@ -1666,16 +1666,16 @@ def admin_toggle_pro_status(user_id):
             # Set to premium/active
             success = user_db.update_subscription(
                 user_id,
-                subscription_tier='premium',
-                subscription_status='active'
+                tier='premium',
+                status='active'
             )
             message = f"User {user['username']} upgraded to Pro (manual)"
         else:
             # Set to free/inactive
             success = user_db.update_subscription(
                 user_id,
-                subscription_tier='free',
-                subscription_status='inactive'
+                tier='free',
+                status='inactive'
             )
             message = f"User {user['username']} downgraded to Free (manual)"
 

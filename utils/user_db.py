@@ -976,12 +976,13 @@ class UserDatabase:
     ##############################
     
     def get_all_users(self) -> List[Dict[str, Any]]:
-        """Get all users with their role information."""
+        """Get all users with their role information and subscription status."""
         conn = self.get_connection()
         try:
             users = conn.execute("""
-                SELECT u.id as user_id, u.username, u.email, u.created_at, 
+                SELECT u.id as user_id, u.username, u.email, u.created_at,
                        u.last_login, u.login_attempts, u.role_id,
+                       u.subscription_tier, u.subscription_status,
                        r.name as role_name, r.display_name as role_display_name,
                        COUNT(uc.channel_name) as channel_count
                 FROM users u
@@ -990,9 +991,9 @@ class UserDatabase:
                 GROUP BY u.id
                 ORDER BY u.created_at DESC
             """).fetchall()
-            
+
             return [dict(user) for user in users]
-            
+
         except Exception as e:
             logger.error(f"Error getting all users: {e}")
             return []
