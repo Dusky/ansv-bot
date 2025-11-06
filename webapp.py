@@ -5291,24 +5291,12 @@ def beta_dashboard():
         c = conn.cursor()
 
         if user and user.get('role_name') == 'streamer':
-            # Streamers get redirected to dedicated streamer dashboard
+            # Streamers get redirected to their channel-specific dashboard
             managed_channel = user.get('managed_channel')
+            conn.close()
             if managed_channel:
-                c.execute("SELECT * FROM channel_configs WHERE channel_name = ?", (managed_channel,))
-                channel_row = c.fetchone()
-                if channel_row:
-                    channel = dict(channel_row)
-                    conn.close()
-
-                    # Get recent TTS activity for streamer
-                    recent_tts, _ = get_last_10_tts_files_with_last_id(db_file)
-
-                    return render_template("beta/streamer_dashboard.html",
-                                         channel=channel,
-                                         bot_running=bot_running,
-                                         subscription_status=subscription_status,
-                                         has_premium=has_premium,
-                                         recent_tts=recent_tts[:10])
+                return redirect(url_for('beta_channel_page', channel_name=managed_channel))
+            # If no managed channel, show empty dashboard
             channels_data = []
         else:
             # Super admins see all channels
