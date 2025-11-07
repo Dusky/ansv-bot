@@ -5074,19 +5074,25 @@ def api_chat_logs():
 @app.route('/new-audio-notification', methods=['POST'])
 def new_audio_notification():
     data = request.json
-    app.logger.info(f"Received new audio notification: {data}")
+    app.logger.info(f"[TTS NOTIFY] 🔔 Received new audio notification: {data}")
     channel_name = data.get('channel_name')
     # message_id from the request is the tts_logs table ID (ROWID or PK)
-    tts_log_id = data.get('message_id') 
+    tts_log_id = data.get('message_id')
 
     if channel_name and tts_log_id is not None:
+        room_name = f"channel_{channel_name}"
+        event_data = {'id': tts_log_id, 'channel': channel_name}
+
+        app.logger.info(f"[TTS NOTIFY] Emitting to room: {room_name}, event_data: {event_data}")
+
         # Emit an event to all connected SocketIO clients
         # The event name 'new_tts_entry' should match what clients listen for.
-        socketio.emit('new_tts_entry', {'id': tts_log_id, 'channel': channel_name}, room=f"channel_{channel_name}")
-        app.logger.info(f"Emitted 'new_tts_entry' via SocketIO for tts_log_id: {tts_log_id}, channel: {channel_name}")
+        socketio.emit('new_tts_entry', event_data, room=room_name)
+
+        app.logger.info(f"[TTS NOTIFY] ✅ Emitted 'new_tts_entry' for tts_log_id: {tts_log_id}, channel: {channel_name}")
         return jsonify({"success": True, "message": "Notification emitted"}), 200
     else:
-        app.logger.warning(f"Missing channel_name or message_id in /new-audio-notification. Data: {data}")
+        app.logger.warning(f"[TTS NOTIFY] ⚠️ Missing channel_name or message_id. Data: {data}")
         return jsonify({"success": False, "message": "Missing channel_name or message_id"}), 400
 
 @app.route('/api/channel/<channel_name>/stats')
@@ -5815,9 +5821,13 @@ def handle_disconnect():
 def handle_channel_subscription(data):
     """Handle client subscribing to channel-specific updates."""
     channel_name = data.get('channel')
+    app.logger.info(f"[SOCKETIO] Received subscribe_channel event from {request.sid}, data: {data}")
     if channel_name:
-        socketio.join_room(f"channel_{channel_name}")
-        logging.debug(f"Client {request.sid} subscribed to channel {channel_name}")
+        room_name = f"channel_{channel_name}"
+        socketio.join_room(room_name)
+        app.logger.info(f"[SOCKETIO] ✅ Client {request.sid} joined room: {room_name}")
+    else:
+        app.logger.warning(f"[SOCKETIO] ⚠️ subscribe_channel called without channel_name")
 
 @socketio.on('request_status')
 def handle_status_request():
