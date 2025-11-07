@@ -52,30 +52,29 @@ async def ansv_command(self, ctx, setting=None, new_value=None, **kwargs):
                 await ctx.send(response)
                 self.my_logger.log_message(ctx.channel.name, self.nick, response)
 
-                # Trigger TTS processing with database logging if enable_tts is True
-                if self.enable_tts:
-                    conn = sqlite3.connect(self.db_file)
-                    c = conn.cursor()
-                    c.execute("SELECT tts_enabled, voice_preset FROM channel_configs WHERE channel_name = ?", (ctx.channel.name,))
-                    tts_config = c.fetchone()
-                    conn.close()
+                # Trigger TTS processing with database logging (matches web UI behavior)
+                conn = sqlite3.connect(self.db_file)
+                c = conn.cursor()
+                c.execute("SELECT tts_enabled, voice_preset FROM channel_configs WHERE channel_name = ?", (ctx.channel.name,))
+                tts_config = c.fetchone()
+                conn.close()
 
-                    if tts_config and tts_config[0]:
-                        voice_preset = tts_config[1] or 'v2/en_speaker_5'
-                        synthetic_message_id = f"speak_{ctx.channel.name}_{int(datetime.now().timestamp())}"
-                        timestamp_str = datetime.now().isoformat()
+                if tts_config and tts_config[0]:
+                    voice_preset = tts_config[1] or 'v2/en_speaker_5'
+                    synthetic_message_id = f"speak_{ctx.channel.name}_{int(datetime.now().timestamp())}"
+                    timestamp_str = datetime.now().isoformat()
 
-                        start_tts_processing(
-                            input_text=response,
-                            channel_name=ctx.channel.name,
-                            db_file=self.db_file,
-                            message_id=synthetic_message_id,
-                            timestamp_str=timestamp_str,
-                            voice_preset_override=voice_preset
-                        )
-                        print(f"TTS processing started for speak command in {ctx.channel.name}")
-                    else:
-                        print(f"TTS not enabled for channel {ctx.channel.name}")
+                    start_tts_processing(
+                        input_text=response,
+                        channel_name=ctx.channel.name,
+                        db_file=self.db_file,
+                        message_id=synthetic_message_id,
+                        timestamp_str=timestamp_str,
+                        voice_preset_override=voice_preset
+                    )
+                    print(f"TTS processing started for speak command in {ctx.channel.name}")
+                else:
+                    print(f"TTS not enabled for channel {ctx.channel.name}")
 
             except Exception as e:
                 self.my_logger.log_error(f"Failed to send message due to: {e}")
