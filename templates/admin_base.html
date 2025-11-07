@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="{{ theme }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token }}">
+    <title>{% block title %}Admin Panel - ANSV Bot{% endblock %}</title>
+
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        :root {
+            --sidebar-width: 260px;
+            --sidebar-collapsed-width: 70px;
+            --topbar-height: 60px;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            overflow-x: hidden;
+        }
+
+        /* Admin Sidebar */
+        .admin-sidebar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 100vh;
+            width: var(--sidebar-width);
+            background: linear-gradient(180deg, #1a1a2e 0%, #16213e 100%);
+            color: white;
+            transition: all 0.3s ease;
+            z-index: 1000;
+            box-shadow: 4px 0 15px rgba(0, 0, 0, 0.3);
+            overflow-y: auto;
+            overflow-x: hidden;
+        }
+
+        .admin-sidebar.collapsed {
+            width: var(--sidebar-collapsed-width);
+        }
+
+        .sidebar-header {
+            padding: 1.5rem 1rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .sidebar-brand {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            color: white;
+            text-decoration: none;
+            transition: opacity 0.3s;
+        }
+
+        .sidebar-brand:hover {
+            opacity: 0.8;
+        }
+
+        .sidebar-brand i {
+            font-size: 1.8rem;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .sidebar-brand-text {
+            display: flex;
+            flex-direction: column;
+            transition: opacity 0.3s;
+        }
+
+        .admin-sidebar.collapsed .sidebar-brand-text {
+            opacity: 0;
+            width: 0;
+            overflow: hidden;
+        }
+
+        .brand-name {
+            font-size: 1.4rem;
+            font-weight: 700;
+            line-height: 1;
+        }
+
+        .brand-subtitle {
+            font-size: 0.75rem;
+            color: rgba(255, 255, 255, 0.6);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .sidebar-toggle {
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            color: white;
+            padding: 0.5rem;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .sidebar-toggle:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        /* Sidebar Navigation */
+        .sidebar-nav {
+            list-style: none;
+            padding: 1rem 0;
+        }
+
+        .nav-section-title {
+            padding: 1rem 1rem 0.5rem;
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: rgba(255, 255, 255, 0.5);
+            transition: opacity 0.3s;
+        }
+
+        .admin-sidebar.collapsed .nav-section-title {
+            opacity: 0;
+            height: 0;
+            padding: 0;
+        }
+
+        .nav-item {
+            margin: 0.25rem 0.5rem;
+        }
+
+        .nav-link {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.75rem 1rem;
+            color: rgba(255, 255, 255, 0.8);
+            text-decoration: none;
+            border-radius: 8px;
+            transition: all 0.2s;
+            position: relative;
+        }
+
+        .nav-link:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            transform: translateX(5px);
+        }
+
+        .nav-link.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .nav-link i {
+            font-size: 1.2rem;
+            width: 24px;
+            text-align: center;
+        }
+
+        .nav-link-text {
+            transition: opacity 0.3s;
+            white-space: nowrap;
+        }
+
+        .admin-sidebar.collapsed .nav-link-text {
+            opacity: 0;
+            width: 0;
+            overflow: hidden;
+        }
+
+        .admin-sidebar.collapsed .nav-link {
+            justify-content: center;
+            padding: 0.75rem;
+        }
+
+        /* Status Badge */
+        .nav-badge {
+            margin-left: auto;
+            padding: 0.25rem 0.5rem;
+            border-radius: 50px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .admin-sidebar.collapsed .nav-badge {
+            display: none;
+        }
+
+        /* Main Content Area */
+        .admin-content {
+            margin-left: var(--sidebar-width);
+            min-height: 100vh;
+            transition: margin-left 0.3s ease;
+            background: var(--bs-body-bg);
+        }
+
+        .admin-sidebar.collapsed ~ .admin-content {
+            margin-left: var(--sidebar-collapsed-width);
+        }
+
+        /* Top Bar */
+        .admin-topbar {
+            height: var(--topbar-height);
+            background: var(--bs-body-bg);
+            border-bottom: 1px solid var(--bs-border-color);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 2rem;
+            position: sticky;
+            top: 0;
+            z-index: 999;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+        }
+
+        .topbar-left h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin: 0;
+            color: var(--bs-body-color);
+        }
+
+        .topbar-right {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .bot-status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            background: rgba(var(--bs-success-rgb), 0.1);
+            border-radius: 50px;
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--bs-success);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .status-dot.offline {
+            background: var(--bs-danger);
+            animation: none;
+        }
+
+        .user-menu {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            cursor: pointer;
+            padding: 0.5rem 1rem;
+            border-radius: 50px;
+            transition: background 0.2s;
+        }
+
+        .user-menu:hover {
+            background: rgba(var(--bs-primary-rgb), 0.1);
+        }
+
+        .user-avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+        }
+
+        /* Content Container */
+        .admin-container {
+            padding: 2rem;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        /* Quick Action Cards */
+        .quick-actions {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .quick-action-card {
+            background: var(--bs-body-bg);
+            border: 1px solid var(--bs-border-color);
+            border-radius: 12px;
+            padding: 1.5rem;
+            text-align: center;
+            transition: all 0.3s;
+            cursor: pointer;
+            text-decoration: none;
+            color: var(--bs-body-color);
+        }
+
+        .quick-action-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+            color: var(--bs-body-color);
+        }
+
+        .quick-action-icon {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .quick-action-title {
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        .quick-action-subtitle {
+            font-size: 0.875rem;
+            color: var(--bs-secondary-color);
+        }
+
+        /* Mobile Menu Button */
+        .mobile-menu-btn {
+            display: none;
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            color: var(--bs-body-color);
+            cursor: pointer;
+            padding: 0.5rem;
+            margin-right: 0.5rem;
+        }
+
+        .mobile-menu-btn:hover {
+            color: var(--bs-primary);
+        }
+
+        /* Overlay for mobile sidebar */
+        .sidebar-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 999;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .sidebar-overlay.show {
+            opacity: 1;
+        }
+
+        /* Responsive Tables */
+        .table-responsive {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .table-responsive::-webkit-scrollbar {
+            height: 8px;
+        }
+
+        .table-responsive::-webkit-scrollbar-track {
+            background: var(--bs-border-color);
+            border-radius: 4px;
+        }
+
+        .table-responsive::-webkit-scrollbar-thumb {
+            background: var(--bs-secondary-color);
+            border-radius: 4px;
+        }
+
+        .table-responsive::-webkit-scrollbar-thumb:hover {
+            background: var(--bs-secondary);
+        }
+
+        /* Touch-friendly buttons */
+        .btn, .nav-link, .sidebar-toggle {
+            min-height: 44px;
+            min-width: 44px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .mobile-menu-btn {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+            }
+
+            .admin-sidebar {
+                transform: translateX(-100%);
+            }
+
+            .admin-sidebar.show {
+                transform: translateX(0);
+                box-shadow: 4px 0 15px rgba(0, 0, 0, 0.5);
+            }
+
+            .admin-content {
+                margin-left: 0 !important;
+            }
+
+            .admin-topbar {
+                padding: 0 1rem;
+            }
+
+            .topbar-left h1 {
+                font-size: 1.25rem;
+            }
+
+            .admin-container {
+                padding: 1rem;
+            }
+
+            .quick-actions {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            /* Make user menu more compact on mobile */
+            .user-menu {
+                padding: 0.25rem 0.5rem;
+                gap: 0.5rem;
+            }
+
+            .user-avatar {
+                width: 32px;
+                height: 32px;
+                font-size: 0.875rem;
+            }
+
+            /* Hide non-essential elements on mobile */
+            .bot-status-indicator span {
+                display: none;
+            }
+
+            .bot-status-indicator {
+                padding: 0.5rem;
+            }
+
+            /* Responsive font sizes */
+            body {
+                font-size: 0.9375rem;
+            }
+
+            h1 {
+                font-size: 1.5rem;
+            }
+
+            h2 {
+                font-size: 1.25rem;
+            }
+
+            h3 {
+                font-size: 1.125rem;
+            }
+
+            /* Ensure tables are scrollable */
+            table {
+                min-width: 700px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .quick-actions {
+                grid-template-columns: 1fr;
+            }
+
+            .topbar-left h1 {
+                font-size: 1.1rem;
+            }
+
+            .admin-container {
+                padding: 0.75rem;
+            }
+
+            /* Stack form elements on very small screens */
+            .form-row {
+                flex-direction: column;
+            }
+
+            /* Reduce spacing on small screens */
+            .card {
+                margin-bottom: 0.75rem;
+            }
+        }
+
+        /* Scrollbar styling for sidebar */
+        .admin-sidebar::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .admin-sidebar::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .admin-sidebar::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 3px;
+        }
+
+        .admin-sidebar::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+    </style>
+
+    {% block head %}{% endblock %}
+</head>
+<body>
+    <!-- Admin Sidebar -->
+    <aside class="admin-sidebar" id="adminSidebar">
+        <div class="sidebar-header">
+            <a href="/admin" class="sidebar-brand">
+                <i class="fas fa-shield-halved"></i>
+                <div class="sidebar-brand-text">
+                    <span class="brand-name">ANSV Admin</span>
+                    <span class="brand-subtitle">Control Panel</span>
+                </div>
+            </a>
+            <button class="sidebar-toggle" id="sidebarToggle">
+                <i class="fas fa-bars"></i>
+            </button>
+        </div>
+
+        <nav>
+            <ul class="sidebar-nav">
+                <li class="nav-section-title">Main</li>
+                <li class="nav-item">
+                    <a href="/admin" class="nav-link {% if request.path == '/admin' %}active{% endif %}">
+                        <i class="fas fa-tachometer-alt"></i>
+                        <span class="nav-link-text">Dashboard</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="/admin/bot-control" class="nav-link {% if 'bot-control' in request.path %}active{% endif %}">
+                        <i class="fas fa-robot"></i>
+                        <span class="nav-link-text">Bot Control</span>
+                        <span class="nav-badge" id="botStatusBadge">●</span>
+                    </a>
+                </li>
+
+                <li class="nav-section-title">Management</li>
+                <li class="nav-item">
+                    <a href="/admin/users" class="nav-link {% if 'users' in request.path %}active{% endif %}">
+                        <i class="fas fa-users"></i>
+                        <span class="nav-link-text">Users</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="/admin/channels" class="nav-link {% if 'channels' in request.path %}active{% endif %}">
+                        <i class="fas fa-hashtag"></i>
+                        <span class="nav-link-text">Channels</span>
+                    </a>
+                </li>
+
+                <li class="nav-section-title">Tools</li>
+                <li class="nav-item">
+                    <a href="/admin/message-tools" class="nav-link {% if 'message-tools' in request.path %}active{% endif %}">
+                        <i class="fas fa-comment-dots"></i>
+                        <span class="nav-link-text">Message Tools</span>
+                    </a>
+                </li>
+
+                <li class="nav-section-title">System</li>
+                <li class="nav-item">
+                    <a href="/admin/audit-logs" class="nav-link {% if 'audit-logs' in request.path %}active{% endif %}">
+                        <i class="fas fa-clipboard-list"></i>
+                        <span class="nav-link-text">Audit Logs</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="/admin/settings" class="nav-link {% if request.path == '/admin/settings' %}active{% endif %}">
+                        <i class="fas fa-cog"></i>
+                        <span class="nav-link-text">System Settings</span>
+                    </a>
+                </li>
+
+                <li class="nav-section-title">Quick Links</li>
+                <li class="nav-item">
+                    <a href="/beta" class="nav-link">
+                        <i class="fas fa-home"></i>
+                        <span class="nav-link-text">Back to Dashboard</span>
+                    </a>
+                </li>
+            </ul>
+        </nav>
+    </aside>
+
+    <!-- Sidebar Overlay (Mobile) -->
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+    <!-- Main Content -->
+    <div class="admin-content">
+        <!-- Top Bar -->
+        <div class="admin-topbar">
+            <div class="topbar-left">
+                <button class="mobile-menu-btn" id="mobileMenuBtn">
+                    <i class="fas fa-bars"></i>
+                </button>
+                <h1>{% block page_title %}Admin Dashboard{% endblock %}</h1>
+            </div>
+            <div class="topbar-right">
+                <div class="bot-status-indicator" id="topbarBotStatus">
+                    <span class="status-dot"></span>
+                    <span>Checking...</span>
+                </div>
+
+                <!-- Notification Bell -->
+                {% include 'components/notification_bell.html' %}
+
+                <div class="user-menu" data-bs-toggle="dropdown">
+                    <div class="user-avatar">
+                        {{ current_user.username[0]|upper if current_user else 'A' }}
+                    </div>
+                    <span>{{ current_user.username if current_user else 'Admin' }}</span>
+                    <i class="fas fa-chevron-down"></i>
+                </div>
+                <ul class="dropdown-menu dropdown-menu-end">
+                    <li><a class="dropdown-item" href="/profile"><i class="fas fa-user me-2"></i>Profile</a></li>
+                    <li><a class="dropdown-item" href="/beta"><i class="fas fa-home me-2"></i>User Dashboard</a></li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li><a class="dropdown-item" href="/logout"><i class="fas fa-sign-out-alt me-2"></i>Logout</a></li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Page Content -->
+        <div class="admin-container">
+            {% block content %}{% endblock %}
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div class="toast-container position-fixed top-0 end-0 p-3" id="toastContainer"></div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- Notification System -->
+    <script src="{{ url_for('static', filename='scripts/notification.js') }}"></script>
+
+    <script>
+        const sidebar = document.getElementById('adminSidebar');
+        const sidebarOverlay = document.getElementById('sidebarOverlay');
+        const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+        const sidebarToggle = document.getElementById('sidebarToggle');
+
+        // Function to toggle mobile sidebar
+        function toggleMobileSidebar() {
+            sidebar.classList.toggle('show');
+            if (sidebar.classList.contains('show')) {
+                sidebarOverlay.style.display = 'block';
+                setTimeout(() => sidebarOverlay.classList.add('show'), 10);
+            } else {
+                sidebarOverlay.classList.remove('show');
+                setTimeout(() => sidebarOverlay.style.display = 'none', 300);
+            }
+        }
+
+        // Desktop sidebar toggle (collapse/expand)
+        sidebarToggle.addEventListener('click', function() {
+            if (window.innerWidth > 768) {
+                sidebar.classList.toggle('collapsed');
+            } else {
+                toggleMobileSidebar();
+            }
+        });
+
+        // Mobile menu button
+        mobileMenuBtn.addEventListener('click', toggleMobileSidebar);
+
+        // Close sidebar when clicking overlay
+        sidebarOverlay.addEventListener('click', toggleMobileSidebar);
+
+        // Close mobile sidebar when clicking a link
+        const sidebarLinks = sidebar.querySelectorAll('.nav-link');
+        sidebarLinks.forEach(link => {
+            link.addEventListener('click', function() {
+                if (window.innerWidth <= 768 && sidebar.classList.contains('show')) {
+                    toggleMobileSidebar();
+                }
+            });
+        });
+
+        // Bot status checker
+        async function checkBotStatus() {
+            try {
+                const response = await fetch('/api/bot/status');
+                const data = await response.json();
+
+                const statusIndicator = document.getElementById('topbarBotStatus');
+                const statusBadge = document.getElementById('botStatusBadge');
+                const statusDot = statusIndicator.querySelector('.status-dot');
+                const statusText = statusIndicator.querySelector('span:last-child');
+
+                if (data.success && data.bot_running) {
+                    statusDot.classList.remove('offline');
+                    statusText.textContent = 'Bot Online';
+                    statusIndicator.style.background = 'rgba(var(--bs-success-rgb), 0.1)';
+                    if (statusBadge) statusBadge.style.background = 'var(--bs-success)';
+                } else {
+                    statusDot.classList.add('offline');
+                    statusText.textContent = 'Bot Offline';
+                    statusIndicator.style.background = 'rgba(var(--bs-danger-rgb), 0.1)';
+                    if (statusBadge) statusBadge.style.background = 'var(--bs-danger)';
+                }
+            } catch (error) {
+                console.error('Error checking bot status:', error);
+            }
+        }
+
+        // Check bot status every 5 seconds
+        checkBotStatus();
+        setInterval(checkBotStatus, 5000);
+    </script>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>

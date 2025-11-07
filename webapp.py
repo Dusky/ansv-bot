@@ -12,7 +12,7 @@ import signal # Added import for signal
 import requests
 from urllib.parse import urlencode
 from flask import Flask, render_template, request, jsonify, redirect, url_for, send_from_directory, make_response, session, g
-from flask_socketio import SocketIO # Import SocketIO
+from flask_socketio import SocketIO, join_room # Import SocketIO and join_room
 from datetime import datetime, timedelta
 import configparser
 import hashlib
@@ -282,6 +282,38 @@ def set_enable_tts(status: bool):
     _enable_tts_webapp = status
     app.logger.info(f"Webapp TTS status set by ansv.py to: {_enable_tts_webapp}")
 
+
+def get_today_message_count():
+    """Get count of messages sent today"""
+    try:
+        conn = sqlite3.connect(db_file)
+        cursor = conn.cursor()
+        today = datetime.now().strftime('%Y-%m-%d')
+        cursor.execute("""
+            SELECT COUNT(*) as count
+            FROM messages
+            WHERE DATE(timestamp) = ?
+        """, (today,))
+        result = cursor.fetchone()
+        conn.close()
+        return result[0] if result else 0
+    except Exception as e:
+        app.logger.error(f"Error getting today's message count: {e}")
+        return 0
+
+def get_all_channel_configs():
+    """Get all channel configurations from database"""
+    try:
+        conn = sqlite3.connect(db_file)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM channel_configs ORDER BY channel_name")
+        channels = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return channels
+    except Exception as e:
+        app.logger.error(f"Error getting channel configs: {e}")
+        return []
 
 def get_last_10_tts_files_with_last_id(db_file_path): # Renamed db_file to db_file_path for clarity
     try:
@@ -1616,6 +1648,1933 @@ def api_user_channels(user_id):
         app.logger.error(f"Error getting channels for user {user_id}: {e}")
         return jsonify({'success': False, 'error': 'Error getting user channels'}), 500
 
+@app.route('/admin/users/<int:user_id>/toggle-pro', methods=['POST'])
+@require_role('admin')
+def admin_toggle_pro_status(user_id):
+    """Toggle pro status for a user"""
+    try:
+        data = request.get_json()
+        is_pro = data.get('is_pro', False)
+
+        # Get user
+        user = user_db.get_user_by_id(user_id)
+        if not user:
+            return jsonify({'success': False, 'error': 'User not found'}), 404
+
+        # Update subscription status
+        if is_pro:
+            # Set to premium/active
+            success = user_db.update_subscription(
+                user_id,
+                tier='premium',
+                status='active'
+            )
+            message = f"User {user['username']} upgraded to Pro (manual)"
+        else:
+            # Set to free/inactive
+            success = user_db.update_subscription(
+                user_id,
+                tier='free',
+                status='inactive'
+            )
+            message = f"User {user['username']} downgraded to Free (manual)"
+
+        if success:
+            # Log action
+            current_user = get_current_user()
+            user_db.log_action(
+                current_user['user_id'], 'user.pro_status_changed', 'user', str(user_id),
+                {'target_username': user['username'], 'is_pro': is_pro, 'manual': True},
+                request.remote_addr, request.headers.get('User-Agent', 'Unknown')
+            )
+            return jsonify({'success': True, 'message': message})
+        else:
+            return jsonify({'success': False, 'error': 'Failed to update pro status'}), 500
+
+    except Exception as e:
+        app.logger.error(f"Error toggling pro status for user {user_id}: {e}")
+        return jsonify({'success': False, 'error': 'Error updating pro status'}), 500
+
+##############################
+# Admin Panel Routes
+##############################
+
+@app.route('/admin')
+@require_role('admin')
+def admin_dashboard():
+    """Main admin dashboard"""
+    try:
+        # Get stats
+        stats = {
+            'total_users': user_db.get_total_users(),
+            'total_channels': len(get_all_channel_configs()),
+            'pro_users': user_db.get_pro_users_count(),
+            'total_messages': get_today_message_count()
+        }
+
+        # Get recent activity
+        recent_activity = user_db.get_recent_audit_logs(limit=10)
+
+        return render_template('admin_dashboard.html', stats=stats, recent_activity=recent_activity)
+    except Exception as e:
+        app.logger.error(f"Error loading admin dashboard: {e}")
+        return render_template("500.html", error_message=f"Error loading dashboard: {str(e)}"), 500
+
+@app.route('/admin/bot-control')
+@require_role('admin')
+def admin_bot_control():
+    """Bot control page"""
+    return render_template('admin_bot_control.html')
+
+@app.route('/admin/message-tools')
+@require_role('admin')
+def admin_message_tools():
+    """Message generation and sending tools"""
+    try:
+        channels = get_all_channel_configs()
+        return render_template('admin_message_tools.html', channels=channels)
+    except Exception as e:
+        app.logger.error(f"Error loading message tools: {e}")
+        return render_template("500.html", error_message=f"Error loading message tools: {str(e)}"), 500
+
+@app.route('/admin/channels')
+@require_role('admin')
+def admin_channels():
+    """Channel management page"""
+    try:
+        channels = get_all_channel_configs()
+        return render_template('admin_channels.html', channels=channels)
+    except Exception as e:
+        app.logger.error(f"Error loading channel management: {e}")
+        return render_template("500.html", error_message=f"Error loading channels: {str(e)}"), 500
+
+@app.route('/admin/monitoring')
+@require_role('admin')
+def admin_monitoring():
+    """System monitoring page"""
+    return render_template('admin_monitoring.html')
+
+@app.route('/admin/audit-logs')
+@require_role('admin')
+def admin_audit_logs():
+    """Audit logs page"""
+    try:
+        logs = user_db.get_recent_audit_logs(limit=100)
+        return render_template('admin_audit_logs.html', logs=logs)
+    except Exception as e:
+        app.logger.error(f"Error loading audit logs: {e}")
+        return render_template("500.html", error_message=f"Error loading audit logs: {str(e)}"), 500
+
+@app.route('/admin/settings')
+@require_role('admin')
+def admin_settings():
+    """Admin settings page"""
+    return render_template('admin_settings.html')
+
+@app.route('/admin/tts')
+@require_role('admin')
+def admin_tts():
+    """TTS generation page"""
+    try:
+        channels = get_all_channel_configs()
+        return render_template('admin_tts.html', channels=channels)
+    except Exception as e:
+        app.logger.error(f"Error loading TTS page: {e}")
+        return render_template("500.html", error_message=f"Error loading TTS: {str(e)}"), 500
+
+##############################
+# Admin API Routes
+##############################
+
+@app.route('/api/admin/stats')
+@require_role('admin')
+def api_admin_stats():
+    """Get admin dashboard statistics"""
+    try:
+        stats = {
+            'total_users': user_db.get_total_users(),
+            'total_channels': len(get_all_channel_configs()),
+            'pro_users': user_db.get_pro_users_count(),
+            'total_messages': get_today_message_count()
+        }
+        return jsonify({'success': True, 'stats': stats})
+    except Exception as e:
+        app.logger.error(f"Error getting admin stats: {e}")
+        return jsonify({'success': False, 'error': 'Error getting stats'}), 500
+
+@app.route('/api/bot/status')
+@require_role('admin')
+def api_bot_status():
+    """Get bot status"""
+    try:
+        bot_running = is_bot_actually_running()
+
+        if bot_running:
+            # Try to read heartbeat file
+            heartbeat_data = {}
+            if os.path.exists('bot_heartbeat.json'):
+                with open('bot_heartbeat.json', 'r') as f:
+                    heartbeat_data = json.load(f)
+
+            return jsonify({
+                'success': True,
+                'bot_running': True,
+                'uptime': heartbeat_data.get('uptime', 0),
+                'connected_channels': heartbeat_data.get('channels', []),
+                'tts_enabled': heartbeat_data.get('tts_enabled', False),
+                'last_heartbeat': heartbeat_data.get('timestamp')
+            })
+        else:
+            return jsonify({
+                'success': True,
+                'bot_running': False
+            })
+    except Exception as e:
+        app.logger.error(f"Error getting bot status: {e}")
+        return jsonify({'success': False, 'error': 'Error getting bot status'}), 500
+
+@app.route('/api/bot/start', methods=['POST'])
+@require_role('admin')
+def api_bot_start():
+    """Start the bot"""
+    try:
+        # Check if bot is already running
+        if is_bot_actually_running():
+            return jsonify({'success': False, 'error': 'Bot is already running'}), 400
+
+        # Start bot in background
+        import subprocess
+        subprocess.Popen(['python3', 'ansv.py', '--web', '--tts'],
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        start_new_session=True)
+
+        # Log action
+        current_user = get_current_user()
+        user_db.log_action(
+            current_user['user_id'], 'bot.started', 'system', 'bot',
+            {'started_by': current_user['username']},
+            request.remote_addr, request.headers.get('User-Agent', 'Unknown')
+        )
+
+        return jsonify({'success': True, 'message': 'Bot starting...'})
+    except Exception as e:
+        app.logger.error(f"Error starting bot: {e}")
+        return jsonify({'success': False, 'error': 'Error starting bot'}), 500
+
+@app.route('/api/bot/stop', methods=['POST'])
+@require_role('admin')
+def api_bot_stop():
+    """Stop the bot"""
+    try:
+        # Check if bot is running
+        if not is_bot_actually_running():
+            return jsonify({'success': False, 'error': 'Bot is not running'}), 400
+
+        # Read PID file
+        if os.path.exists('bot.pid'):
+            with open('bot.pid', 'r') as f:
+                pid = int(f.read().strip())
+
+            # Send SIGTERM to bot process
+            os.kill(pid, signal.SIGTERM)
+
+            # Log action
+            current_user = get_current_user()
+            user_db.log_action(
+                current_user['user_id'], 'bot.stopped', 'system', 'bot',
+                {'stopped_by': current_user['username']},
+                request.remote_addr, request.headers.get('User-Agent', 'Unknown')
+            )
+
+            return jsonify({'success': True, 'message': 'Bot stopping...'})
+        else:
+            return jsonify({'success': False, 'error': 'Bot PID file not found'}), 500
+
+    except Exception as e:
+        app.logger.error(f"Error stopping bot: {e}")
+        return jsonify({'success': False, 'error': 'Error stopping bot'}), 500
+
+@app.route('/api/bot/restart', methods=['POST'])
+@require_role('admin')
+def api_bot_restart():
+    """Restart the bot"""
+    try:
+        # Stop bot first
+        if is_bot_actually_running():
+            if os.path.exists('bot.pid'):
+                with open('bot.pid', 'r') as f:
+                    pid = int(f.read().strip())
+                os.kill(pid, signal.SIGTERM)
+                time.sleep(2)
+
+        # Start bot
+        import subprocess
+        subprocess.Popen(['python3', 'ansv.py', '--web', '--tts'],
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        start_new_session=True)
+
+        # Log action
+        current_user = get_current_user()
+        user_db.log_action(
+            current_user['user_id'], 'bot.restarted', 'system', 'bot',
+            {'restarted_by': current_user['username']},
+            request.remote_addr, request.headers.get('User-Agent', 'Unknown')
+        )
+
+        return jsonify({'success': True, 'message': 'Bot restarting...'})
+    except Exception as e:
+        app.logger.error(f"Error restarting bot: {e}")
+        return jsonify({'success': False, 'error': 'Error restarting bot'}), 500
+
+@app.route('/api/bot/reconnect', methods=['POST'])
+@require_role('admin')
+def api_bot_reconnect():
+    """Reconnect bot to all channels"""
+    try:
+        # Write reconnect command to database
+        conn = sqlite3.connect(db_file)
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO bot_commands (command, status) VALUES (?, ?)",
+            ('reconnect', 'pending')
+        )
+        conn.commit()
+        conn.close()
+
+        # Log action
+        current_user = get_current_user()
+        user_db.log_action(
+            current_user['user_id'], 'bot.reconnect_requested', 'system', 'bot',
+            {'requested_by': current_user['username']},
+            request.remote_addr, request.headers.get('User-Agent', 'Unknown')
+        )
+
+        return jsonify({'success': True, 'message': 'Reconnect command sent to bot'})
+    except Exception as e:
+        app.logger.error(f"Error reconnecting bot: {e}")
+        return jsonify({'success': False, 'error': 'Error reconnecting bot'}), 500
+
+@app.route('/api/bot/logs')
+@require_role('admin')
+def api_bot_logs():
+    """Get recent bot logs"""
+    try:
+        logs = []
+        log_file = 'ansv_bot.log'
+
+        if os.path.exists(log_file):
+            with open(log_file, 'r') as f:
+                lines = f.readlines()[-50:]  # Last 50 lines
+                for line in lines:
+                    # Parse log line
+                    logs.append({
+                        'timestamp': datetime.now().isoformat(),
+                        'level': 'info',
+                        'message': line.strip()
+                    })
+
+        return jsonify({'success': True, 'logs': logs})
+    except Exception as e:
+        app.logger.error(f"Error getting bot logs: {e}")
+        return jsonify({'success': False, 'error': 'Error getting logs'}), 500
+
+@app.route('/api/admin/generate-message', methods=['POST'])
+@require_role('admin')
+def api_admin_generate_message():
+    """Generate a message using Markov model"""
+    try:
+        data = request.get_json()
+        channel = data.get('channel')
+        attempts = data.get('attempts', 8)
+
+        if not channel:
+            return jsonify({'success': False, 'error': 'Channel is required'}), 400
+
+        # Generate message
+        markov_handler = MarkovHandler(db_file)
+
+        if channel == 'general':
+            message = markov_handler.generate_message(None, attempts)
+        else:
+            message = markov_handler.generate_message(channel, attempts)
+
+        if message:
+            return jsonify({'success': True, 'message': message})
+        else:
+            return jsonify({'success': False, 'error': 'Failed to generate message'}), 500
+
+    except Exception as e:
+        app.logger.error(f"Error generating message: {e}")
+        return jsonify({'success': False, 'error': 'Error generating message'}), 500
+
+@app.route('/api/admin/send-message', methods=['POST'])
+@require_role('admin')
+def api_admin_send_message():
+    """Send a message to a channel"""
+    try:
+        data = request.get_json()
+        channel = data.get('channel')
+        message = data.get('message')
+        generate_tts = data.get('generate_tts', False)
+
+        if not channel or not message:
+            return jsonify({'success': False, 'error': 'Channel and message are required'}), 400
+
+        # Write message request to JSON file for bot to pick up
+        message_request = {
+            'channel': channel,
+            'message': message,
+            'generate_tts': generate_tts,
+            'timestamp': datetime.now().isoformat(),
+            'requested_by': get_current_user()['username']
+        }
+
+        with open('bot_message_request.json', 'w') as f:
+            json.dump(message_request, f)
+
+        # Log action
+        current_user = get_current_user()
+        user_db.log_action(
+            current_user['user_id'], 'message.sent_via_admin', 'channel', channel,
+            {'message': message, 'generate_tts': generate_tts},
+            request.remote_addr, request.headers.get('User-Agent', 'Unknown')
+        )
+
+        return jsonify({'success': True, 'message': 'Message sent to bot for delivery'})
+    except Exception as e:
+        app.logger.error(f"Error sending message: {e}")
+        return jsonify({'success': False, 'error': 'Error sending message'}), 500
+
+@app.route('/api/admin/generate-tts', methods=['POST'])
+@require_role('admin')
+def api_admin_generate_tts():
+    """Generate TTS audio"""
+    try:
+        data = request.get_json()
+        text = data.get('text')
+        voice_preset = data.get('voice_preset', 'v2/en_speaker_5')
+        channel = data.get('channel')
+
+        if not text:
+            return jsonify({'success': False, 'error': 'Text is required'}), 400
+
+        # Generate TTS (async, won't block)
+        start_tts_processing(text, voice_preset, channel or 'admin', db_file)
+
+        # Log action
+        current_user = get_current_user()
+        user_db.log_action(
+            current_user['user_id'], 'tts.generated_via_admin', 'system', 'tts',
+            {'text': text[:50], 'voice_preset': voice_preset, 'channel': channel},
+            request.remote_addr, request.headers.get('User-Agent', 'Unknown')
+        )
+
+        # Note: TTS is generated asynchronously, so we can't return the exact file path
+        # The file will be available in the TTS logs table once complete
+        return jsonify({
+            'success': True,
+            'message': 'TTS generation started - check recent TTS files',
+            'file_path': '/static/outputs/' + (channel or 'admin') + '/latest.wav'
+        })
+    except Exception as e:
+        app.logger.error(f"Error generating TTS: {e}")
+        return jsonify({'success': False, 'error': 'Error generating TTS'}), 500
+
+@app.route('/api/admin/message-history')
+@require_role('admin')
+def api_admin_message_history():
+    """Get recent messages sent via admin panel"""
+    try:
+        # Get recent bot messages from database
+        conn = sqlite3.connect(db_file)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT channel, message, timestamp
+            FROM messages
+            WHERE is_bot_response = 1
+            ORDER BY timestamp DESC
+            LIMIT 20
+        """)
+
+        messages = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+
+        return jsonify({'success': True, 'messages': messages})
+    except Exception as e:
+        app.logger.error(f"Error getting message history: {e}")
+        return jsonify({'success': False, 'error': 'Error getting message history'}), 500
+
+##############################
+# Channel Management API Routes
+##############################
+
+@app.route('/api/admin/channels/create', methods=['POST'])
+@require_role('admin')
+def api_admin_create_channel():
+    """Create a new channel configuration"""
+    try:
+        data = request.get_json()
+        channel_name = data.get('channel_name', '').strip()
+
+        if not channel_name:
+            return jsonify({'success': False, 'error': 'Channel name is required'}), 400
+
+        conn = sqlite3.connect(db_file)
+        cursor = conn.cursor()
+
+        # Check if channel already exists
+        cursor.execute("SELECT 1 FROM channel_configs WHERE channel_name = ?", (channel_name,))
+        if cursor.fetchone():
+            conn.close()
+            return jsonify({'success': False, 'error': 'Channel already exists'}), 400
+
+        # Insert new channel
+        cursor.execute("""
+            INSERT INTO channel_configs (
+                channel_name, owner, lines_between_messages, time_between_messages,
+                voice_preset, join_channel, tts_enabled, use_general_model,
+                currently_connected, voice_enabled
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 1)
+        """, (
+            channel_name,
+            data.get('owner', ''),
+            data.get('lines_between_messages', 30),
+            data.get('time_between_messages', 120),
+            data.get('voice_preset', 'v2/en_speaker_5'),
+            data.get('join_channel', 1),
+            data.get('tts_enabled', 0),
+            data.get('use_general_model', 1)
+        ))
+
+        conn.commit()
+        conn.close()
+
+        # Log action
+        current_user = get_current_user()
+        user_db.log_action(
+            current_user['user_id'], 'channel.created', 'channel', channel_name,
+            {'channel_name': channel_name},
+            request.remote_addr, request.headers.get('User-Agent', 'Unknown')
+        )
+
+        return jsonify({'success': True, 'message': f'Channel {channel_name} created'})
+    except Exception as e:
+        app.logger.error(f"Error creating channel: {e}")
+        return jsonify({'success': False, 'error': 'Error creating channel'}), 500
+
+@app.route('/api/admin/channels/<channel_name>')
+@require_role('admin')
+def api_admin_get_channel(channel_name):
+    """Get channel configuration"""
+    try:
+        conn = sqlite3.connect(db_file)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT * FROM channel_configs WHERE channel_name = ?", (channel_name,))
+        channel = cursor.fetchone()
+        conn.close()
+
+        if not channel:
+            return jsonify({'success': False, 'error': 'Channel not found'}), 404
+
+        return jsonify({'success': True, 'channel': dict(channel)})
+    except Exception as e:
+        app.logger.error(f"Error getting channel: {e}")
+        return jsonify({'success': False, 'error': 'Error getting channel'}), 500
+
+@app.route('/api/admin/channels/<channel_name>/update', methods=['POST'])
+@require_role('admin')
+def api_admin_update_channel(channel_name):
+    """Update channel configuration"""
+    try:
+        data = request.get_json()
+
+        conn = sqlite3.connect(db_file)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            UPDATE channel_configs
+            SET owner = ?, voice_preset = ?, lines_between_messages = ?,
+                time_between_messages = ?, join_channel = ?, tts_enabled = ?,
+                use_general_model = ?
+            WHERE channel_name = ?
+        """, (
+            data.get('owner', ''),
+            data.get('voice_preset'),
+            data.get('lines_between_messages'),
+            data.get('time_between_messages'),
+            data.get('join_channel'),
+            data.get('tts_enabled'),
+            data.get('use_general_model'),
+            channel_name
+        ))
+
+        conn.commit()
+        conn.close()
+
+        # Log action
+        current_user = get_current_user()
+        user_db.log_action(
+            current_user['user_id'], 'channel.updated', 'channel', channel_name,
+            {'changes': data},
+            request.remote_addr, request.headers.get('User-Agent', 'Unknown')
+        )
+
+        return jsonify({'success': True, 'message': 'Channel updated'})
+    except Exception as e:
+        app.logger.error(f"Error updating channel: {e}")
+        return jsonify({'success': False, 'error': 'Error updating channel'}), 500
+
+@app.route('/api/admin/channels/<channel_name>/toggle-join', methods=['POST'])
+@require_role('admin')
+def api_admin_toggle_join(channel_name):
+    """Toggle auto-join for channel"""
+    try:
+        data = request.get_json()
+        join_channel = data.get('join_channel', 0)
+
+        conn = sqlite3.connect(db_file)
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE channel_configs SET join_channel = ? WHERE channel_name = ?",
+            (join_channel, channel_name)
+        )
+        conn.commit()
+        conn.close()
+
+        return jsonify({'success': True, 'message': 'Auto-join updated'})
+    except Exception as e:
+        app.logger.error(f"Error toggling join: {e}")
+        return jsonify({'success': False, 'error': 'Error updating setting'}), 500
+
+@app.route('/api/admin/channels/<channel_name>/toggle-tts', methods=['POST'])
+@require_role('admin')
+def api_admin_toggle_tts(channel_name):
+    """Toggle TTS for channel"""
+    try:
+        data = request.get_json()
+        tts_enabled = data.get('tts_enabled', 0)
+
+        conn = sqlite3.connect(db_file)
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE channel_configs SET tts_enabled = ? WHERE channel_name = ?",
+            (tts_enabled, channel_name)
+        )
+        conn.commit()
+        conn.close()
+
+        return jsonify({'success': True, 'message': 'TTS updated'})
+    except Exception as e:
+        app.logger.error(f"Error toggling TTS: {e}")
+        return jsonify({'success': False, 'error': 'Error updating TTS'}), 500
+
+@app.route('/api/admin/channels/<channel_name>/delete', methods=['POST'])
+@require_role('admin')
+def api_admin_delete_channel(channel_name):
+    """Delete channel configuration"""
+    try:
+        conn = sqlite3.connect(db_file)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM channel_configs WHERE channel_name = ?", (channel_name,))
+        conn.commit()
+        conn.close()
+
+        # Log action
+        current_user = get_current_user()
+        user_db.log_action(
+            current_user['user_id'], 'channel.deleted', 'channel', channel_name,
+            {'channel_name': channel_name},
+            request.remote_addr, request.headers.get('User-Agent', 'Unknown')
+        )
+
+        return jsonify({'success': True, 'message': 'Channel deleted'})
+    except Exception as e:
+        app.logger.error(f"Error deleting channel: {e}")
+        return jsonify({'success': False, 'error': 'Error deleting channel'}), 500
+
+##############################
+# Settings & System API Routes
+##############################
+
+def get_bot_uptime():
+    """Get bot uptime if bot is running"""
+    try:
+        if not os.path.exists('bot.pid'):
+            return None
+        with open('bot.pid', 'r') as f:
+            pid = int(f.read().strip())
+        process = psutil.Process(pid)
+        create_time = process.create_time()
+        uptime_seconds = time.time() - create_time
+        hours = int(uptime_seconds // 3600)
+        minutes = int((uptime_seconds % 3600) // 60)
+        return f"{hours}h {minutes}m"
+    except:
+        return None
+
+def ensure_settings_table():
+    """Ensure app_settings table exists"""
+    try:
+        conn = sqlite3.connect(db_file)
+        cursor = conn.cursor()
+        cursor.execute('''CREATE TABLE IF NOT EXISTS app_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )''')
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        app.logger.error(f"Error creating settings table: {e}")
+
+def get_setting(key, default=None):
+    """Get a setting value"""
+    try:
+        ensure_settings_table()
+        conn = sqlite3.connect(db_file)
+        cursor = conn.cursor()
+        cursor.execute("SELECT value FROM app_settings WHERE key = ?", (key,))
+        result = cursor.fetchone()
+        conn.close()
+        if result:
+            # Try to parse as JSON, fall back to string
+            try:
+                return json.loads(result[0])
+            except:
+                return result[0]
+        return default
+    except Exception as e:
+        app.logger.error(f"Error getting setting {key}: {e}")
+        return default
+
+def set_setting(key, value):
+    """Set a setting value"""
+    try:
+        ensure_settings_table()
+        conn = sqlite3.connect(db_file)
+        cursor = conn.cursor()
+        # Convert to JSON if not a string
+        value_str = json.dumps(value) if not isinstance(value, str) else value
+        cursor.execute("""
+            INSERT OR REPLACE INTO app_settings (key, value, updated_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+        """, (key, value_str))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        app.logger.error(f"Error setting {key}: {e}")
+        return False
+
+@app.route('/api/admin/system-info')
+@require_role('admin')
+def api_admin_system_info():
+    """Get system information"""
+    try:
+        import sys
+
+        # Check if bot is running
+        bot_running = False
+        if os.path.exists('bot.pid'):
+            try:
+                with open('bot.pid', 'r') as f:
+                    pid = int(f.read().strip())
+                bot_running = psutil.pid_exists(pid)
+            except:
+                pass
+
+        # Get total channels
+        channels = get_all_channel_configs()
+
+        # Get total messages
+        conn = sqlite3.connect(db_file)
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM messages")
+        total_messages = cursor.fetchone()[0]
+        conn.close()
+
+        # Get database size
+        db_size = os.path.getsize(db_file) if os.path.exists(db_file) else 0
+
+        return jsonify({
+            'success': True,
+            'bot_running': bot_running,
+            'total_channels': len(channels),
+            'total_messages': total_messages,
+            'db_size': db_size,
+            'python_version': f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
+            'bot_uptime': get_bot_uptime(),
+            'db_path': db_file
+        })
+    except Exception as e:
+        app.logger.error(f"Error getting system info: {e}")
+        return jsonify({'success': False, 'error': 'Error getting system info'}), 500
+
+@app.route('/api/admin/settings')
+@require_role('admin')
+def api_admin_get_settings():
+    """Get all settings"""
+    try:
+        settings = {
+            # Bot settings
+            'default_voice_preset': get_setting('default_voice_preset', 'v2/en_speaker_5'),
+            'default_lines_between': get_setting('default_lines_between', 20),
+            'default_time_between': get_setting('default_time_between', 300),
+            'markov_attempts': get_setting('markov_attempts', 8),
+            'tts_enabled_default': get_setting('tts_enabled_default', True),
+            'auto_join_default': get_setting('auto_join_default', True),
+            # App settings
+            'log_level': get_setting('log_level', 'INFO'),
+            'session_timeout': get_setting('session_timeout', 24),
+            'maintenance_mode': get_setting('maintenance_mode', False)
+        }
+        return jsonify({'success': True, 'settings': settings})
+    except Exception as e:
+        app.logger.error(f"Error getting settings: {e}")
+        return jsonify({'success': False, 'error': 'Error getting settings'}), 500
+
+@app.route('/api/admin/settings/update', methods=['POST'])
+@require_role('admin')
+def api_admin_update_settings():
+    """Update settings"""
+    try:
+        data = request.get_json()
+
+        # Update each setting
+        for key, value in data.items():
+            set_setting(key, value)
+
+        # Log action
+        current_user = get_current_user()
+        user_db.log_action(
+            current_user['user_id'], 'settings.updated', 'system', 'settings',
+            {'updated_keys': list(data.keys())},
+            request.remote_addr, request.headers.get('User-Agent', 'Unknown')
+        )
+
+        return jsonify({'success': True, 'message': 'Settings updated'})
+    except Exception as e:
+        app.logger.error(f"Error updating settings: {e}")
+        return jsonify({'success': False, 'error': 'Error updating settings'}), 500
+
+@app.route('/api/admin/settings/reset', methods=['POST'])
+@require_role('admin')
+def api_admin_reset_settings():
+    """Reset all settings to defaults"""
+    try:
+        ensure_settings_table()
+        conn = sqlite3.connect(db_file)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM app_settings")
+        conn.commit()
+        conn.close()
+
+        # Log action
+        current_user = get_current_user()
+        user_db.log_action(
+            current_user['user_id'], 'settings.reset', 'system', 'settings',
+            {},
+            request.remote_addr, request.headers.get('User-Agent', 'Unknown')
+        )
+
+        return jsonify({'success': True, 'message': 'Settings reset to defaults'})
+    except Exception as e:
+        app.logger.error(f"Error resetting settings: {e}")
+        return jsonify({'success': False, 'error': 'Error resetting settings'}), 500
+
+@app.route('/api/admin/database-stats')
+@require_role('admin')
+def api_admin_database_stats():
+    """Get database table statistics"""
+    try:
+        conn = sqlite3.connect(db_file)
+        cursor = conn.cursor()
+
+        # Get list of tables
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+        tables = [row[0] for row in cursor.fetchall()]
+
+        stats = []
+        for table in tables:
+            cursor.execute(f"SELECT COUNT(*) FROM {table}")
+            count = cursor.fetchone()[0]
+
+            # Try to get last updated timestamp if table has a timestamp column
+            last_updated = None
+            try:
+                cursor.execute(f"SELECT timestamp FROM {table} ORDER BY timestamp DESC LIMIT 1")
+                result = cursor.fetchone()
+                if result and result[0]:
+                    last_updated = result[0]
+            except:
+                pass
+
+            stats.append({
+                'name': table,
+                'count': count,
+                'last_updated': last_updated
+            })
+
+        conn.close()
+        return jsonify({'success': True, 'tables': stats})
+    except Exception as e:
+        app.logger.error(f"Error getting database stats: {e}")
+        return jsonify({'success': False, 'error': 'Error getting database stats'}), 500
+
+@app.route('/api/admin/database/backup', methods=['POST'])
+@require_role('admin')
+def api_admin_backup_database():
+    """Create database backup"""
+    try:
+        import shutil
+
+        # Create backups directory if it doesn't exist
+        backup_dir = 'backups'
+        os.makedirs(backup_dir, exist_ok=True)
+
+        # Create backup with timestamp
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        backup_file = f"{backup_dir}/messages_backup_{timestamp}.db"
+
+        shutil.copy2(db_file, backup_file)
+
+        # Also backup users database
+        if os.path.exists('users.db'):
+            users_backup = f"{backup_dir}/users_backup_{timestamp}.db"
+            shutil.copy2('users.db', users_backup)
+
+        # Log action
+        current_user = get_current_user()
+        user_db.log_action(
+            current_user['user_id'], 'database.backup', 'system', 'database',
+            {'backup_file': backup_file},
+            request.remote_addr, request.headers.get('User-Agent', 'Unknown')
+        )
+
+        return jsonify({
+            'success': True,
+            'message': 'Backup created successfully',
+            'backup_file': backup_file
+        })
+    except Exception as e:
+        app.logger.error(f"Error creating backup: {e}")
+        return jsonify({'success': False, 'error': 'Error creating backup'}), 500
+
+@app.route('/api/admin/database/vacuum', methods=['POST'])
+@require_role('admin')
+def api_admin_vacuum_database():
+    """Vacuum database to optimize"""
+    try:
+        conn = sqlite3.connect(db_file)
+        cursor = conn.cursor()
+        cursor.execute("VACUUM")
+        conn.commit()
+        conn.close()
+
+        # Log action
+        current_user = get_current_user()
+        user_db.log_action(
+            current_user['user_id'], 'database.vacuum', 'system', 'database',
+            {},
+            request.remote_addr, request.headers.get('User-Agent', 'Unknown')
+        )
+
+        return jsonify({'success': True, 'message': 'Database optimized'})
+    except Exception as e:
+        app.logger.error(f"Error vacuuming database: {e}")
+        return jsonify({'success': False, 'error': 'Error optimizing database'}), 500
+
+@app.route('/api/admin/database/clear-messages', methods=['POST'])
+@require_role('admin')
+def api_admin_clear_messages():
+    """Clear all messages from database"""
+    try:
+        conn = sqlite3.connect(db_file)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM messages")
+        conn.commit()
+        conn.close()
+
+        # Log action
+        current_user = get_current_user()
+        user_db.log_action(
+            current_user['user_id'], 'database.clear_messages', 'system', 'database',
+            {'warning': 'All messages deleted'},
+            request.remote_addr, request.headers.get('User-Agent', 'Unknown')
+        )
+
+        return jsonify({'success': True, 'message': 'All messages cleared'})
+    except Exception as e:
+        app.logger.error(f"Error clearing messages: {e}")
+        return jsonify({'success': False, 'error': 'Error clearing messages'}), 500
+
+##############################
+# Audit Logs API Routes
+##############################
+
+@app.route('/api/admin/audit-logs')
+@require_role('admin')
+def api_admin_audit_logs():
+    """Get audit logs with stats and filtering"""
+    try:
+        # Get all audit logs
+        logs = user_db.get_recent_audit_logs(limit=10000)  # Get more for client-side filtering
+
+        # Calculate stats
+        today = datetime.now().date()
+        stats = {
+            'total': len(logs),
+            'today': len([log for log in logs if datetime.fromisoformat(log['timestamp']).date() == today]),
+            'unique_users': len(set(log['username'] for log in logs if log.get('username'))),
+            'failed': 0  # Can be enhanced to track failed actions
+        }
+
+        return jsonify({'success': True, 'logs': logs, 'stats': stats})
+    except Exception as e:
+        app.logger.error(f"Error getting audit logs: {e}")
+        return jsonify({'success': False, 'error': 'Error getting audit logs'}), 500
+
+@app.route('/api/admin/audit-logs/export', methods=['POST'])
+@require_role('admin')
+def api_admin_audit_logs_export():
+    """Export audit logs as CSV or JSON"""
+    try:
+        import csv
+        from io import StringIO
+
+        data = request.get_json()
+        format_type = request.args.get('format', 'csv')
+        filters = data.get('filters', {})
+
+        # Get logs
+        logs = user_db.get_recent_audit_logs(limit=10000)
+
+        # Apply filters (simplified version, same logic as frontend)
+        if filters.get('action'):
+            logs = [log for log in logs if log['action'] == filters['action']]
+        if filters.get('user'):
+            logs = [log for log in logs if log.get('username') == filters['user']]
+        if filters.get('search'):
+            search_term = filters['search'].lower()
+            logs = [log for log in logs if any(
+                search_term in str(v).lower() for v in log.values() if v
+            )]
+
+        # Log export action
+        current_user = get_current_user()
+        user_db.log_action(
+            current_user['user_id'], 'audit_logs.exported', 'system', 'audit_logs',
+            {'format': format_type, 'count': len(logs)},
+            request.remote_addr, request.headers.get('User-Agent', 'Unknown')
+        )
+
+        if format_type == 'csv':
+            # Generate CSV
+            output = StringIO()
+            if logs:
+                fieldnames = ['timestamp', 'username', 'action', 'resource_type', 'resource_id', 'ip_address', 'user_agent']
+                writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction='ignore')
+                writer.writeheader()
+                for log in logs:
+                    writer.writerow(log)
+
+            response = make_response(output.getvalue())
+            response.headers['Content-Type'] = 'text/csv'
+            response.headers['Content-Disposition'] = f'attachment; filename=audit-logs-{datetime.now().strftime("%Y%m%d")}.csv'
+            return response
+
+        elif format_type == 'json':
+            # Generate JSON
+            response = make_response(json.dumps(logs, indent=2, default=str))
+            response.headers['Content-Type'] = 'application/json'
+            response.headers['Content-Disposition'] = f'attachment; filename=audit-logs-{datetime.now().strftime("%Y%m%d")}.json'
+            return response
+
+        else:
+            return jsonify({'success': False, 'error': 'Invalid format'}), 400
+
+    except Exception as e:
+        app.logger.error(f"Error exporting audit logs: {e}")
+        return jsonify({'success': False, 'error': 'Error exporting audit logs'}), 500
+
+##############################
+# Notification System
+##############################
+
+def ensure_notifications_table():
+    """Ensure notifications table exists"""
+    try:
+        conn = user_db.get_connection()
+        conn.execute('''CREATE TABLE IF NOT EXISTS notifications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            type TEXT NOT NULL,
+            title TEXT NOT NULL,
+            message TEXT NOT NULL,
+            link TEXT,
+            icon TEXT,
+            is_read INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )''')
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        app.logger.error(f"Error creating notifications table: {e}")
+
+def create_notification(user_id, type, title, message, link=None, icon=None):
+    """Create a new notification for a user"""
+    try:
+        ensure_notifications_table()
+        conn = user_db.get_connection()
+        conn.execute("""
+            INSERT INTO notifications (user_id, type, title, message, link, icon)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (user_id, type, title, message, link, icon))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        app.logger.error(f"Error creating notification: {e}")
+        return False
+
+def create_notification_for_role(role_name, type, title, message, link=None, icon=None):
+    """Create notification for all users with a specific role"""
+    try:
+        conn = user_db.get_connection()
+        users = conn.execute("""
+            SELECT u.id FROM users u
+            JOIN roles r ON u.role_id = r.id
+            WHERE r.name = ?
+        """, (role_name,)).fetchall()
+        conn.close()
+
+        for user in users:
+            create_notification(user[0], type, title, message, link, icon)
+        return True
+    except Exception as e:
+        app.logger.error(f"Error creating role notifications: {e}")
+        return False
+
+@app.route('/api/notifications')
+@require_auth
+def api_get_notifications():
+    """Get user notifications"""
+    try:
+        user = get_current_user()
+        if not user:
+            return jsonify({'success': False, 'error': 'Not authenticated'}), 401
+
+        ensure_notifications_table()
+        conn = user_db.get_connection()
+        notifications = conn.execute("""
+            SELECT * FROM notifications
+            WHERE user_id = ?
+            ORDER BY created_at DESC
+            LIMIT 50
+        """, (user['user_id'],)).fetchall()
+        conn.close()
+
+        notifications_list = [dict(n) for n in notifications]
+
+        # Count unread
+        unread_count = len([n for n in notifications_list if not n['is_read']])
+
+        return jsonify({
+            'success': True,
+            'notifications': notifications_list,
+            'unread_count': unread_count
+        })
+    except Exception as e:
+        app.logger.error(f"Error getting notifications: {e}")
+        return jsonify({'success': False, 'error': 'Error getting notifications'}), 500
+
+@app.route('/api/notifications/<int:notification_id>/read', methods=['POST'])
+@require_auth
+def api_mark_notification_read(notification_id):
+    """Mark notification as read"""
+    try:
+        user = get_current_user()
+        if not user:
+            return jsonify({'success': False, 'error': 'Not authenticated'}), 401
+
+        conn = user_db.get_connection()
+        conn.execute("""
+            UPDATE notifications
+            SET is_read = 1
+            WHERE id = ? AND user_id = ?
+        """, (notification_id, user['user_id']))
+        conn.commit()
+        conn.close()
+
+        return jsonify({'success': True})
+    except Exception as e:
+        app.logger.error(f"Error marking notification read: {e}")
+        return jsonify({'success': False, 'error': 'Error updating notification'}), 500
+
+@app.route('/api/notifications/read-all', methods=['POST'])
+@require_auth
+def api_mark_all_notifications_read():
+    """Mark all notifications as read"""
+    try:
+        user = get_current_user()
+        if not user:
+            return jsonify({'success': False, 'error': 'Not authenticated'}), 401
+
+        conn = user_db.get_connection()
+        conn.execute("""
+            UPDATE notifications
+            SET is_read = 1
+            WHERE user_id = ? AND is_read = 0
+        """, (user['user_id'],))
+        conn.commit()
+        conn.close()
+
+        return jsonify({'success': True})
+    except Exception as e:
+        app.logger.error(f"Error marking all notifications read: {e}")
+        return jsonify({'success': False, 'error': 'Error updating notifications'}), 500
+
+@app.route('/api/notifications/<int:notification_id>', methods=['DELETE'])
+@require_auth
+def api_delete_notification(notification_id):
+    """Delete a notification"""
+    try:
+        user = get_current_user()
+        if not user:
+            return jsonify({'success': False, 'error': 'Not authenticated'}), 401
+
+        conn = user_db.get_connection()
+        conn.execute("""
+            DELETE FROM notifications
+            WHERE id = ? AND user_id = ?
+        """, (notification_id, user['user_id']))
+        conn.commit()
+        conn.close()
+
+        return jsonify({'success': True})
+    except Exception as e:
+        app.logger.error(f"Error deleting notification: {e}")
+        return jsonify({'success': False, 'error': 'Error deleting notification'}), 500
+
+@app.route('/api/notifications/clear-all', methods=['POST'])
+@require_auth
+def api_clear_all_notifications():
+    """Delete all notifications for user"""
+    try:
+        user = get_current_user()
+        if not user:
+            return jsonify({'success': False, 'error': 'Not authenticated'}), 401
+
+        conn = user_db.get_connection()
+        conn.execute("""
+            DELETE FROM notifications
+            WHERE user_id = ?
+        """, (user['user_id'],))
+        conn.commit()
+        conn.close()
+
+        return jsonify({'success': True})
+    except Exception as e:
+        app.logger.error(f"Error clearing notifications: {e}")
+        return jsonify({'success': False, 'error': 'Error clearing notifications'}), 500
+
+##############################
+# Activity Logs for Streamers
+##############################
+
+@app.route('/beta/activity')
+@require_auth
+def beta_activity_logs():
+    """Activity logs page for streamers"""
+    return render_template('beta/activity.html')
+
+@app.route('/api/activity-logs')
+@require_auth
+def api_get_activity_logs():
+    """Get activity logs for current user's channel"""
+    try:
+        user = get_current_user()
+        if not user:
+            return jsonify({'success': False, 'error': 'Not authenticated'}), 401
+
+        # Get all logs, we'll filter based on user role
+        all_logs = user_db.get_recent_audit_logs(limit=5000)
+
+        # Filter logs based on user role
+        if user.get('role_name') in ['admin', 'super_admin']:
+            # Admins see everything
+            logs = all_logs
+        elif user.get('role_name') == 'streamer' and user.get('managed_channel'):
+            # Streamers see only logs related to their channel
+            channel = user['managed_channel']
+            logs = [log for log in all_logs if (
+                log.get('resource_type') == 'channel' and log.get('resource_id') == channel
+            ) or (
+                log.get('action', '').startswith('channel.') and channel in str(log.get('details', ''))
+            ) or (
+                log.get('user_id') == user['user_id']
+            )]
+        else:
+            # Regular users see only their own actions
+            logs = [log for log in all_logs if log.get('user_id') == user['user_id']]
+
+        # Calculate stats
+        today = datetime.now().date()
+        stats = {
+            'total': len(logs),
+            'today': len([log for log in logs if datetime.fromisoformat(log['timestamp']).date() == today]),
+            'this_week': len([log for log in logs if (datetime.now() - datetime.fromisoformat(log['timestamp'])).days <= 7]),
+            'actions_count': {}
+        }
+
+        # Count action types
+        for log in logs:
+            action = log.get('action', 'unknown')
+            stats['actions_count'][action] = stats['actions_count'].get(action, 0) + 1
+
+        return jsonify({'success': True, 'logs': logs, 'stats': stats})
+    except Exception as e:
+        app.logger.error(f"Error getting activity logs: {e}")
+        return jsonify({'success': False, 'error': 'Error getting activity logs'}), 500
+
+##############################
+# Analytics API
+##############################
+
+@app.route('/api/analytics')
+@require_auth
+def api_get_analytics():
+    """Get comprehensive analytics data"""
+    try:
+        user = get_current_user()
+        if not user:
+            return jsonify({'success': False, 'error': 'Not authenticated'}), 401
+
+        conn = sqlite3.connect(db_file)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        # Get total stats
+        cursor.execute("SELECT COUNT(*) as count FROM messages")
+        total_messages = cursor.fetchone()['count']
+
+        cursor.execute("SELECT COUNT(*) as count FROM tts_logs")
+        total_tts = cursor.fetchone()['count']
+
+        # Get message frequency (last 7 days)
+        message_freq_query = """
+            SELECT DATE(timestamp) as date, COUNT(*) as count
+            FROM messages
+            WHERE timestamp >= datetime('now', '-7 days')
+            GROUP BY DATE(timestamp)
+            ORDER BY date
+        """
+        cursor.execute(message_freq_query)
+        message_freq = cursor.fetchall()
+
+        # Get TTS frequency (last 7 days)
+        tts_freq_query = """
+            SELECT DATE(timestamp) as date, COUNT(*) as count
+            FROM tts_logs
+            WHERE timestamp >= datetime('now', '-7 days')
+            GROUP BY DATE(timestamp)
+            ORDER BY date
+        """
+        cursor.execute(tts_freq_query)
+        tts_freq = cursor.fetchall()
+
+        # Get channel activity
+        channel_activity_query = """
+            SELECT channel, COUNT(*) as count
+            FROM messages
+            WHERE timestamp >= datetime('now', '-30 days')
+            GROUP BY channel
+            ORDER BY count DESC
+            LIMIT 10
+        """
+        cursor.execute(channel_activity_query)
+        channel_activity = cursor.fetchall()
+
+        # Get hourly activity (for heatmap)
+        hourly_query = """
+            SELECT CAST(strftime('%H', timestamp) AS INTEGER) as hour, COUNT(*) as count
+            FROM messages
+            WHERE timestamp >= datetime('now', '-7 days')
+            GROUP BY hour
+            ORDER BY hour
+        """
+        cursor.execute(hourly_query)
+        hourly_activity = cursor.fetchall()
+
+        # Get channels
+        cursor.execute("SELECT * FROM channel_configs")
+        channels = cursor.fetchall()
+
+        conn.close()
+
+        # Calculate stats
+        # Simple mock for changes (would need historical data)
+        messages_change = 15  # +15% this week
+        tts_change = 23  # +23% this week
+
+        # Find peak hour
+        peak_hour = max(hourly_activity, key=lambda x: x['count'])['hour'] if hourly_activity else 0
+
+        # Find most active channel
+        most_active = channel_activity[0]['channel'] if channel_activity else None
+
+        # Prepare chart data
+        # Message frequency
+        message_labels = [row['date'] for row in message_freq]
+        message_values = [row['count'] for row in message_freq]
+
+        # TTS frequency
+        tts_labels = [row['date'] for row in tts_freq]
+        tts_values = [row['count'] for row in tts_freq]
+
+        # Channel activity
+        channel_labels = [row['channel'] for row in channel_activity]
+        channel_values = [row['count'] for row in channel_activity]
+
+        # Hourly activity (fill missing hours with 0)
+        hourly_labels = [f"{h:02d}:00" for h in range(24)]
+        hourly_dict = {row['hour']: row['count'] for row in hourly_activity}
+        hourly_values = [hourly_dict.get(h, 0) for h in range(24)]
+
+        # Model performance (mock data, would need actual metrics)
+        model_labels = ['Accuracy', 'Diversity', 'Relevance', 'Speed', 'Quality']
+        model_values = [85, 78, 92, 88, 80]
+
+        # Get model count and size
+        try:
+            import os
+            model_files = [f for f in os.listdir('models') if f.endswith('.json')]
+            total_models = len(model_files)
+            models_size = sum(os.path.getsize(f'models/{f}') for f in model_files if os.path.exists(f'models/{f}'))
+        except:
+            total_models = 0
+            models_size = 0
+
+        return jsonify({
+            'success': True,
+            'stats': {
+                'total_messages': total_messages,
+                'total_tts': total_tts,
+                'total_models': total_models,
+                'total_channels': len(channels),
+                'active_channels': len([c for c in channels if c['join_channel']]),
+                'messages_change': messages_change,
+                'tts_change': tts_change,
+                'models_size': models_size
+            },
+            'message_frequency': {
+                'labels': message_labels,
+                'values': message_values
+            },
+            'tts_frequency': {
+                'labels': tts_labels,
+                'values': tts_values
+            },
+            'channel_activity': {
+                'labels': channel_labels,
+                'values': channel_values
+            },
+            'hourly_activity': {
+                'labels': hourly_labels,
+                'values': hourly_values
+            },
+            'model_performance': {
+                'labels': model_labels,
+                'values': model_values
+            },
+            'peak_hour': peak_hour,
+            'most_active_channel': most_active
+        })
+    except Exception as e:
+        app.logger.error(f"Error getting analytics: {e}")
+        return jsonify({'success': False, 'error': 'Error getting analytics'}), 500
+
+# ============================================================================
+# Export API Routes
+# ============================================================================
+
+@app.route('/api/export/<export_type>')
+@require_auth
+def api_export_data(export_type):
+    """Export data in various formats (CSV/JSON)."""
+    try:
+        user = get_current_user()
+        username = user.get('username', 'unknown')
+
+        if export_type == 'settings':
+            # Export channel settings as JSON
+            channels = get_all_channel_configs()
+
+            # Filter by role
+            if user.get('role_name') == 'streamer' and user.get('managed_channel'):
+                channels = [ch for ch in channels if ch['channel_name'] == user['managed_channel']]
+
+            output = json.dumps(channels, indent=2)
+            filename = f'ansv-bot-settings-{datetime.now().strftime("%Y%m%d-%H%M%S")}.json'
+
+            response = app.response_class(
+                response=output,
+                status=200,
+                mimetype='application/json'
+            )
+            response.headers['Content-Disposition'] = f'attachment; filename="{filename}"'
+
+            # Log export
+            user_db.log_audit_action(
+                username=username,
+                action='export_settings',
+                resource_type='settings',
+                details=f'Exported {len(channels)} channel settings',
+                ip_address=request.remote_addr,
+                user_agent=request.headers.get('User-Agent')
+            )
+
+            return response
+
+        elif export_type == 'tts':
+            # Export TTS history as CSV
+            conn = sqlite3.connect(db_file)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+
+            query = "SELECT * FROM tts_files ORDER BY timestamp DESC LIMIT 10000"
+            cursor.execute(query)
+            rows = cursor.fetchall()
+            conn.close()
+
+            # Create CSV
+            from io import StringIO
+            import csv
+
+            output = StringIO()
+            writer = csv.writer(output)
+
+            # Write header
+            writer.writerow(['ID', 'Username', 'Message', 'Model', 'Timestamp', 'File Path'])
+
+            # Write rows
+            for row in rows:
+                writer.writerow([
+                    row['id'],
+                    row['username'],
+                    row['message_text'],
+                    row['model'],
+                    row['timestamp'],
+                    row['file_path']
+                ])
+
+            csv_data = output.getvalue()
+            filename = f'ansv-bot-tts-{datetime.now().strftime("%Y%m%d-%H%M%S")}.csv'
+
+            response = app.response_class(
+                response=csv_data,
+                status=200,
+                mimetype='text/csv'
+            )
+            response.headers['Content-Disposition'] = f'attachment; filename="{filename}"'
+
+            # Log export
+            user_db.log_audit_action(
+                username=username,
+                action='export_tts',
+                resource_type='tts',
+                details=f'Exported {len(rows)} TTS records',
+                ip_address=request.remote_addr,
+                user_agent=request.headers.get('User-Agent')
+            )
+
+            return response
+
+        elif export_type == 'messages':
+            # Export bot messages as CSV
+            conn = sqlite3.connect(db_file)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+
+            query = "SELECT * FROM messages ORDER BY timestamp DESC LIMIT 10000"
+            cursor.execute(query)
+            rows = cursor.fetchall()
+            conn.close()
+
+            # Create CSV
+            from io import StringIO
+            import csv
+
+            output = StringIO()
+            writer = csv.writer(output)
+
+            # Write header
+            writer.writerow(['ID', 'Username', 'Message', 'Channel', 'Timestamp'])
+
+            # Write rows
+            for row in rows:
+                writer.writerow([
+                    row['id'],
+                    row['username'],
+                    row['message'],
+                    row.get('channel', 'N/A'),
+                    row['timestamp']
+                ])
+
+            csv_data = output.getvalue()
+            filename = f'ansv-bot-messages-{datetime.now().strftime("%Y%m%d-%H%M%S")}.csv'
+
+            response = app.response_class(
+                response=csv_data,
+                status=200,
+                mimetype='text/csv'
+            )
+            response.headers['Content-Disposition'] = f'attachment; filename="{filename}"'
+
+            # Log export
+            user_db.log_audit_action(
+                username=username,
+                action='export_messages',
+                resource_type='messages',
+                details=f'Exported {len(rows)} message records',
+                ip_address=request.remote_addr,
+                user_agent=request.headers.get('User-Agent')
+            )
+
+            return response
+
+        elif export_type == 'all':
+            # Export everything as a ZIP file
+            from io import BytesIO
+            import zipfile
+
+            # Create in-memory ZIP
+            zip_buffer = BytesIO()
+
+            with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+                # Add settings JSON
+                channels = get_all_channel_configs()
+                if user.get('role_name') == 'streamer' and user.get('managed_channel'):
+                    channels = [ch for ch in channels if ch['channel_name'] == user['managed_channel']]
+
+                settings_json = json.dumps(channels, indent=2)
+                zip_file.writestr('settings.json', settings_json)
+
+                # Add TTS CSV
+                conn = sqlite3.connect(db_file)
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+
+                cursor.execute("SELECT * FROM tts_files ORDER BY timestamp DESC LIMIT 10000")
+                tts_rows = cursor.fetchall()
+
+                from io import StringIO
+                import csv
+
+                tts_output = StringIO()
+                tts_writer = csv.writer(tts_output)
+                tts_writer.writerow(['ID', 'Username', 'Message', 'Model', 'Timestamp', 'File Path'])
+                for row in tts_rows:
+                    tts_writer.writerow([row['id'], row['username'], row['message_text'], row['model'], row['timestamp'], row['file_path']])
+
+                zip_file.writestr('tts_history.csv', tts_output.getvalue())
+
+                # Add messages CSV
+                cursor.execute("SELECT * FROM messages ORDER BY timestamp DESC LIMIT 10000")
+                msg_rows = cursor.fetchall()
+
+                msg_output = StringIO()
+                msg_writer = csv.writer(msg_output)
+                msg_writer.writerow(['ID', 'Username', 'Message', 'Channel', 'Timestamp'])
+                for row in msg_rows:
+                    msg_writer.writerow([row['id'], row['username'], row['message'], row.get('channel', 'N/A'), row['timestamp']])
+
+                zip_file.writestr('messages.csv', msg_output.getvalue())
+                conn.close()
+
+            zip_buffer.seek(0)
+            filename = f'ansv-bot-export-{datetime.now().strftime("%Y%m%d-%H%M%S")}.zip'
+
+            response = app.response_class(
+                response=zip_buffer.getvalue(),
+                status=200,
+                mimetype='application/zip'
+            )
+            response.headers['Content-Disposition'] = f'attachment; filename="{filename}"'
+
+            # Log export
+            user_db.log_audit_action(
+                username=username,
+                action='export_all',
+                resource_type='export',
+                details='Exported all data (settings, TTS, messages)',
+                ip_address=request.remote_addr,
+                user_agent=request.headers.get('User-Agent')
+            )
+
+            return response
+
+        else:
+            return jsonify({'success': False, 'error': 'Invalid export type'}), 400
+
+    except Exception as e:
+        app.logger.error(f"Error exporting data: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+# ============================================================================
+# Bulk Operations API Routes
+# ============================================================================
+
+@app.route('/api/bulk/tts/enable', methods=['POST'])
+@require_auth
+def api_bulk_enable_tts():
+    """Bulk enable TTS for multiple channels."""
+    try:
+        user = get_current_user()
+        username = user.get('username', 'unknown')
+
+        # Only admins can bulk update
+        if user.get('role_name') not in ['admin', 'super_admin']:
+            return jsonify({'success': False, 'error': 'Unauthorized'}), 403
+
+        data = request.get_json()
+        channels = data.get('channels', [])
+
+        if not channels:
+            return jsonify({'success': False, 'error': 'No channels provided'}), 400
+
+        # Update each channel
+        success_count = 0
+        failed_channels = []
+
+        for channel in channels:
+            try:
+                update_channel_config(channel, {'tts_enabled': True})
+                success_count += 1
+            except Exception as e:
+                app.logger.error(f"Failed to enable TTS for {channel}: {e}")
+                failed_channels.append(channel)
+
+        # Log bulk action
+        user_db.log_audit_action(
+            username=username,
+            action='bulk_enable_tts',
+            resource_type='channel',
+            details=f'Enabled TTS for {success_count}/{len(channels)} channels',
+            ip_address=request.remote_addr,
+            user_agent=request.headers.get('User-Agent')
+        )
+
+        return jsonify({
+            'success': True,
+            'updated': success_count,
+            'failed': len(failed_channels),
+            'failed_channels': failed_channels
+        })
+
+    except Exception as e:
+        app.logger.error(f"Error in bulk enable TTS: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/bulk/tts/disable', methods=['POST'])
+@require_auth
+def api_bulk_disable_tts():
+    """Bulk disable TTS for multiple channels."""
+    try:
+        user = get_current_user()
+        username = user.get('username', 'unknown')
+
+        if user.get('role_name') not in ['admin', 'super_admin']:
+            return jsonify({'success': False, 'error': 'Unauthorized'}), 403
+
+        data = request.get_json()
+        channels = data.get('channels', [])
+
+        if not channels:
+            return jsonify({'success': False, 'error': 'No channels provided'}), 400
+
+        success_count = 0
+        failed_channels = []
+
+        for channel in channels:
+            try:
+                update_channel_config(channel, {'tts_enabled': False})
+                success_count += 1
+            except Exception as e:
+                app.logger.error(f"Failed to disable TTS for {channel}: {e}")
+                failed_channels.append(channel)
+
+        user_db.log_audit_action(
+            username=username,
+            action='bulk_disable_tts',
+            resource_type='channel',
+            details=f'Disabled TTS for {success_count}/{len(channels)} channels',
+            ip_address=request.remote_addr,
+            user_agent=request.headers.get('User-Agent')
+        )
+
+        return jsonify({
+            'success': True,
+            'updated': success_count,
+            'failed': len(failed_channels),
+            'failed_channels': failed_channels
+        })
+
+    except Exception as e:
+        app.logger.error(f"Error in bulk disable TTS: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/bulk/autojoin/enable', methods=['POST'])
+@require_auth
+def api_bulk_enable_autojoin():
+    """Bulk enable auto-join for multiple channels."""
+    try:
+        user = get_current_user()
+        username = user.get('username', 'unknown')
+
+        if user.get('role_name') not in ['admin', 'super_admin']:
+            return jsonify({'success': False, 'error': 'Unauthorized'}), 403
+
+        data = request.get_json()
+        channels = data.get('channels', [])
+
+        if not channels:
+            return jsonify({'success': False, 'error': 'No channels provided'}), 400
+
+        success_count = 0
+        failed_channels = []
+
+        for channel in channels:
+            try:
+                update_channel_config(channel, {'auto_join': True})
+                success_count += 1
+            except Exception as e:
+                app.logger.error(f"Failed to enable auto-join for {channel}: {e}")
+                failed_channels.append(channel)
+
+        user_db.log_audit_action(
+            username=username,
+            action='bulk_enable_autojoin',
+            resource_type='channel',
+            details=f'Enabled auto-join for {success_count}/{len(channels)} channels',
+            ip_address=request.remote_addr,
+            user_agent=request.headers.get('User-Agent')
+        )
+
+        return jsonify({
+            'success': True,
+            'updated': success_count,
+            'failed': len(failed_channels),
+            'failed_channels': failed_channels
+        })
+
+    except Exception as e:
+        app.logger.error(f"Error in bulk enable auto-join: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/bulk/autojoin/disable', methods=['POST'])
+@require_auth
+def api_bulk_disable_autojoin():
+    """Bulk disable auto-join for multiple channels."""
+    try:
+        user = get_current_user()
+        username = user.get('username', 'unknown')
+
+        if user.get('role_name') not in ['admin', 'super_admin']:
+            return jsonify({'success': False, 'error': 'Unauthorized'}), 403
+
+        data = request.get_json()
+        channels = data.get('channels', [])
+
+        if not channels:
+            return jsonify({'success': False, 'error': 'No channels provided'}), 400
+
+        success_count = 0
+        failed_channels = []
+
+        for channel in channels:
+            try:
+                update_channel_config(channel, {'auto_join': False})
+                success_count += 1
+            except Exception as e:
+                app.logger.error(f"Failed to disable auto-join for {channel}: {e}")
+                failed_channels.append(channel)
+
+        user_db.log_audit_action(
+            username=username,
+            action='bulk_disable_autojoin',
+            resource_type='channel',
+            details=f'Disabled auto-join for {success_count}/{len(channels)} channels',
+            ip_address=request.remote_addr,
+            user_agent=request.headers.get('User-Agent')
+        )
+
+        return jsonify({
+            'success': True,
+            'updated': success_count,
+            'failed': len(failed_channels),
+            'failed_channels': failed_channels
+        })
+
+    except Exception as e:
+        app.logger.error(f"Error in bulk disable auto-join: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/bulk/delete', methods=['POST'])
+@require_auth
+def api_bulk_delete_channels():
+    """Bulk delete multiple channels."""
+    try:
+        user = get_current_user()
+        username = user.get('username', 'unknown')
+
+        if user.get('role_name') not in ['admin', 'super_admin']:
+            return jsonify({'success': False, 'error': 'Unauthorized'}), 403
+
+        data = request.get_json()
+        channels = data.get('channels', [])
+
+        if not channels:
+            return jsonify({'success': False, 'error': 'No channels provided'}), 400
+
+        success_count = 0
+        failed_channels = []
+
+        for channel in channels:
+            try:
+                delete_channel_config(channel)
+                success_count += 1
+            except Exception as e:
+                app.logger.error(f"Failed to delete {channel}: {e}")
+                failed_channels.append(channel)
+
+        user_db.log_audit_action(
+            username=username,
+            action='bulk_delete_channels',
+            resource_type='channel',
+            details=f'Deleted {success_count}/{len(channels)} channels',
+            ip_address=request.remote_addr,
+            user_agent=request.headers.get('User-Agent')
+        )
+
+        return jsonify({
+            'success': True,
+            'deleted': success_count,
+            'failed': len(failed_channels),
+            'failed_channels': failed_channels
+        })
+
+    except Exception as e:
+        app.logger.error(f"Error in bulk delete: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/')
 def index():
     """Landing page for public visitors, redirect to dashboard for authenticated users."""
@@ -1873,7 +3832,7 @@ def stop_bot_route():
         return jsonify({"success": False, "message": f"Error stopping bot: {str(e)}"}), 500
 
 @app.route('/api/bot-status')
-def api_bot_status():
+def api_bot_status_legacy():
     bot_running = is_bot_actually_running()
     is_connected = False  # Default to not connected
     current_uptime_seconds = 0
@@ -3049,9 +5008,9 @@ def api_chat_logs():
             base_query = "FROM messages"
             count_query = "SELECT COUNT(*) "
             # Select twitch_message_id as id for frontend compatibility if needed, or just use it as twitch_message_id
-            data_query = "SELECT twitch_message_id AS id, timestamp, channel, author_name AS username, message "
+            data_query = "SELECT twitch_message_id AS id, timestamp, channel, author_name AS username, message, is_bot_response "
 
-            conditions = ["is_bot_response = 0"] # Only fetch user messages
+            conditions = []  # Show ALL messages including bot responses
             params = []
 
             if channel_filter:
@@ -3115,19 +5074,25 @@ def api_chat_logs():
 @app.route('/new-audio-notification', methods=['POST'])
 def new_audio_notification():
     data = request.json
-    app.logger.info(f"Received new audio notification: {data}")
+    app.logger.info(f"[TTS NOTIFY] 🔔 Received new audio notification: {data}")
     channel_name = data.get('channel_name')
     # message_id from the request is the tts_logs table ID (ROWID or PK)
-    tts_log_id = data.get('message_id') 
+    tts_log_id = data.get('message_id')
 
     if channel_name and tts_log_id is not None:
+        room_name = f"channel_{channel_name}"
+        event_data = {'id': tts_log_id, 'channel': channel_name}
+
+        app.logger.info(f"[TTS NOTIFY] Emitting to room: {room_name}, event_data: {event_data}")
+
         # Emit an event to all connected SocketIO clients
         # The event name 'new_tts_entry' should match what clients listen for.
-        socketio.emit('new_tts_entry', {'id': tts_log_id, 'channel': channel_name}, room=f"channel_{channel_name}")
-        app.logger.info(f"Emitted 'new_tts_entry' via SocketIO for tts_log_id: {tts_log_id}, channel: {channel_name}")
+        socketio.emit('new_tts_entry', event_data, room=room_name)
+
+        app.logger.info(f"[TTS NOTIFY] ✅ Emitted 'new_tts_entry' for tts_log_id: {tts_log_id}, channel: {channel_name}")
         return jsonify({"success": True, "message": "Notification emitted"}), 200
     else:
-        app.logger.warning(f"Missing channel_name or message_id in /new-audio-notification. Data: {data}")
+        app.logger.warning(f"[TTS NOTIFY] ⚠️ Missing channel_name or message_id. Data: {data}")
         return jsonify({"success": False, "message": "Missing channel_name or message_id"}), 400
 
 @app.route('/api/channel/<channel_name>/stats')
@@ -3332,24 +5297,12 @@ def beta_dashboard():
         c = conn.cursor()
 
         if user and user.get('role_name') == 'streamer':
-            # Streamers get redirected to dedicated streamer dashboard
+            # Streamers get redirected to their channel-specific dashboard
             managed_channel = user.get('managed_channel')
+            conn.close()
             if managed_channel:
-                c.execute("SELECT * FROM channel_configs WHERE channel_name = ?", (managed_channel,))
-                channel_row = c.fetchone()
-                if channel_row:
-                    channel = dict(channel_row)
-                    conn.close()
-
-                    # Get recent TTS activity for streamer
-                    recent_tts, _ = get_last_10_tts_files_with_last_id(db_file)
-
-                    return render_template("beta/streamer_dashboard.html",
-                                         channel=channel,
-                                         bot_running=bot_running,
-                                         subscription_status=subscription_status,
-                                         has_premium=has_premium,
-                                         recent_tts=recent_tts[:10])
+                return redirect(url_for('beta_channel_page', channel_name=managed_channel))
+            # If no managed channel, show empty dashboard
             channels_data = []
         else:
             # Super admins see all channels
@@ -3376,11 +5329,17 @@ def beta_dashboard():
 @app.route('/beta/stats')
 @require_permission(Permissions.DASHBOARD_STATS)
 def beta_stats_page():
-    """Render the redesigned beta stats page."""
+    """Render the analytics dashboard with Chart.js"""
+    return render_template('beta/analytics.html')
+
+@app.route('/beta/stats/legacy')
+@require_permission(Permissions.DASHBOARD_STATS)
+def beta_stats_page_legacy():
+    """Legacy stats page - kept for reference"""
     try:
         # Get comprehensive stats data
         bot_running = is_bot_actually_running()
-        
+
         # Get model details
         try:
             model_details = markov_handler.get_available_models()
@@ -3390,7 +5349,7 @@ def beta_stats_page():
         except Exception as model_error:
             app.logger.error(f"Error getting model details: {model_error}")
             model_details = []
-        
+
         # Get channels data
         conn = sqlite3.connect(db_file)
         conn.row_factory = sqlite3.Row
@@ -3599,15 +5558,29 @@ def api_channel_tts(channel_name):
         
         if not channel_config['tts_enabled']:
             return jsonify({"error": "TTS not enabled for this channel"}), 400
-        
-        
+
+        # Check if TTS dependencies are available before starting background processing
+        try:
+            import torch
+            from transformers import AutoProcessor, BarkModel
+            import scipy
+            app.logger.info(f"TTS dependencies check passed: torch={torch.__version__}")
+        except ImportError as e:
+            app.logger.error(f"TTS dependencies not available: {e}")
+            return jsonify({
+                "success": False,
+                "error": "TTS system not configured",
+                "message": f"Missing required dependencies: {str(e)}. Please install torch, transformers, and scipy.",
+                "details": "The TTS feature requires PyTorch and transformers libraries to be installed on the server."
+            }), 503
+
         # Use start_tts_processing for consistency with bot's TTS generation
         # This will process TTS in a background thread and use the notification system.
-        
+
         # Generate a synthetic message_id for this web-initiated TTS
         synthetic_message_id = f"webtts_{channel_name}_{int(time.time())}"
         current_timestamp_str = datetime.now().isoformat()
-        
+
         app.logger.info(f"Web UI TTS request for channel '{channel_name}'. Text: '{text[:30]}...'. Voice: '{channel_config['voice_preset']}'. MsgID: {synthetic_message_id}")
 
         start_tts_processing(
@@ -3848,9 +5821,13 @@ def handle_disconnect():
 def handle_channel_subscription(data):
     """Handle client subscribing to channel-specific updates."""
     channel_name = data.get('channel')
+    app.logger.info(f"[SOCKETIO] Received subscribe_channel event from {request.sid}, data: {data}")
     if channel_name:
-        socketio.join_room(f"channel_{channel_name}")
-        logging.debug(f"Client {request.sid} subscribed to channel {channel_name}")
+        room_name = f"channel_{channel_name}"
+        join_room(room_name)  # Use imported join_room function
+        app.logger.info(f"[SOCKETIO] ✅ Client {request.sid} joined room: {room_name}")
+    else:
+        app.logger.warning(f"[SOCKETIO] ⚠️ subscribe_channel called without channel_name")
 
 @socketio.on('request_status')
 def handle_status_request():

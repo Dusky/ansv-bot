@@ -40,6 +40,9 @@ class Logger:
         # Configure the existing logger instance
         self.logger.setLevel(logging.INFO)
 
+        # Prevent propagation to root logger to avoid duplicate console output
+        self.logger.propagate = False
+
         # Prevent adding multiple handlers to the same logger
         if not self.logger.handlers:
             # Define log format for file handler (for app.log)
@@ -143,9 +146,9 @@ class Logger:
         file_log_msg_content = f"#{channel} | <{username}>: {sanitized_message_text}"
         
         # Log the uncolored, sanitized message. This will go to app.log (via FileHandler)
-        # and also to CustomHandler (which will decide if/how to color it for console,
-        # though for chat messages, we've already printed the desired format above).
-        self.logger.info(file_log_msg_content)
+        # Mark the record to skip console output since we already printed it above
+        # Use a custom level or extra parameter to signal CustomHandler to skip it
+        self.logger.info(file_log_msg_content, extra={'skip_console': True})
     
     def log_warning(self, message):
         """Log a warning with consistent yellow styling"""
@@ -227,6 +230,10 @@ class Logger:
 #####################################################
 class CustomHandler(logging.StreamHandler):
     def emit(self, record):
+        # Skip console output if the record was marked to skip (already printed directly)
+        if hasattr(record, 'skip_console') and record.skip_console:
+            return
+
         # Get the message that would be output by the formatter
         # If the logger call already provided a pre-formatted/colored string,
         # record.getMessage() might just return that.

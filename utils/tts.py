@@ -437,9 +437,9 @@ def process_text_thread(input_text, channel_name, db_file='./messages.db', full_
             # Re-silence output if further Bark/TTS processing was needed (though it's done here)
             silence_output()
             
-            # Notify with the ID of the tts_logs table entry only if logging was successful
+            # Notify with the message_id (string) so the frontend can query the API correctly
             if logged_tts_table_id is not None:
-                notify_new_audio_available(channel_name, logged_tts_table_id) 
+                notify_new_audio_available(channel_name, message_id) 
             
             # Log internally without printing to console (already done above with [TTS DB LOG])
             # logging.info(f"TTS audio file generated: {full_path}. Logged to tts_logs with table ID: {logged_tts_table_id} (linked to original message_id: {message_id})")
@@ -543,9 +543,13 @@ def ensure_nltk_resources():
         # Test if punkt is working
         sent_tokenize("Test sentence.")
     except (LookupError, ImportError):
-        logging.info("Downloading required NLTK resources (punkt)...") # Keep as info, important one-time setup
+        logging.info("Downloading required NLTK resources (punkt, punkt_tab)...") # Keep as info, important one-time setup
         try:
-            nltk.download('punkt')
+            # Download both punkt and punkt_tab (newer NLTK versions need punkt_tab)
+            nltk.download('punkt', quiet=True)
+            nltk.download('punkt_tab', quiet=True)
+            nltk.download('averaged_perceptron_tagger', quiet=True)
+            logging.info("NLTK resources downloaded successfully")
             return True
         except Exception as e:
             logging.error(f"Failed to download NLTK resources: {e}") # Keep as error
@@ -554,12 +558,15 @@ def ensure_nltk_resources():
 
 async def process_text(channel, text, model_type="bark", voice_preset_override=None): # This is for the !speak command path
     """Process text to speech with proper locking and error handling"""
+    # Ensure NLTK resources are available
+    ensure_nltk_resources()
+
     # Use locking to prevent concurrent TTS processing
     global async_tts_lock # Use the asyncio lock for this async function
     async with async_tts_lock:
         try:
             logging.info(f"Starting ASYNC TTS for channel {channel} (likely !speak command)")
-            
+
             # Create output directory if it doesn't exist
             output_dir = f"static/outputs/{channel}"
             os.makedirs(output_dir, exist_ok=True)
@@ -644,7 +651,10 @@ def start_tts_processing(input_text, channel_name, db_file='./messages.db', mess
     timestamp_str: The timestamp string of the original message.
     voice_preset_override: Optional voice preset to use, otherwise fetched from DB.
     """
-    filename_timestamp = datetime.now().strftime("%Y%m%d-%H%M%S") 
+    # Ensure NLTK resources are available before starting TTS
+    ensure_nltk_resources()
+
+    filename_timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     clean_channel_name = channel_name.lstrip('#')
     output_dir = f"static/outputs/{clean_channel_name}"
     os.makedirs(output_dir, exist_ok=True)

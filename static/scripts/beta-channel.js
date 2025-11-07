@@ -28,6 +28,7 @@ let currentMessage = null;
 let chatMessages = [];
 let ttsHistory = [];
 let autoScroll = true;
+let chatCleared = false; // Track if user manually cleared chat
 let currentlyPlayingId = null;
 let ttsAutoplayEnabled = false;
 let autoTTSPlayer = null;
@@ -336,16 +337,24 @@ function showGeneratedMessage(message) {
 }
 
 async function sendGeneratedMessage() {
-    if (!currentMessage) return;
-    
+    if (!currentMessage) {
+        console.error('[Beta Channel] No message to send - currentMessage is empty');
+        showToast('No message to send', 'error');
+        return;
+    }
+
     const channelName = window.channelData.name;
     const btn = document.getElementById('sendGeneratedBtn');
-    
+
+    if (!btn) return;
+
     const originalText = btn.innerHTML;
     btn.disabled = true;
     btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Sending...';
-    
+
     try {
+        console.log('[Beta Channel] Sending generated message:', currentMessage.substring(0, 50) + '...');
+
         await betaUtils.apiRequest(`/send_markov_message/${channelName}`, {
             method: 'POST',
             body: JSON.stringify({
@@ -353,19 +362,22 @@ async function sendGeneratedMessage() {
                 custom_message: currentMessage
             })
         });
-        
+
         showToast(`Message sent to #${channelName}!`, 'success');
-        
+
         // Close modal
         const modal = bootstrap.Modal.getInstance(document.getElementById('generatedMessageModal'));
         if (modal) modal.hide();
-        
+
+        // Clear currentMessage after sending
+        currentMessage = null;
+
         // Refresh chat
         setTimeout(loadChatMessages, 1000);
-        
+
     } catch (error) {
         console.error('[Beta Channel] Error sending message:', error);
-        showToast('Failed to send message', 'error');
+        showToast('Failed to send message: ' + (error.message || 'Unknown error'), 'error');
     } finally {
         btn.disabled = false;
         btn.innerHTML = originalText;
@@ -424,16 +436,21 @@ function initializeChatStream() {
 }
 
 async function loadChatMessages() {
+    // Skip loading if user manually cleared chat
+    if (chatCleared) {
+        return;
+    }
+
     const channelName = window.channelData.name;
-    
+
     try {
         const response = await betaUtils.apiRequest(`/api/chat-logs?channel=${encodeURIComponent(channelName)}&per_page=50&page=1`);
-        
+
         if (response.logs) {
-            const newMessages = response.logs.filter(msg => !msg.is_bot_response);
-            updateChatDisplay(newMessages);
+            // Show ALL messages including bot responses
+            updateChatDisplay(response.logs);
         }
-        
+
     } catch (error) {
         console.error('[Beta Channel] Error loading chat messages:', error);
         showChatError();
@@ -445,46 +462,61 @@ function updateChatDisplay(messages) {
     const chatContainer = document.getElementById('chatMessages');
     const emptyState = document.getElementById('chatEmpty');
     const messageCount = document.getElementById('messageCount');
-    
+    const chatStream = document.getElementById('chatStream');
+
+    // Check if user is already at the top (where new messages are) before updating
+    let wasAtTop = false;
+    if (chatStream) {
+        const scrollThreshold = 100; // pixels from top
+        wasAtTop = chatStream.scrollTop < scrollThreshold;
+    }
+
     // Hide loading
     if (loading) loading.style.display = 'none';
-    
+
     if (messages.length === 0) {
         if (chatContainer) chatContainer.style.display = 'none';
         if (emptyState) emptyState.style.display = 'block';
         if (messageCount) messageCount.textContent = '0';
         return;
     }
-    
+
     // Show messages
     if (emptyState) emptyState.style.display = 'none';
     if (chatContainer) {
         chatContainer.style.display = 'block';
         chatContainer.innerHTML = messages.slice(0, 30).reverse().map(createChatMessage).join('');
-        
-        if (autoScroll) {
-            const chatStream = document.getElementById('chatStream');
-            if (chatStream) {
-                chatStream.scrollTop = chatStream.scrollHeight;
-            }
+
+        // Only auto-scroll if:
+        // 1. Auto-scroll toggle is enabled AND
+        // 2. User was already at the top (where new messages appear)
+        if (autoScroll && wasAtTop) {
+            requestAnimationFrame(() => {
+                if (chatStream) {
+                    chatStream.scrollTop = 0; // Scroll to TOP where new messages are
+                }
+            });
         }
     }
-    
+
     if (messageCount) {
         messageCount.textContent = messages.length;
     }
-    
+
     chatMessages = messages;
 }
 
 function createChatMessage(message) {
     const timestamp = new Date(message.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
     const username = message.username || 'Anonymous';
-    
+    const isBot = message.is_bot_response || false;
+    const botClass = isBot ? 'chat-line-bot' : '';
+    const botBadge = isBot ? '<span class="badge bg-primary ms-1">BOT</span>' : '';
+
     return `
-        <div class="chat-line">
+        <div class="chat-line ${botClass}">
             <span class="chat-time">${timestamp}</span>
-            <span class="chat-user">${betaUtils.escapeHtml(username)}:</span>
+            <span class="chat-user">${betaUtils.escapeHtml(username)}${botBadge}:</span>
             <span class="chat-msg">${betaUtils.escapeHtml(message.message)}</span>
         </div>
     `;
@@ -494,22 +526,23 @@ function clearChatMessages() {
     const chatContainer = document.getElementById('chatMessages');
     const emptyState = document.getElementById('chatEmpty');
     const messageCount = document.getElementById('messageCount');
-    
+
     if (chatContainer) {
         chatContainer.innerHTML = '';
         chatContainer.style.display = 'none';
     }
-    
+
     if (emptyState) {
         emptyState.style.display = 'block';
     }
-    
+
     if (messageCount) {
         messageCount.textContent = '0';
     }
-    
+
     chatMessages = [];
-    showToast('Chat messages cleared', 'info');
+    chatCleared = true; // Prevent auto-refresh from reloading messages
+    showToast('Chat messages cleared (refresh page to restore)', 'info');
 }
 
 function showChatError() {
@@ -577,15 +610,29 @@ function initializeTTSHistory() {
 
 async function loadTTSHistory() {
     const channelName = window.channelData.name;
-    
+
     try {
+        console.log('[Beta Channel] Loading TTS history for channel:', channelName);
         const response = await betaUtils.apiRequest(`/api/tts-logs?channel_filter=${encodeURIComponent(channelName)}&per_page=20&page=1&sort_by=timestamp&sort_order=desc`);
-        
+
+        console.log('[Beta Channel] TTS history response:', response);
+
         if (response.logs) {
+            console.log(`[Beta Channel] Loaded ${response.logs.length} TTS entries`);
+            response.logs.forEach((entry, idx) => {
+                console.log(`[Beta Channel] TTS #${idx}:`, {
+                    id: entry.id,
+                    message: entry.message?.substring(0, 30),
+                    file_path: entry.file_path,
+                    voice: entry.voice_preset
+                });
+            });
             updateTTSDisplay(response.logs);
             updateVoiceFilter(response.logs);
+        } else {
+            console.warn('[Beta Channel] No logs in TTS response');
         }
-        
+
     } catch (error) {
         console.error('[Beta Channel] Error loading TTS history:', error);
         showTTSError();
@@ -630,25 +677,37 @@ function createTTSItem(entry) {
     const timestamp = betaUtils.formatTimestamp(entry.timestamp);
     const voicePreset = entry.voice_preset || 'Unknown';
     const isPlaying = currentlyPlayingId === entry.id;
-    
+
+    console.log('[Beta Channel] Creating TTS item:', {
+        id: entry.id,
+        hasFilePath: !!entry.file_path,
+        filePath: entry.file_path,
+        message: entry.message?.substring(0, 30)
+    });
+
     return `
-        <div class="tts-item ${isPlaying ? 'playing' : ''}">
+        <div class="tts-item ${isPlaying ? 'playing' : ''}" data-tts-id="${entry.id}">
             <div class="tts-content">
                 <p class="tts-text">${betaUtils.escapeHtml(entry.message)}</p>
                 <div class="tts-meta">
                     <span><i class="fas fa-microphone me-1"></i>${betaUtils.escapeHtml(voicePreset)}</span>
                     <span><i class="fas fa-clock me-1"></i>${timestamp}</span>
+                    ${!entry.file_path ? '<span class="text-warning"><i class="fas fa-exclamation-triangle me-1"></i>No audio file</span>' : ''}
                 </div>
             </div>
             <div class="tts-controls">
                 ${entry.file_path ? `
-                    <button class="tts-play-btn ${isPlaying ? 'playing' : ''}" 
-                            data-tts-id="${entry.id}" 
-                            data-file-path="${entry.file_path}"
+                    <button class="tts-play-btn ${isPlaying ? 'playing' : ''}"
+                            data-tts-id="${entry.id}"
+                            data-file-path="${betaUtils.escapeHtml(entry.file_path)}"
                             title="${isPlaying ? 'Pause' : 'Play'} TTS">
                         <i class="fas ${isPlaying ? 'fa-pause' : 'fa-play'}"></i>
                     </button>
-                ` : ''}
+                ` : `
+                    <span class="text-muted small">
+                        <i class="fas fa-hourglass-half"></i>
+                    </span>
+                `}
             </div>
         </div>
     `;
@@ -695,30 +754,58 @@ function filterTTSHistory() {
 
 function toggleTTSPlayback(ttsId, filePath) {
     const player = document.getElementById('ttsAudioPlayer');
-    if (!player || !filePath) return;
-    
+
+    console.log('[Beta Channel] toggleTTSPlayback called:', { ttsId, filePath, playerExists: !!player });
+
+    if (!player) {
+        console.error('[Beta Channel] TTS audio player element not found!');
+        showToast('TTS player not found', 'error');
+        return;
+    }
+
+    if (!filePath) {
+        console.error('[Beta Channel] No file path provided for TTS playback');
+        showToast('No TTS file available', 'warning');
+        return;
+    }
+
     // If this TTS is currently playing, pause it
     if (currentlyPlayingId === ttsId && !player.paused) {
+        console.log('[Beta Channel] Pausing currently playing TTS');
         player.pause();
         return;
     }
-    
+
     // Otherwise, play this TTS
     const audioUrl = `/static/${filePath}`;
+    console.log('[Beta Channel] Playing TTS audio from:', audioUrl);
+
     player.src = audioUrl;
     currentlyPlayingId = ttsId;
-    
+
     player.play().then(() => {
+        console.log('[Beta Channel] TTS playback started successfully');
         updatePlayingStates();
     }).catch(error => {
         console.error('[Beta Channel] TTS playback failed:', error);
-        showToast('TTS playback failed', 'warning');
+        console.error('[Beta Channel] Failed audio URL:', audioUrl);
+        showToast(`TTS playback failed: ${error.message}`, 'error');
         currentlyPlayingId = null;
         updatePlayingStates();
     });
-    
+
     // Handle audio end
     player.onended = () => {
+        console.log('[Beta Channel] TTS playback ended');
+        currentlyPlayingId = null;
+        updatePlayingStates();
+    };
+
+    // Handle audio errors
+    player.onerror = (e) => {
+        console.error('[Beta Channel] TTS audio error:', e);
+        console.error('[Beta Channel] Player error code:', player.error?.code, player.error?.message);
+        showToast('TTS audio file not found or cannot be played', 'error');
         currentlyPlayingId = null;
         updatePlayingStates();
     };
@@ -1310,32 +1397,38 @@ function resetModelSwitchButton() {
 
 function initializeTTSAutoplay() {
     console.log('[Beta Channel] Initializing TTS autoplay...');
-    
+
     // Initialize autoplay toggle
     const autoplayToggle = document.getElementById('ttsAutoplayToggle');
     if (autoplayToggle) {
         autoplayToggle.addEventListener('change', handleTTSAutoplayToggle);
         ttsAutoplayEnabled = autoplayToggle.checked;
         updateAutoplayStatus();
+        console.log(`[Beta Channel] Autoplay toggle found, initial state: ${ttsAutoplayEnabled}`);
+    } else {
+        console.error('[Beta Channel] Autoplay toggle element not found!');
     }
-    
+
     // Initialize auto TTS player
     autoTTSPlayer = document.getElementById('autoTTSPlayer');
     if (autoTTSPlayer) {
         autoTTSPlayer.addEventListener('ended', handleAutoTTSEnded);
         autoTTSPlayer.addEventListener('error', handleAutoTTSError);
+        console.log('[Beta Channel] Auto TTS player element found and initialized');
+    } else {
+        console.error('[Beta Channel] Auto TTS player element not found!');
     }
-    
+
     // Initialize stop button
     const stopAutoTTSBtn = document.getElementById('stopAutoTTSBtn');
     if (stopAutoTTSBtn) {
         stopAutoTTSBtn.addEventListener('click', stopAutoTTS);
     }
-    
+
     // Connect to WebSocket for real-time TTS notifications
     initializeTTSWebSocket();
-    
-    console.log('[Beta Channel] TTS autoplay initialized');
+
+    console.log('[Beta Channel] TTS autoplay initialization complete');
 }
 
 function handleTTSAutoplayToggle() {
@@ -1362,72 +1455,114 @@ function updateAutoplayStatus() {
 
 function initializeTTSWebSocket() {
     if (typeof io === 'undefined') {
-        console.warn('[Beta Channel] Socket.IO not available for TTS autoplay');
+        console.error('[Beta Channel] Socket.IO not available for TTS autoplay - library not loaded!');
         return;
     }
-    
+
     const channelName = window.channelData.name;
-    
+    console.log(`[Beta Channel] Initializing WebSocket for channel: ${channelName}`);
+
     // Connect to the Socket.IO server
     const socket = io();
-    
-    // Join the channel room for notifications
-    socket.emit('join', `channel_${channelName}`);
-    
+    console.log('[Beta Channel] Socket.IO connection initiated');
+
+    // Subscribe to channel-specific notifications
+    socket.on('connect', () => {
+        console.log('[Beta Channel] ✅ Connected to TTS WebSocket, SID:', socket.id);
+        socket.emit('subscribe_channel', { channel: channelName });
+        console.log(`[Beta Channel] ✅ Emitted subscribe_channel for: ${channelName}`);
+    });
+
     // Listen for new TTS notifications
     socket.on('new_tts_entry', (data) => {
-        console.log('[Beta Channel] Received new TTS notification:', data);
-        
+        console.log('[Beta Channel] 🔔 RECEIVED new_tts_entry event:', data);
+        console.log('[Beta Channel] Autoplay enabled:', ttsAutoplayEnabled);
+        console.log('[Beta Channel] Data ID:', data.id);
+        console.log('[Beta Channel] Data channel:', data.channel);
+        console.log('[Beta Channel] Current channel:', channelName);
+        console.log('[Beta Channel] autoTTSPlayer exists:', !!autoTTSPlayer);
+
         if (ttsAutoplayEnabled && data.id && data.channel === channelName) {
-            // Fetch the TTS entry details and play it
+            console.log('[Beta Channel] ✅ Conditions met, calling playNewTTS with ID:', data.id);
             playNewTTS(data.id);
+        } else {
+            console.warn('[Beta Channel] ❌ Autoplay conditions not met:', {
+                autoplayEnabled: ttsAutoplayEnabled,
+                hasId: !!data.id,
+                channelMatch: data.channel === channelName
+            });
         }
     });
-    
-    socket.on('connect', () => {
-        console.log('[Beta Channel] Connected to TTS WebSocket');
-    });
-    
+
     socket.on('disconnect', () => {
-        console.log('[Beta Channel] Disconnected from TTS WebSocket');
+        console.warn('[Beta Channel] ⚠️ Disconnected from TTS WebSocket');
     });
-    
-    console.log('[Beta Channel] TTS WebSocket initialized for channel:', channelName);
+
+    socket.on('connect_error', (error) => {
+        console.error('[Beta Channel] ❌ Socket.IO connection error:', error);
+    });
+
+    console.log('[Beta Channel] TTS WebSocket initialization complete');
 }
 
 async function playNewTTS(ttsId) {
-    if (!ttsAutoplayEnabled || !autoTTSPlayer) return;
-    
-    console.log(`[Beta Channel] Playing new TTS: ${ttsId}`);
-    
+    console.log('[Beta Channel] 🎵 playNewTTS called with ID:', ttsId);
+    console.log('[Beta Channel] Checking preconditions - autoplayEnabled:', ttsAutoplayEnabled, 'autoTTSPlayer:', !!autoTTSPlayer);
+
+    if (!ttsAutoplayEnabled) {
+        console.warn('[Beta Channel] ❌ Autoplay is disabled, exiting');
+        return;
+    }
+
+    if (!autoTTSPlayer) {
+        console.error('[Beta Channel] ❌ autoTTSPlayer element not found, exiting');
+        return;
+    }
+
+    console.log('[Beta Channel] ✅ Preconditions met, fetching TTS details...');
+
     try {
         // Fetch TTS details
         const channelName = window.channelData.name;
-        const response = await betaUtils.apiRequest(`/api/tts-logs?channel_filter=${encodeURIComponent(channelName)}&per_page=1&page=1&sort_by=timestamp&sort_order=desc&id=${ttsId}`);
-        
+        const apiUrl = `/api/tts-logs?channel_filter=${encodeURIComponent(channelName)}&per_page=1&page=1&sort_by=timestamp&sort_order=desc&id=${ttsId}`;
+        console.log('[Beta Channel] Fetching from API:', apiUrl);
+
+        const response = await betaUtils.apiRequest(apiUrl);
+        console.log('[Beta Channel] API response:', response);
+
         if (response.logs && response.logs.length > 0) {
             const ttsEntry = response.logs[0];
-            
+            console.log('[Beta Channel] TTS entry found:', ttsEntry);
+
             if (ttsEntry.file_path) {
+                console.log('[Beta Channel] File path exists:', ttsEntry.file_path);
+
                 // Update auto player UI
                 updateAutoPlayerUI(ttsEntry);
-                
+                console.log('[Beta Channel] UI updated');
+
                 // Play the audio
                 const audioUrl = `/static/${ttsEntry.file_path}`;
+                console.log('[Beta Channel] Setting audio source:', audioUrl);
                 autoTTSPlayer.src = audioUrl;
-                
+
                 try {
+                    console.log('[Beta Channel] Attempting to play audio...');
                     await autoTTSPlayer.play();
-                    console.log(`[Beta Channel] Auto-playing TTS: ${ttsEntry.message.substring(0, 50)}...`);
+                    console.log(`[Beta Channel] ✅ Successfully auto-playing TTS: ${ttsEntry.message.substring(0, 50)}...`);
                 } catch (playError) {
-                    console.error('[Beta Channel] Auto TTS playback failed:', playError);
+                    console.error('[Beta Channel] ❌ Auto TTS playback failed:', playError);
                     showToast('TTS autoplay failed - check browser permissions', 'warning');
                 }
+            } else {
+                console.warn('[Beta Channel] ⚠️ TTS entry has no file_path');
             }
+        } else {
+            console.warn('[Beta Channel] ⚠️ No TTS logs found in API response');
         }
-        
+
     } catch (error) {
-        console.error('[Beta Channel] Error fetching new TTS for autoplay:', error);
+        console.error('[Beta Channel] ❌ Error fetching new TTS for autoplay:', error);
     }
 }
 

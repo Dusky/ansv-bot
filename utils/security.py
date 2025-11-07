@@ -334,13 +334,13 @@ def secure_headers(response):
     # Referrer policy
     response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
     
-    # Content Security Policy - Allow CDN resources for Bootstrap and Font Awesome
+    # Content Security Policy - Allow CDN resources for Bootstrap, Font Awesome, and Socket.IO
     response.headers['Content-Security-Policy'] = (
         "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdn.socket.io; "
         "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; "
         "img-src 'self' data:; "
-        "connect-src 'self'; "
+        "connect-src 'self' ws: wss:; "
         "font-src 'self' https://cdnjs.cloudflare.com; "
         "object-src 'none'; "
         "base-uri 'self'; "

@@ -1,0 +1,510 @@
+{% extends "admin_base.html" %}
+
+{% block title %}Bot Control - Admin Panel{% endblock %}
+{% block page_title %}Bot Control{% endblock %}
+
+{% block head %}
+{{ super() }}
+<style>
+.control-card {
+    background: var(--bs-body-bg);
+    border: 1px solid var(--bs-border-color);
+    border-radius: 15px;
+    padding: 2rem;
+    margin-bottom: 1.5rem;
+}
+
+.status-display {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-radius: 15px;
+    padding: 2rem;
+    margin-bottom: 2rem;
+    text-align: center;
+}
+
+.status-display h2 {
+    font-size: 2.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.status-display .status-label {
+    font-size: 1.1rem;
+    opacity: 0.9;
+}
+
+.status-icon {
+    font-size: 4rem;
+    margin-bottom: 1rem;
+}
+
+.status-details {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    margin-top: 1.5rem;
+}
+
+.status-detail {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    padding: 1rem;
+    text-align: center;
+}
+
+.status-detail-value {
+    font-size: 1.8rem;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+}
+
+.status-detail-label {
+    font-size: 0.875rem;
+    opacity: 0.9;
+}
+
+.control-buttons {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1rem;
+}
+
+.btn-control {
+    padding: 1rem 1.5rem;
+    font-size: 1.1rem;
+    font-weight: 600;
+    border-radius: 10px;
+    border: none;
+    transition: all 0.3s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+}
+
+.btn-control:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+}
+
+.btn-start {
+    background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+    color: white;
+}
+
+.btn-stop {
+    background: linear-gradient(135deg, #eb3349 0%, #f45c43 100%);
+    color: white;
+}
+
+.btn-restart {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    color: white;
+}
+
+.btn-reconnect {
+    background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+    color: white;
+}
+
+.log-viewer {
+    background: #1a1a2e;
+    color: #00ff00;
+    font-family: 'Courier New', monospace;
+    padding: 1.5rem;
+    border-radius: 10px;
+    height: 400px;
+    overflow-y: auto;
+    font-size: 0.875rem;
+    line-height: 1.5;
+}
+
+.log-entry {
+    margin-bottom: 0.5rem;
+    word-wrap: break-word;
+}
+
+.log-timestamp {
+    color: #888;
+}
+
+.log-info {
+    color: #00ff00;
+}
+
+.log-warning {
+    color: #ffaa00;
+}
+
+.log-error {
+    color: #ff4444;
+}
+
+.connected-channels-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 1rem;
+}
+
+.channel-badge {
+    padding: 0.5rem 1rem;
+    background: rgba(var(--bs-primary-rgb), 0.1);
+    border: 1px solid var(--bs-primary);
+    border-radius: 50px;
+    font-size: 0.875rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.channel-badge i {
+    color: var(--bs-success);
+}
+
+.bot-offline {
+    background: linear-gradient(135deg, #eb3349 0%, #f45c43 100%);
+}
+
+.spinner-icon {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Bot Status Display -->
+<div class="status-display" id="botStatusDisplay">
+    <div class="status-icon">
+        <i class="fas fa-robot"></i>
+    </div>
+    <h2 id="botStatusText">Checking...</h2>
+    <div class="status-label" id="botStatusLabel">Fetching bot status...</div>
+
+    <div class="status-details">
+        <div class="status-detail">
+            <div class="status-detail-value" id="uptimeValue">--</div>
+            <div class="status-detail-label">Uptime</div>
+        </div>
+        <div class="status-detail">
+            <div class="status-detail-value" id="channelsValue">0</div>
+            <div class="status-detail-label">Connected Channels</div>
+        </div>
+        <div class="status-detail">
+            <div class="status-detail-value" id="ttsStatusValue">--</div>
+            <div class="status-detail-label">TTS Status</div>
+        </div>
+        <div class="status-detail">
+            <div class="status-detail-value" id="lastHeartbeatValue">--</div>
+            <div class="status-detail-label">Last Heartbeat</div>
+        </div>
+    </div>
+</div>
+
+<!-- Control Buttons -->
+<div class="control-card">
+    <h3 class="mb-3"><i class="fas fa-gamepad me-2"></i>Bot Controls</h3>
+    <div class="control-buttons">
+        <button class="btn btn-control btn-start" onclick="startBot()" id="startBtn">
+            <i class="fas fa-play"></i>
+            Start Bot
+        </button>
+        <button class="btn btn-control btn-stop" onclick="stopBot()" id="stopBtn">
+            <i class="fas fa-stop"></i>
+            Stop Bot
+        </button>
+        <button class="btn btn-control btn-restart" onclick="restartBot()" id="restartBtn">
+            <i class="fas fa-sync-alt"></i>
+            Restart Bot
+        </button>
+        <button class="btn btn-control btn-reconnect" onclick="reconnectChannels()" id="reconnectBtn">
+            <i class="fas fa-plug"></i>
+            Reconnect Channels
+        </button>
+    </div>
+</div>
+
+<!-- Connected Channels -->
+<div class="control-card">
+    <h3 class="mb-3"><i class="fas fa-hashtag me-2"></i>Connected Channels</h3>
+    <div class="connected-channels-list" id="connectedChannelsList">
+        <div class="text-muted">No channels connected</div>
+    </div>
+</div>
+
+<!-- Bot Process Logs -->
+<div class="control-card">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h3 class="mb-0"><i class="fas fa-terminal me-2"></i>Bot Logs</h3>
+        <button class="btn btn-sm btn-outline-primary" onclick="refreshLogs()">
+            <i class="fas fa-sync-alt me-1"></i>Refresh
+        </button>
+    </div>
+    <div class="log-viewer" id="logViewer">
+        <div class="log-entry log-info">Waiting for logs...</div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+let logRefreshInterval;
+let statusRefreshInterval;
+
+// Format uptime
+function formatUptime(seconds) {
+    if (!seconds || seconds < 0) return '--';
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${hours}h ${minutes}m ${secs}s`;
+}
+
+// Format timestamp
+function formatTimestamp(timestamp) {
+    if (!timestamp) return '--';
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diff = (now - date) / 1000; // seconds
+
+    if (diff < 60) return `${Math.floor(diff)}s ago`;
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    return date.toLocaleString();
+}
+
+// Update bot status display
+async function updateBotStatus() {
+    try {
+        const response = await fetch('/api/bot/status');
+        const data = await response.json();
+
+        const statusDisplay = document.getElementById('botStatusDisplay');
+        const statusText = document.getElementById('botStatusText');
+        const statusLabel = document.getElementById('botStatusLabel');
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const restartBtn = document.getElementById('restartBtn');
+
+        if (data.success && data.bot_running) {
+            statusDisplay.classList.remove('bot-offline');
+            statusText.textContent = 'Bot Online';
+            statusLabel.textContent = 'The bot is running and connected';
+
+            // Update status details
+            document.getElementById('uptimeValue').textContent = formatUptime(data.uptime);
+            document.getElementById('channelsValue').textContent = data.connected_channels?.length || 0;
+            document.getElementById('ttsStatusValue').textContent = data.tts_enabled ? 'Enabled' : 'Disabled';
+            document.getElementById('lastHeartbeatValue').textContent = formatTimestamp(data.last_heartbeat);
+
+            // Update connected channels list
+            const channelsList = document.getElementById('connectedChannelsList');
+            if (data.connected_channels && data.connected_channels.length > 0) {
+                channelsList.innerHTML = data.connected_channels.map(channel => `
+                    <div class="channel-badge">
+                        <i class="fas fa-circle"></i>
+                        #${channel}
+                    </div>
+                `).join('');
+            } else {
+                channelsList.innerHTML = '<div class="text-muted">No channels connected</div>';
+            }
+
+            // Button states
+            startBtn.disabled = true;
+            stopBtn.disabled = false;
+            restartBtn.disabled = false;
+        } else {
+            statusDisplay.classList.add('bot-offline');
+            statusText.textContent = 'Bot Offline';
+            statusLabel.textContent = 'The bot is not running';
+
+            // Reset status details
+            document.getElementById('uptimeValue').textContent = '--';
+            document.getElementById('channelsValue').textContent = '0';
+            document.getElementById('ttsStatusValue').textContent = '--';
+            document.getElementById('lastHeartbeatValue').textContent = '--';
+
+            // Update connected channels list
+            document.getElementById('connectedChannelsList').innerHTML = '<div class="text-muted">Bot is offline</div>';
+
+            // Button states
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+            restartBtn.disabled = true;
+        }
+    } catch (error) {
+        console.error('Error fetching bot status:', error);
+        document.getElementById('botStatusText').textContent = 'Status Unknown';
+        document.getElementById('botStatusLabel').textContent = 'Failed to fetch bot status';
+    }
+}
+
+// Start bot
+async function startBot() {
+    const btn = document.getElementById('startBtn');
+    const originalHtml = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner spinner-icon"></i> Starting...';
+    btn.disabled = true;
+
+    try {
+        const response = await fetch('/api/bot/start', { method: 'POST' });
+        const data = await response.json();
+
+        if (data.success) {
+            window.notificationSystem.showToast(data.message || 'Bot started successfully', 'success');
+            setTimeout(updateBotStatus, 2000);
+        } else {
+            window.notificationSystem.showToast(data.error || 'Failed to start bot', 'error');
+            btn.innerHTML = originalHtml;
+            btn.disabled = false;
+        }
+    } catch (error) {
+        console.error('Error starting bot:', error);
+        window.notificationSystem.showToast('Error starting bot', 'error');
+        btn.innerHTML = originalHtml;
+        btn.disabled = false;
+    }
+}
+
+// Stop bot
+async function stopBot() {
+    if (!confirm('Are you sure you want to stop the bot? This will disconnect from all channels.')) {
+        return;
+    }
+
+    const btn = document.getElementById('stopBtn');
+    const originalHtml = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner spinner-icon"></i> Stopping...';
+    btn.disabled = true;
+
+    try {
+        const response = await fetch('/api/bot/stop', { method: 'POST' });
+        const data = await response.json();
+
+        if (data.success) {
+            window.notificationSystem.showToast(data.message || 'Bot stopped successfully', 'success');
+            setTimeout(updateBotStatus, 2000);
+        } else {
+            window.notificationSystem.showToast(data.error || 'Failed to stop bot', 'error');
+            btn.innerHTML = originalHtml;
+            btn.disabled = false;
+        }
+    } catch (error) {
+        console.error('Error stopping bot:', error);
+        window.notificationSystem.showToast('Error stopping bot', 'error');
+        btn.innerHTML = originalHtml;
+        btn.disabled = false;
+    }
+}
+
+// Restart bot
+async function restartBot() {
+    if (!confirm('Are you sure you want to restart the bot? This will briefly disconnect from all channels.')) {
+        return;
+    }
+
+    const btn = document.getElementById('restartBtn');
+    const originalHtml = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner spinner-icon"></i> Restarting...';
+    btn.disabled = true;
+
+    try {
+        const response = await fetch('/api/bot/restart', { method: 'POST' });
+        const data = await response.json();
+
+        if (data.success) {
+            window.notificationSystem.showToast(data.message || 'Bot restarting...', 'success');
+            setTimeout(updateBotStatus, 5000);
+        } else {
+            window.notificationSystem.showToast(data.error || 'Failed to restart bot', 'error');
+            btn.innerHTML = originalHtml;
+            btn.disabled = false;
+        }
+    } catch (error) {
+        console.error('Error restarting bot:', error);
+        window.notificationSystem.showToast('Error restarting bot', 'error');
+        btn.innerHTML = originalHtml;
+        btn.disabled = false;
+    }
+}
+
+// Reconnect channels
+async function reconnectChannels() {
+    const btn = document.getElementById('reconnectBtn');
+    const originalHtml = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner spinner-icon"></i> Reconnecting...';
+    btn.disabled = true;
+
+    try {
+        const response = await fetch('/api/bot/reconnect', { method: 'POST' });
+        const data = await response.json();
+
+        if (data.success) {
+            window.notificationSystem.showToast(data.message || 'Reconnecting to channels...', 'success');
+            setTimeout(updateBotStatus, 3000);
+        } else {
+            window.notificationSystem.showToast(data.error || 'Failed to reconnect channels', 'error');
+        }
+    } catch (error) {
+        console.error('Error reconnecting channels:', error);
+        window.notificationSystem.showToast('Error reconnecting channels', 'error');
+    } finally {
+        setTimeout(() => {
+            btn.innerHTML = originalHtml;
+            btn.disabled = false;
+        }, 3000);
+    }
+}
+
+// Refresh logs
+async function refreshLogs() {
+    try {
+        const response = await fetch('/api/bot/logs');
+        const data = await response.json();
+
+        const logViewer = document.getElementById('logViewer');
+        if (data.success && data.logs && data.logs.length > 0) {
+            logViewer.innerHTML = data.logs.map(log => {
+                const logClass = log.level === 'error' ? 'log-error' :
+                                 log.level === 'warning' ? 'log-warning' : 'log-info';
+                return `<div class="log-entry ${logClass}">
+                    <span class="log-timestamp">[${log.timestamp}]</span> ${log.message}
+                </div>`;
+            }).join('');
+        } else {
+            logViewer.innerHTML = '<div class="log-entry log-info">No recent logs available</div>';
+        }
+
+        // Auto-scroll to bottom
+        logViewer.scrollTop = logViewer.scrollHeight;
+    } catch (error) {
+        console.error('Error fetching logs:', error);
+    }
+}
+
+// Initialize
+document.addEventListener('DOMContentLoaded', function() {
+    updateBotStatus();
+    refreshLogs();
+
+    // Auto-refresh status every 5 seconds
+    statusRefreshInterval = setInterval(updateBotStatus, 5000);
+
+    // Auto-refresh logs every 10 seconds
+    logRefreshInterval = setInterval(refreshLogs, 10000);
+});
+
+// Cleanup on page unload
+window.addEventListener('beforeunload', function() {
+    if (statusRefreshInterval) clearInterval(statusRefreshInterval);
+    if (logRefreshInterval) clearInterval(logRefreshInterval);
+});
+</script>
+{% endblock %}

@@ -1,6 +1,7 @@
-{% extends "beta/base.html" %}
+{% extends "admin_base.html" %}
 
-{% block title %}Admin - User Management{% endblock %}
+{% block title %}User Management - Admin Panel{% endblock %}
+{% block page_title %}User Management{% endblock %}
 
 {% block head %}
 {{ super() }}
@@ -263,6 +264,7 @@
                         <tr>
                             <th>User</th>
                             <th>Role</th>
+                            <th>Pro Status</th>
                             <th>Channels</th>
                             <th>Last Login</th>
                             <th>Member Since</th>
@@ -287,6 +289,21 @@
                                 <span class="role-badge role-{{ user.role_name }}">
                                     {{ user.role_display_name }}
                                 </span>
+                            </td>
+                            <td>
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" role="switch"
+                                           id="proStatus{{ user.user_id }}"
+                                           {% if user.subscription_tier == 'premium' and user.subscription_status == 'active' %}checked{% endif %}
+                                           onchange="toggleProStatus({{ user.user_id }}, this.checked)">
+                                    <label class="form-check-label" for="proStatus{{ user.user_id }}">
+                                        {% if user.subscription_tier == 'premium' and user.subscription_status == 'active' %}
+                                        <span class="badge bg-warning text-dark"><i class="fas fa-star me-1"></i>Pro</span>
+                                        {% else %}
+                                        <span class="badge bg-secondary">Free</span>
+                                        {% endif %}
+                                    </label>
+                                </div>
                             </td>
                             <td>
                                 <div class="channel-count">
@@ -596,7 +613,7 @@ function updateChannels() {
     const userId = document.getElementById('channelUserId').value;
     const checkboxes = document.querySelectorAll('#channelsList input[type="checkbox"]:checked');
     const selectedChannels = Array.from(checkboxes).map(cb => cb.value);
-    
+
     fetch(`/admin/users/${userId}/assign-channels`, {
         method: 'POST',
         headers: {
@@ -619,6 +636,39 @@ function updateChannels() {
     .catch(error => {
         console.error('Error:', error);
         window.notificationSystem.showToast('Error updating channels', 'error');
+    });
+}
+
+function toggleProStatus(userId, isPro) {
+    const checkbox = document.getElementById(`proStatus${userId}`);
+    const originalState = checkbox.checked;
+
+    fetch(`/admin/users/${userId}/toggle-pro`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            is_pro: isPro
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            window.notificationSystem.showToast(data.message, 'success');
+            // Reload to update badge
+            location.reload();
+        } else {
+            // Revert checkbox on error
+            checkbox.checked = !isPro;
+            window.notificationSystem.showToast(data.error || 'Failed to update pro status', 'error');
+        }
+    })
+    .catch(error => {
+        // Revert checkbox on error
+        checkbox.checked = !isPro;
+        console.error('Error:', error);
+        window.notificationSystem.showToast('Error updating pro status', 'error');
     });
 }
 </script>

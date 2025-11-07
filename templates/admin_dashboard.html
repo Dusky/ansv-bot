@@ -1,0 +1,324 @@
+{% extends "admin_base.html" %}
+
+{% block title %}Admin Dashboard - ANSV Bot{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+
+{% block head %}
+{{ super() }}
+<style>
+.stat-card {
+    background: var(--bs-body-bg);
+    border: 1px solid var(--bs-border-color);
+    border-radius: 15px;
+    padding: 1.5rem;
+    transition: all 0.3s;
+}
+
+.stat-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+}
+
+.stat-icon {
+    width: 60px;
+    height: 60px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.8rem;
+    margin-bottom: 1rem;
+}
+
+.stat-icon.primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+}
+
+.stat-icon.success {
+    background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+    color: white;
+}
+
+.stat-icon.warning {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    color: white;
+}
+
+.stat-icon.info {
+    background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+    color: white;
+}
+
+.stat-value {
+    font-size: 2rem;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+    color: var(--bs-body-color);
+}
+
+.stat-label {
+    font-size: 0.875rem;
+    color: var(--bs-secondary-color);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.quick-actions-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1.5rem;
+    margin-top: 2rem;
+}
+
+.action-card {
+    background: var(--bs-body-bg);
+    border: 1px solid var(--bs-border-color);
+    border-radius: 12px;
+    padding: 1.5rem;
+    text-align: center;
+    transition: all 0.3s;
+    cursor: pointer;
+    text-decoration: none;
+    color: var(--bs-body-color);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.action-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+    border-color: var(--bs-primary);
+    color: var(--bs-body-color);
+}
+
+.action-icon {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.action-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+}
+
+.action-description {
+    font-size: 0.875rem;
+    color: var(--bs-secondary-color);
+}
+
+.recent-activity {
+    background: var(--bs-body-bg);
+    border: 1px solid var(--bs-border-color);
+    border-radius: 15px;
+    padding: 1.5rem;
+    margin-top: 2rem;
+}
+
+.activity-item {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem;
+    border-bottom: 1px solid var(--bs-border-color);
+}
+
+.activity-item:last-child {
+    border-bottom: none;
+}
+
+.activity-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(var(--bs-primary-rgb), 0.1);
+    color: var(--bs-primary);
+}
+
+.activity-details {
+    flex: 1;
+}
+
+.activity-title {
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+}
+
+.activity-time {
+    font-size: 0.875rem;
+    color: var(--bs-secondary-color);
+}
+
+.section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1.5rem;
+}
+
+.section-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin: 0;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Stats Overview -->
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="stat-card">
+            <div class="stat-icon primary">
+                <i class="fas fa-users"></i>
+            </div>
+            <div class="stat-value" id="totalUsers">{{ stats.total_users }}</div>
+            <div class="stat-label">Total Users</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card">
+            <div class="stat-icon success">
+                <i class="fas fa-hashtag"></i>
+            </div>
+            <div class="stat-value" id="totalChannels">{{ stats.total_channels }}</div>
+            <div class="stat-label">Active Channels</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card">
+            <div class="stat-icon warning">
+                <i class="fas fa-star"></i>
+            </div>
+            <div class="stat-value" id="proUsers">{{ stats.pro_users }}</div>
+            <div class="stat-label">Pro Users</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card">
+            <div class="stat-icon info">
+                <i class="fas fa-comments"></i>
+            </div>
+            <div class="stat-value" id="totalMessages">{{ stats.total_messages|default('0') }}</div>
+            <div class="stat-label">Messages Today</div>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Actions -->
+<div class="section-header">
+    <h2 class="section-title">Quick Actions</h2>
+</div>
+
+<div class="quick-actions-grid">
+    <a href="/admin/bot-control" class="action-card">
+        <div class="action-icon">
+            <i class="fas fa-robot"></i>
+        </div>
+        <div class="action-title">Bot Control</div>
+        <div class="action-description">Start, stop, or restart the bot</div>
+    </a>
+
+    <a href="/admin/message-tools" class="action-card">
+        <div class="action-icon">
+            <i class="fas fa-paper-plane"></i>
+        </div>
+        <div class="action-title">Send Message</div>
+        <div class="action-description">Generate and send messages to channels</div>
+    </a>
+
+    <a href="/admin/tts" class="action-card">
+        <div class="action-icon">
+            <i class="fas fa-volume-up"></i>
+        </div>
+        <div class="action-title">TTS Generator</div>
+        <div class="action-description">Generate text-to-speech audio</div>
+    </a>
+
+    <a href="/admin/users" class="action-card">
+        <div class="action-icon">
+            <i class="fas fa-user-cog"></i>
+        </div>
+        <div class="action-title">Manage Users</div>
+        <div class="action-description">Create, edit, or delete users</div>
+    </a>
+
+    <a href="/admin/channels" class="action-card">
+        <div class="action-icon">
+            <i class="fas fa-hashtag"></i>
+        </div>
+        <div class="action-title">Manage Channels</div>
+        <div class="action-description">Configure channel settings</div>
+    </a>
+
+    <a href="/admin/monitoring" class="action-card">
+        <div class="action-icon">
+            <i class="fas fa-chart-line"></i>
+        </div>
+        <div class="action-title">System Monitor</div>
+        <div class="action-description">View system performance</div>
+    </a>
+</div>
+
+<!-- Recent Activity -->
+<div class="recent-activity">
+    <div class="section-header">
+        <h3 class="section-title">Recent Activity</h3>
+        <a href="/admin/audit-logs" class="btn btn-sm btn-outline-primary">View All</a>
+    </div>
+
+    <div id="recentActivityList">
+        {% if recent_activity %}
+            {% for activity in recent_activity %}
+            <div class="activity-item">
+                <div class="activity-icon">
+                    <i class="fas fa-{{ activity.icon|default('circle') }}"></i>
+                </div>
+                <div class="activity-details">
+                    <div class="activity-title">{{ activity.action }}</div>
+                    <div class="activity-time">
+                        {{ activity.timestamp|strftime('%Y-%m-%d %H:%M:%S') }} by {{ activity.username }}
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        {% else %}
+        <div class="text-center text-muted py-4">
+            <i class="fas fa-inbox fa-3x mb-3 opacity-25"></i>
+            <p>No recent activity</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+// Refresh stats every 30 seconds
+setInterval(async function() {
+    try {
+        const response = await fetch('/api/admin/stats');
+        const data = await response.json();
+
+        if (data.success) {
+            document.getElementById('totalUsers').textContent = data.stats.total_users;
+            document.getElementById('totalChannels').textContent = data.stats.total_channels;
+            document.getElementById('proUsers').textContent = data.stats.pro_users;
+            document.getElementById('totalMessages').textContent = data.stats.total_messages || '0';
+        }
+    } catch (error) {
+        console.error('Error refreshing stats:', error);
+    }
+}, 30000);
+</script>
+{% endblock %}
