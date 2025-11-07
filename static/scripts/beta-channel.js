@@ -28,6 +28,7 @@ let currentMessage = null;
 let chatMessages = [];
 let ttsHistory = [];
 let autoScroll = true;
+let chatCleared = false; // Track if user manually cleared chat
 let currentlyPlayingId = null;
 let ttsAutoplayEnabled = false;
 let autoTTSPlayer = null;
@@ -435,6 +436,11 @@ function initializeChatStream() {
 }
 
 async function loadChatMessages() {
+    // Skip loading if user manually cleared chat
+    if (chatCleared) {
+        return;
+    }
+
     const channelName = window.channelData.name;
 
     try {
@@ -511,22 +517,23 @@ function clearChatMessages() {
     const chatContainer = document.getElementById('chatMessages');
     const emptyState = document.getElementById('chatEmpty');
     const messageCount = document.getElementById('messageCount');
-    
+
     if (chatContainer) {
         chatContainer.innerHTML = '';
         chatContainer.style.display = 'none';
     }
-    
+
     if (emptyState) {
         emptyState.style.display = 'block';
     }
-    
+
     if (messageCount) {
         messageCount.textContent = '0';
     }
-    
+
     chatMessages = [];
-    showToast('Chat messages cleared', 'info');
+    chatCleared = true; // Prevent auto-refresh from reloading messages
+    showToast('Chat messages cleared (refresh page to restore)', 'info');
 }
 
 function showChatError() {
