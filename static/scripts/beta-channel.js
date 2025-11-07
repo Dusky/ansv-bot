@@ -462,38 +462,47 @@ function updateChatDisplay(messages) {
     const chatContainer = document.getElementById('chatMessages');
     const emptyState = document.getElementById('chatEmpty');
     const messageCount = document.getElementById('messageCount');
-    
+    const chatStream = document.getElementById('chatStream');
+
+    // Check if user is already near the bottom before updating
+    let wasNearBottom = false;
+    if (chatStream) {
+        const scrollThreshold = 100; // pixels from bottom
+        wasNearBottom = chatStream.scrollHeight - chatStream.scrollTop - chatStream.clientHeight < scrollThreshold;
+    }
+
     // Hide loading
     if (loading) loading.style.display = 'none';
-    
+
     if (messages.length === 0) {
         if (chatContainer) chatContainer.style.display = 'none';
         if (emptyState) emptyState.style.display = 'block';
         if (messageCount) messageCount.textContent = '0';
         return;
     }
-    
+
     // Show messages
     if (emptyState) emptyState.style.display = 'none';
     if (chatContainer) {
         chatContainer.style.display = 'block';
         chatContainer.innerHTML = messages.slice(0, 30).reverse().map(createChatMessage).join('');
 
-        // Wait for DOM update before scrolling
-        if (autoScroll) {
+        // Only auto-scroll if:
+        // 1. Auto-scroll toggle is enabled AND
+        // 2. User was already near the bottom (not reading older messages)
+        if (autoScroll && wasNearBottom) {
             requestAnimationFrame(() => {
-                const chatStream = document.getElementById('chatStream');
                 if (chatStream) {
                     chatStream.scrollTop = chatStream.scrollHeight;
                 }
             });
         }
     }
-    
+
     if (messageCount) {
         messageCount.textContent = messages.length;
     }
-    
+
     chatMessages = messages;
 }
 
