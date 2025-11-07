@@ -472,12 +472,15 @@ function updateChatDisplay(messages) {
     if (chatContainer) {
         chatContainer.style.display = 'block';
         chatContainer.innerHTML = messages.slice(0, 30).reverse().map(createChatMessage).join('');
-        
+
+        // Wait for DOM update before scrolling
         if (autoScroll) {
-            const chatStream = document.getElementById('chatStream');
-            if (chatStream) {
-                chatStream.scrollTop = chatStream.scrollHeight;
-            }
+            requestAnimationFrame(() => {
+                const chatStream = document.getElementById('chatStream');
+                if (chatStream) {
+                    chatStream.scrollTop = chatStream.scrollHeight;
+                }
+            });
         }
     }
     
@@ -1438,22 +1441,22 @@ function initializeTTSWebSocket() {
     
     // Connect to the Socket.IO server
     const socket = io();
-    
-    // Join the channel room for notifications
-    socket.emit('join', `channel_${channelName}`);
-    
+
+    // Subscribe to channel-specific notifications
+    socket.on('connect', () => {
+        console.log('[Beta Channel] Connected to TTS WebSocket');
+        socket.emit('subscribe_channel', { channel: channelName });
+        console.log(`[Beta Channel] Subscribed to channel: ${channelName}`);
+    });
+
     // Listen for new TTS notifications
     socket.on('new_tts_entry', (data) => {
         console.log('[Beta Channel] Received new TTS notification:', data);
-        
+
         if (ttsAutoplayEnabled && data.id && data.channel === channelName) {
             // Fetch the TTS entry details and play it
             playNewTTS(data.id);
         }
-    });
-    
-    socket.on('connect', () => {
-        console.log('[Beta Channel] Connected to TTS WebSocket');
     });
     
     socket.on('disconnect', () => {

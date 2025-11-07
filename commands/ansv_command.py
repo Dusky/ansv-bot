@@ -76,6 +76,11 @@ async def ansv_command(self, ctx, setting=None, new_value=None, **kwargs):
                 else:
                     print(f"TTS not enabled for channel {ctx.channel.name}")
 
+                # Reset counters to prevent automatic response from triggering immediately after !ansv speak
+                import time
+                self.channel_chat_line_count[ctx.channel.name] = 0
+                self.channel_last_message_time[ctx.channel.name] = time.time()
+
             except Exception as e:
                 self.my_logger.log_error(f"Failed to send message due to: {e}")
         else:
