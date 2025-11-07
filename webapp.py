@@ -5008,9 +5008,9 @@ def api_chat_logs():
             base_query = "FROM messages"
             count_query = "SELECT COUNT(*) "
             # Select twitch_message_id as id for frontend compatibility if needed, or just use it as twitch_message_id
-            data_query = "SELECT twitch_message_id AS id, timestamp, channel, author_name AS username, message "
+            data_query = "SELECT twitch_message_id AS id, timestamp, channel, author_name AS username, message, is_bot_response "
 
-            conditions = ["is_bot_response = 0"] # Only fetch user messages
+            conditions = []  # Show ALL messages including bot responses
             params = []
 
             if channel_filter:
