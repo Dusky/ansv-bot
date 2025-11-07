@@ -12,7 +12,7 @@ import signal # Added import for signal
 import requests
 from urllib.parse import urlencode
 from flask import Flask, render_template, request, jsonify, redirect, url_for, send_from_directory, make_response, session, g
-from flask_socketio import SocketIO # Import SocketIO
+from flask_socketio import SocketIO, join_room # Import SocketIO and join_room
 from datetime import datetime, timedelta
 import configparser
 import hashlib
@@ -5824,7 +5824,7 @@ def handle_channel_subscription(data):
     app.logger.info(f"[SOCKETIO] Received subscribe_channel event from {request.sid}, data: {data}")
     if channel_name:
         room_name = f"channel_{channel_name}"
-        socketio.join_room(room_name)
+        join_room(room_name)  # Use imported join_room function
         app.logger.info(f"[SOCKETIO] ✅ Client {request.sid} joined room: {room_name}")
     else:
         app.logger.warning(f"[SOCKETIO] ⚠️ subscribe_channel called without channel_name")
