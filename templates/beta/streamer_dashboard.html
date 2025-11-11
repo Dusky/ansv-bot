@@ -189,6 +189,76 @@
                 </div>
             </div>
 
+            <!-- Command Reference Card -->
+            <div class="dashboard-panel mb-4">
+                <div class="panel-header">
+                    <h2 class="panel-title">
+                        <i class="fas fa-terminal me-2"></i>Chat Commands
+                    </h2>
+                </div>
+                <div class="panel-body">
+                    <p class="text-muted mb-3">
+                        <small>Commands you and trusted users can use in chat</small>
+                    </p>
+                    <div class="commands-list">
+                        <div class="command-item">
+                            <div class="command-syntax">
+                                <code>!ansv speak</code>
+                            </div>
+                            <div class="command-description">Generate and send a Markov message</div>
+                        </div>
+
+                        <div class="command-item">
+                            <div class="command-syntax">
+                                <code>!ansv start</code> / <code>!ansv stop</code>
+                            </div>
+                            <div class="command-description">Enable or disable auto-reply mode</div>
+                        </div>
+
+                        <div class="command-item">
+                            <div class="command-syntax">
+                                <code>!ansv lines [number]</code>
+                            </div>
+                            <div class="command-description">Set chat lines before auto-reply</div>
+                        </div>
+
+                        <div class="command-item">
+                            <div class="command-syntax">
+                                <code>!ansv time [minutes]</code>
+                            </div>
+                            <div class="command-description">Set time in minutes before auto-reply</div>
+                        </div>
+
+                        <div class="command-item">
+                            <div class="command-syntax">
+                                <code>!ansv trust [username]</code>
+                            </div>
+                            <div class="command-description">Add a trusted user (owner only)</div>
+                        </div>
+
+                        {% if has_premium %}
+                        <div class="command-item">
+                            <div class="command-syntax">
+                                <code>!ansv tts on</code> / <code>off</code>
+                            </div>
+                            <div class="command-description">Enable or disable TTS for your channel</div>
+                        </div>
+
+                        <div class="command-item">
+                            <div class="command-syntax">
+                                <code>!ansv voice_preset [code]</code>
+                            </div>
+                            <div class="command-description">Change TTS voice (see voice options in settings)</div>
+                        </div>
+                        {% endif %}
+                    </div>
+                    <div class="alert alert-info mt-3 mb-0" style="font-size: 0.85rem;">
+                        <i class="fas fa-info-circle me-1"></i>
+                        <strong>Tip:</strong> Use the dashboard settings above for easier configuration instead of chat commands
+                    </div>
+                </div>
+            </div>
+
             <!-- Trusted Members Card -->
             <div class="dashboard-panel">
                 <div class="panel-header">
@@ -462,6 +532,40 @@
 
 .trusted-user-badge .remove-btn:hover {
     opacity: 1;
+}
+
+.commands-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.command-item {
+    padding: 0.75rem;
+    background: var(--bs-secondary-bg);
+    border-radius: 8px;
+    border-left: 3px solid rgba(145, 70, 255, 0.5);
+}
+
+.command-syntax {
+    font-family: 'Courier New', monospace;
+    font-size: 0.9rem;
+    margin-bottom: 0.35rem;
+    font-weight: 600;
+    color: rgba(145, 70, 255, 0.9);
+}
+
+.command-syntax code {
+    background: rgba(145, 70, 255, 0.1);
+    padding: 0.2rem 0.4rem;
+    border-radius: 4px;
+    color: inherit;
+}
+
+.command-description {
+    font-size: 0.85rem;
+    color: var(--bs-secondary-color);
+    margin: 0;
 }
 
 @media (max-width: 768px) {
