@@ -1811,19 +1811,44 @@ def api_bot_status():
         bot_running = is_bot_actually_running()
 
         if bot_running:
-            # Try to read heartbeat file
-            heartbeat_data = {}
-            if os.path.exists('bot_heartbeat.json'):
-                with open('bot_heartbeat.json', 'r') as f:
-                    heartbeat_data = json.load(f)
+            # Read heartbeat from database instead of JSON file
+            conn = sqlite3.connect(db_file)
+            c = conn.cursor()
+
+            # Get last heartbeat
+            c.execute("SELECT value, timestamp FROM bot_status WHERE key = 'last_heartbeat'")
+            heartbeat_row = c.fetchone()
+            last_heartbeat = heartbeat_row[0] if heartbeat_row else None
+
+            # Get connected channels
+            c.execute("SELECT value FROM bot_status WHERE key = 'connected_channels'")
+            channels_row = c.fetchone()
+            connected_channels = channels_row[0].split(',') if channels_row and channels_row[0] else []
+
+            # Get TTS status from channel configs (check if any channel has TTS enabled)
+            c.execute("SELECT COUNT(*) FROM channel_configs WHERE tts_enabled = 1")
+            tts_count = c.fetchone()[0]
+            tts_enabled = tts_count > 0
+
+            conn.close()
+
+            # Calculate uptime if possible
+            uptime = 0
+            if last_heartbeat:
+                try:
+                    heartbeat_time = datetime.strptime(last_heartbeat, '%Y-%m-%d %H:%M:%S')
+                    # Rough uptime estimate (this isn't accurate without start time, but better than nothing)
+                    uptime = (datetime.now() - heartbeat_time).total_seconds()
+                except:
+                    pass
 
             return jsonify({
                 'success': True,
                 'bot_running': True,
-                'uptime': heartbeat_data.get('uptime', 0),
-                'connected_channels': heartbeat_data.get('channels', []),
-                'tts_enabled': heartbeat_data.get('tts_enabled', False),
-                'last_heartbeat': heartbeat_data.get('timestamp')
+                'uptime': uptime,
+                'connected_channels': connected_channels,
+                'tts_enabled': tts_enabled,
+                'last_heartbeat': last_heartbeat
             })
         else:
             return jsonify({
@@ -1963,18 +1988,40 @@ def api_bot_logs():
     """Get recent bot logs"""
     try:
         logs = []
-        log_file = 'ansv_bot.log'
+        # Check multiple possible log file locations
+        log_files = ['app.log', 'ansv_bot.log', 'bot.log']
+        log_file = None
 
-        if os.path.exists(log_file):
+        for filename in log_files:
+            if os.path.exists(filename):
+                log_file = filename
+                break
+
+        if log_file:
             with open(log_file, 'r') as f:
                 lines = f.readlines()[-50:]  # Last 50 lines
                 for line in lines:
-                    # Parse log line
+                    # Parse log line - try to extract level
+                    level = 'info'
+                    if 'ERROR' in line.upper():
+                        level = 'error'
+                    elif 'WARNING' in line.upper() or 'WARN' in line.upper():
+                        level = 'warning'
+                    elif 'DEBUG' in line.upper():
+                        level = 'debug'
+
                     logs.append({
                         'timestamp': datetime.now().isoformat(),
-                        'level': 'info',
+                        'level': level,
                         'message': line.strip()
                     })
+        else:
+            # No log file found - add informative message
+            logs.append({
+                'timestamp': datetime.now().isoformat(),
+                'level': 'info',
+                'message': 'No bot log file found. Bot may not be running or logs are not being written.'
+            })
 
         return jsonify({'success': True, 'logs': logs})
     except Exception as e:
