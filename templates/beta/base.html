@@ -54,7 +54,7 @@
                         </ul>
                     </li>
                     {% endif %}
-                    {% if current_user %}
+                    {% if current_user and current_user.role_name in ['admin', 'super_admin'] %}
                     <li class="nav-item">
                         <a class="nav-link" href="/beta/stats">
                             <i class="fas fa-chart-bar me-2"></i>Analytics
