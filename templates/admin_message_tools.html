@@ -213,7 +213,7 @@
         </div>
     </div>
 
-    <button class="btn btn-generate" onclick="generateMessage()">
+    <button class="btn btn-generate" onclick="generateMessage(event)">
         <i class="fas fa-magic me-2"></i>Generate Message
     </button>
 
@@ -278,7 +278,7 @@
         <small class="form-text text-muted">Maximum 500 characters</small>
     </div>
 
-    <button class="btn btn-send" onclick="sendCustomMessage()">
+    <button class="btn btn-send" onclick="sendCustomMessage(event)">
         <i class="fas fa-paper-plane me-2"></i>Send Message
     </button>
 </div>
@@ -334,7 +334,7 @@
         </div>
     </div>
 
-    <button class="btn btn-tts mt-3" onclick="generateStandaloneTTS()">
+    <button class="btn btn-tts mt-3" onclick="generateStandaloneTTS(event)">
         <i class="fas fa-volume-up me-2"></i>Generate TTS
     </button>
 
@@ -375,7 +375,7 @@ let currentGeneratedMessage = '';
 let currentChannel = '';
 
 // Generate message using Markov model
-async function generateMessage() {
+async function generateMessage(event) {
     const channel = document.getElementById('generateChannel').value;
     const attempts = document.getElementById('generateAttempts').value;
 
@@ -517,7 +517,7 @@ function copyMessage() {
 }
 
 // Send custom message
-async function sendCustomMessage() {
+async function sendCustomMessage(event) {
     const channel = document.getElementById('customChannel').value;
     const message = document.getElementById('customMessage').value.trim();
     const generateTts = document.getElementById('customTTS').checked;
@@ -557,7 +557,7 @@ async function sendCustomMessage() {
 }
 
 // Generate standalone TTS
-async function generateStandaloneTTS() {
+async function generateStandaloneTTS(event) {
     const text = document.getElementById('ttsText').value.trim();
     const voice = document.getElementById('ttsVoice').value;
     const channel = document.getElementById('ttsChannel').value;
