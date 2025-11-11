@@ -99,7 +99,16 @@ class Logger:
         return any(pattern.search(message) for pattern in self.bad_words)
 
 
-    def log_message(self, channel, username, message_content): # Renamed message to message_content for clarity
+    def log_message(self, channel, username, message_content, is_bot_message=False):
+        """
+        Log a message to console and optionally to corpus file.
+
+        Args:
+            channel: Channel name
+            username: Username of the message author
+            message_content: The message text
+            is_bot_message: If True, skip writing to corpus file (prevents bot from learning its own responses)
+        """
         if self.message_contains_badword(message_content):
             # Log to console that message was not processed due to bad word
             # This specific format will be printed directly.
@@ -107,14 +116,14 @@ class Logger:
             # Optionally, log a sanitized version to app.log if needed for audit, e.g.,
             # self.logger.info(f"Blocked message from {username} in #{channel} due to bad word.")
             return
-        
+
         timestamp_dt = datetime.now()
         day_year_time = timestamp_dt.strftime('%d %y %H:%M:%S')
         month_str = timestamp_dt.strftime("%b").upper()
-        
+
         # Use the module-level MONTH_COLORS
         colored_month = f"\x1b[38;5;{MONTH_COLORS[month_str]}m{month_str}\x1b[0m"
-        
+
         timestamp_color_index = 14  # Cyan
         colored_timestamp_str = f"\x1b[38;5;{timestamp_color_index}m{day_year_time}\x1b[0m"
 
@@ -125,12 +134,13 @@ class Logger:
 
         # Construct the colorized message for direct console output
         console_log_msg = f"{colored_month} {colored_timestamp_str} - #{colored_channel_str} | <{colored_username_str}>: {message_content}"
-        
+
         # Print the rich, colorized message directly to the console
         print(console_log_msg)
 
-        # Log to channel-specific file (raw message_content)
-        if not message_content.startswith('!'):
+        # Log to channel-specific corpus file ONLY if it's a user message (not from bot)
+        # This prevents bot responses from contaminating the training corpus and causing feedback loops
+        if not message_content.startswith('!') and not is_bot_message:
             log_file_path = f"logs/{channel}.txt"
             try:
                 with open(log_file_path, "a", encoding='utf-8') as file:

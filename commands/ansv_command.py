@@ -50,7 +50,7 @@ async def ansv_command(self, ctx, setting=None, new_value=None, **kwargs):
         if response:
             try:
                 await ctx.send(response)
-                self.my_logger.log_message(ctx.channel.name, self.nick, response)
+                self.my_logger.log_message(ctx.channel.name, self.nick, response, is_bot_message=True)
 
                 # Trigger TTS processing with database logging (matches web UI behavior)
                 conn = sqlite3.connect(self.db_file)

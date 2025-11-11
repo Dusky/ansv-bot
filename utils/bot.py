@@ -1334,24 +1334,24 @@ class Bot(commands.Bot):
                                     self.logger.info(f"TTS generation successful for {channel_name}. Sending message now.")
                                     # Send message after TTS is ready
                                     await channel_obj.send(response)
-                                    self.my_logger.log_message(channel_name, self.nick, response)
+                                    self.my_logger.log_message(channel_name, self.nick, response, is_bot_message=True)
                                 else:
                                     self.logger.warning(f"TTS generation failed for {channel_name}. Sending message without TTS.")
                                     # Fallback: send message even if TTS failed
                                     await channel_obj.send(response)
-                                    self.my_logger.log_message(channel_name, self.nick, response)
-                                    
+                                    self.my_logger.log_message(channel_name, self.nick, response, is_bot_message=True)
+
                             except Exception as e:
                                 self.logger.error(f"Error in TTS delay mode for {channel_name}: {e}")
                                 # Fallback: send message even if TTS failed
                                 await channel_obj.send(response)
-                                self.my_logger.log_message(channel_name, self.nick, response)
+                                self.my_logger.log_message(channel_name, self.nick, response, is_bot_message=True)
 
                         # NORMAL MODE: Send message immediately, then generate TTS
                         else:
                             # Send the response immediately
                             await channel_obj.send(response)
-                            self.my_logger.log_message(channel_name, self.nick, response)
+                            self.my_logger.log_message(channel_name, self.nick, response, is_bot_message=True)
 
                             # Generate TTS asynchronously after message is sent
                             if self.enable_tts and tts_enabled:
@@ -1654,7 +1654,7 @@ class Bot(commands.Bot):
                             self.logger.info(f"{GREEN}Message request processed successfully{RESET}: Sent to {PURPLE}{channel}{RESET}")
                             # Save message to logs
                             channel_clean = channel.lstrip('#')
-                            self.my_logger.log_message(channel_clean, self.nick, message)
+                            self.my_logger.log_message(channel_clean, self.nick, message, is_bot_message=True)
                             
                             # Generate TTS if enabled for this channel
                             try:
