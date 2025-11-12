@@ -4343,35 +4343,75 @@ def get_channel_settings_route(channel_name):
 
 @app.route('/update-channel-settings', methods=['POST'])
 @require_channel_access('channel_name', 'edit')
-def update_channel_settings_route(): 
+def update_channel_settings_route():
     try:
         data = request.json
         channel_name = data.get('channel_name') if data else None
-        
-        if not channel_name: 
+
+        if not channel_name:
             return jsonify({"success": False, "message": "Channel name required"}), 400
-        
+
         # SECURITY FIX: Whitelist allowed column names to prevent SQL injection
         ALLOWED_COLUMNS = {
-            'tts_enabled', 'voice_enabled', 'join_channel', 'owner', 
+            'tts_enabled', 'voice_enabled', 'join_channel', 'owner',
             'trusted_users', 'ignored_users', 'use_general_model',
-            'lines_between_messages', 'time_between_messages', 
+            'lines_between_messages', 'time_between_messages',
             'voice_preset', 'bark_model', 'tts_delay_enabled'
         }
-        
+
+        # Premium-only fields (TTS features)
+        PREMIUM_FIELDS = {
+            'tts_enabled', 'bark_model', 'voice_preset', 'tts_delay_enabled'
+        }
+
         # Filter and validate input fields
         fields_to_update = {}
         for k, v in data.items():
             if k != 'channel_name':
                 if k not in ALLOWED_COLUMNS:
                     return jsonify({
-                        "success": False, 
+                        "success": False,
                         "message": f"Invalid field: {k}. Allowed fields: {', '.join(sorted(ALLOWED_COLUMNS))}"
                     }), 400
                 fields_to_update[k] = v
-        
-        if not fields_to_update: 
+
+        if not fields_to_update:
             return jsonify({"success": False, "message": "No valid fields to update"}), 400
+
+        # Premium check: Verify subscription for premium features
+        # Super admins can bypass this check
+        premium_fields_being_updated = PREMIUM_FIELDS & fields_to_update.keys()
+        if premium_fields_being_updated:
+            user = get_current_user()
+            if user and user['role_name'] != 'super_admin':
+                conn = sqlite3.connect(db_file)
+                c = conn.cursor()
+
+                # Get the user_id for this channel
+                c.execute("SELECT user_id FROM channel_configs WHERE channel_name = ?", (channel_name,))
+                config = c.fetchone()
+
+                if config and config[0]:
+                    # Check subscription tier
+                    c.execute("SELECT subscription_tier FROM users WHERE user_id = ?", (config[0],))
+                    user_result = c.fetchone()
+
+                    if not user_result or user_result[0] != 'premium':
+                        conn.close()
+                        premium_field_list = ', '.join(sorted(premium_fields_being_updated))
+                        return jsonify({
+                            "success": False,
+                            "message": f"Premium subscription required to modify: {premium_field_list}. TTS is a Premium feature."
+                        }), 403
+                else:
+                    # No user_id linked to channel
+                    conn.close()
+                    return jsonify({
+                        "success": False,
+                        "message": "Premium subscription required for TTS features. Please link your Twitch account to upgrade."
+                    }), 403
+
+                conn.close()
 
         # Additional input validation
         validation_error = validate_channel_config_fields(fields_to_update)
@@ -4381,7 +4421,7 @@ def update_channel_settings_route():
         # Safe to build query now since column names are validated
         set_clause = ", ".join([f"{key} = ?" for key in fields_to_update.keys()])
         params = list(fields_to_update.values()) + [channel_name]
-        
+
         conn = sqlite3.connect(db_file)
         c = conn.cursor()
         c.execute(f"UPDATE channel_configs SET {set_clause} WHERE channel_name = ?", params)
@@ -4987,9 +5027,37 @@ def toggle_channel_tts_route(channel_name):
     try:
         if not re.match(r"^[a-zA-Z0-9_]{1,25}$", channel_name):
             return jsonify({"success": False, "message": "Invalid channel name format"}), 400
-            
+
         conn = sqlite3.connect(db_file)
         c = conn.cursor()
+
+        # Premium check: TTS is a Premium feature
+        # Super admins can bypass this check
+        user = get_current_user()
+        if user and user['role_name'] != 'super_admin':
+            # Get the user_id for this channel
+            c.execute("SELECT user_id FROM channel_configs WHERE channel_name = ?", (channel_name,))
+            config = c.fetchone()
+
+            if config and config[0]:
+                # Check subscription tier
+                c.execute("SELECT subscription_tier FROM users WHERE user_id = ?", (config[0],))
+                user_result = c.fetchone()
+
+                if not user_result or user_result[0] != 'premium':
+                    conn.close()
+                    return jsonify({
+                        "success": False,
+                        "message": "TTS is a Premium feature. Upgrade to Premium to unlock TTS."
+                    }), 403
+            else:
+                # No user_id linked to channel - cannot use TTS
+                conn.close()
+                return jsonify({
+                    "success": False,
+                    "message": "TTS is a Premium feature. Please link your Twitch account to upgrade."
+                }), 403
+
         c.execute("SELECT tts_enabled FROM channel_configs WHERE channel_name = ?", (channel_name,))
         row = c.fetchone()
         if not row:
