@@ -1,156 +1,62 @@
 {% extends "public_base.html" %}
 
-{% block title %}ANSV Bot - AI-Powered Twitch Chat Bot with TTS{% endblock %}
+{% block title %}ANSV Bot - Markov Chain Bot for Twitch{% endblock %}
 
 {% block content %}
-<!-- Hero Section -->
-<section class="hero-section">
-    <div class="container py-5">
-        <div class="row">
-            <div class="col-lg-8 mx-auto">
-                <div class="hero-content text-center">
-                    <h1 class="hero-title mb-4">
-                        A Markov Chain Bot for Twitch
-                    </h1>
-                    <p class="hero-subtitle mb-4">
-                        Learns from your chat messages and generates new ones that statistically resemble your community's writing style.
-                        Free to use, optional $2/month TTS addon.
-                    </p>
-                    <div class="hero-cta mb-5">
-                        <a href="/auth/twitch" class="btn btn-primary btn-lg me-2">
-                            <i class="fab fa-twitch me-2"></i>Sign up with Twitch
-                        </a>
-                        <a href="#how" class="btn btn-outline-light btn-lg">
-                            How it works
-                        </a>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-</section>
+<div class="container" style="max-width: 720px; margin: 4rem auto; padding: 2rem;">
+    <h1>ANSV Bot</h1>
 
-<!-- What is This Section -->
-<section id="how" class="explanation-section py-5 bg-darker">
-    <div class="container">
-        <div class="row">
-            <div class="col-lg-10 mx-auto">
-                <h2 class="mb-4">What is a Markov Chain?</h2>
-                <p class="lead mb-4">
-                    A Markov chain is a statistical model that predicts the next word in a sequence based on the previous words.
-                    The bot analyzes your chat history to learn which words commonly follow each other, then generates new messages
-                    by probabilistically choosing the next word based on those patterns.
-                </p>
+    <p>Markov chain text generator for Twitch chat. Free, with optional $2/mo TTS.</p>
 
-                <div class="example-box mb-5">
-                    <h4 class="mb-3"><i class="fas fa-graduation-cap me-2"></i>Training Data (What the bot learns from)</h4>
-                    <div class="chat-examples mb-3">
-                        <div class="chat-msg">viewer1: lol this game is so bad</div>
-                        <div class="chat-msg">viewer2: the game is pretty fun actually</div>
-                        <div class="chat-msg">viewer3: i love this game PogChamp</div>
-                        <div class="chat-msg">viewer4: this is so fun lmao</div>
-                    </div>
+    <p>
+        <a href="/auth/twitch" class="btn btn-primary">Sign in with Twitch</a>
+    </p>
 
-                    <h4 class="mb-3 mt-4"><i class="fas fa-arrow-right me-2"></i>What the Bot Generates</h4>
-                    <div class="chat-examples">
-                        <div class="chat-msg bot">ANSV_Bot: this game is so fun lmao</div>
-                        <div class="chat-msg bot">ANSV_Bot: lol i love this is pretty fun PogChamp</div>
-                    </div>
+    <hr style="margin: 3rem 0; border-color: rgba(255,255,255,0.1);">
 
-                    <p class="text-muted mt-3 mb-0">
-                        <small>
-                            The bot learned phrases like "this game is" and "so fun" from the training data,
-                            then combined them probabilistically. Sometimes the output is grammatically incorrect
-                            or nonsensical - that's normal for Markov chains.
-                        </small>
-                    </p>
-                </div>
+    <h2>What it does</h2>
+    <p>Learns word patterns from your chat and generates new messages. Uses a Markov chain - a statistical model that predicts the next word based on previous words.</p>
 
-                <h3 class="mb-3">How It Works</h3>
-                <ol class="process-list">
-                    <li>
-                        <strong>Bot joins your channel</strong> - ANSV connects to your Twitch chat via IRC
-                    </li>
-                    <li>
-                        <strong>Collects messages</strong> - Stores all chat messages in a SQLite database
-                    </li>
-                    <li>
-                        <strong>Builds the chain</strong> - Analyzes word patterns and builds probability tables
-                    </li>
-                    <li>
-                        <strong>Generates text</strong> - Walks through the chain to create new messages
-                    </li>
-                    <li>
-                        <strong>Posts to chat</strong> - Sends generated messages at intervals you configure
-                    </li>
-                </ol>
+    <p><strong>Example:</strong></p>
+    <pre style="background: #000; padding: 1rem; border-radius: 4px; overflow-x: auto;">
+Training:
+viewer1: lol this game is so bad
+viewer2: the game is pretty fun actually
+viewer3: i love this game PogChamp
 
-                <div class="tech-note mt-4">
-                    <strong>Technical note:</strong> This uses a bigram/trigram model with markovify.
-                    The more chat data, the better the output. Channels with <1000 messages will produce mostly nonsense.
-                </div>
-            </div>
-        </div>
-    </div>
-</section>
+Output:
+ANSV_Bot: this game is so fun lmao
+ANSV_Bot: lol i love this is pretty fun PogChamp</pre>
 
-<!-- Features Section -->
-<section class="features-section py-5">
-    <div class="container">
-        <div class="row">
-            <div class="col-lg-10 mx-auto">
-                <h2 class="mb-4">Features</h2>
-                <ul class="feature-list">
-                    <li><strong>Message collection:</strong> Bot stores all chat messages in SQLite</li>
-                    <li><strong>Markov chain generation:</strong> Uses markovify library for text generation</li>
-                    <li><strong>Auto-post mode:</strong> Configure message frequency and intervals</li>
-                    <li><strong>Web dashboard:</strong> View stats, manage settings, rebuild models</li>
-                    <li><strong>Command support:</strong> Generate messages on-demand with !ansv command</li>
-                    <li><strong>Optional TTS:</strong> Text-to-speech using Bark model (Premium, $2/mo)</li>
-                </ul>
-            </div>
-        </div>
-    </div>
-</section>
+    <p>Output is often grammatically wrong - that's normal.</p>
 
-<!-- Pricing Section -->
-<section id="pricing" class="pricing-section py-5 bg-darker">
-    <div class="container">
-        <div class="row">
-            <div class="col-lg-10 mx-auto">
-                <h2 class="mb-4">Pricing</h2>
+    <h2>How it works</h2>
+    <ol>
+        <li>Bot connects to your Twitch chat via IRC</li>
+        <li>Stores messages in SQLite</li>
+        <li>Builds probability tables with markovify</li>
+        <li>Generates and posts messages</li>
+    </ol>
 
-                <div class="pricing-simple mb-4">
-                    <div class="price-tier">
-                        <h3>Free (forever)</h3>
-                        <ul>
-                            <li>All Markov chain features</li>
-                            <li>Web dashboard</li>
-                            <li>Message history</li>
-                            <li>Model customization</li>
-                        </ul>
-                    </div>
+    <p><small>Uses bigram/trigram models. Needs 1000+ messages for decent output.</small></p>
 
-                    <div class="price-tier premium">
-                        <h3>Premium - $2/month</h3>
-                        <ul>
-                            <li>Everything in Free</li>
-                            <li>+ Text-to-Speech (Bark model)</li>
-                        </ul>
-                        <p class="text-muted mt-2">
-                            <small>TTS is a paid addon because running the Bark AI model is computationally expensive.
-                            The free tier covers all the core bot functionality.</small>
-                        </p>
-                    </div>
-                </div>
+    <h2>Features</h2>
+    <ul>
+        <li>Markov text generation</li>
+        <li>Auto-post or command-triggered</li>
+        <li>Web dashboard</li>
+        <li>Configurable frequency/intervals</li>
+        <li>TTS with Bark model (Premium)</li>
+    </ul>
 
-                <div class="text-center mt-5">
-                    <a href="/auth/twitch" class="btn btn-primary btn-lg">
-                        <i class="fab fa-twitch me-2"></i>Sign up
-                    </a>
-                </div>
-            </div>
-        </div>
-    </div>
-</section>
+    <h2>Pricing</h2>
+    <p><strong>Free:</strong> All bot features<br>
+    <strong>Premium ($2/mo):</strong> + TTS</p>
+
+    <p><small>TTS costs money because the Bark model is expensive to run.</small></p>
+
+    <p style="margin-top: 3rem;">
+        <a href="/auth/twitch" class="btn btn-primary">Get started</a>
+    </p>
+</div>
 {% endblock %}
