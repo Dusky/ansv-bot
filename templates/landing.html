@@ -5,60 +5,89 @@
 {% block content %}
 <!-- Hero Section -->
 <section class="hero-section">
-    <div class="hero-overlay"></div>
-    <div class="container">
-        <div class="row align-items-center min-vh-100">
-            <div class="col-lg-6">
-                <div class="hero-content">
-                    <h1 class="hero-title">
-                        Turn Your Chat Into
-                        <span class="gradient-text">Comedy Gold</span>
+    <div class="container py-5">
+        <div class="row">
+            <div class="col-lg-8 mx-auto">
+                <div class="hero-content text-center">
+                    <h1 class="hero-title mb-4">
+                        A Markov Chain Bot for Twitch
                     </h1>
-                    <p class="hero-subtitle">
-                        AI-powered Markov chain bot that learns from your chat and speaks with intentionally janky TTS voices.
-                        Hilarious, automated, and perfect for streamers.
+                    <p class="hero-subtitle mb-4">
+                        Learns from your chat messages and generates new ones that statistically resemble your community's writing style.
+                        Free to use, optional $2/month TTS addon.
                     </p>
-                    <div class="hero-cta">
-                        <a href="/auth/twitch" class="btn btn-hero btn-lg">
-                            <i class="fab fa-twitch me-2"></i>
-                            Get Started Free
+                    <div class="hero-cta mb-5">
+                        <a href="/auth/twitch" class="btn btn-primary btn-lg me-2">
+                            <i class="fab fa-twitch me-2"></i>Sign up with Twitch
                         </a>
-                        <a href="#features" class="btn btn-outline-light btn-lg ms-3">
-                            Learn More
-                            <i class="fas fa-arrow-down ms-2"></i>
+                        <a href="#how" class="btn btn-outline-light btn-lg">
+                            How it works
                         </a>
-                    </div>
-                    <div class="hero-stats mt-4">
-                        <div class="stat-item">
-                            <i class="fas fa-robot"></i>
-                            <span>Free Forever</span>
-                        </div>
-                        <div class="stat-item">
-                            <i class="fas fa-dollar-sign"></i>
-                            <span>TTS for $2/mo</span>
-                        </div>
-                        <div class="stat-item">
-                            <i class="fas fa-infinity"></i>
-                            <span>Unlimited Channels</span>
-                        </div>
                     </div>
                 </div>
             </div>
-            <div class="col-lg-6">
-                <div class="hero-visual">
-                    <div class="bot-preview">
-                        <div class="chat-bubble bot-message">
-                            <i class="fas fa-robot me-2"></i>
-                            "i love this stream kappa pogchamp lol"
-                        </div>
-                        <div class="tts-indicator">
-                            <i class="fas fa-volume-up me-2"></i>
-                            <span class="tts-wave"></span>
-                            <span class="tts-wave"></span>
-                            <span class="tts-wave"></span>
-                            <span>TTS Playing...</span>
-                        </div>
+        </div>
+    </div>
+</section>
+
+<!-- What is This Section -->
+<section id="how" class="explanation-section py-5 bg-darker">
+    <div class="container">
+        <div class="row">
+            <div class="col-lg-10 mx-auto">
+                <h2 class="mb-4">What is a Markov Chain?</h2>
+                <p class="lead mb-4">
+                    A Markov chain is a statistical model that predicts the next word in a sequence based on the previous words.
+                    The bot analyzes your chat history to learn which words commonly follow each other, then generates new messages
+                    by probabilistically choosing the next word based on those patterns.
+                </p>
+
+                <div class="example-box mb-5">
+                    <h4 class="mb-3"><i class="fas fa-graduation-cap me-2"></i>Training Data (What the bot learns from)</h4>
+                    <div class="chat-examples mb-3">
+                        <div class="chat-msg">viewer1: lol this game is so bad</div>
+                        <div class="chat-msg">viewer2: the game is pretty fun actually</div>
+                        <div class="chat-msg">viewer3: i love this game PogChamp</div>
+                        <div class="chat-msg">viewer4: this is so fun lmao</div>
                     </div>
+
+                    <h4 class="mb-3 mt-4"><i class="fas fa-arrow-right me-2"></i>What the Bot Generates</h4>
+                    <div class="chat-examples">
+                        <div class="chat-msg bot">ANSV_Bot: this game is so fun lmao</div>
+                        <div class="chat-msg bot">ANSV_Bot: lol i love this is pretty fun PogChamp</div>
+                    </div>
+
+                    <p class="text-muted mt-3 mb-0">
+                        <small>
+                            The bot learned phrases like "this game is" and "so fun" from the training data,
+                            then combined them probabilistically. Sometimes the output is grammatically incorrect
+                            or nonsensical - that's normal for Markov chains.
+                        </small>
+                    </p>
+                </div>
+
+                <h3 class="mb-3">How It Works</h3>
+                <ol class="process-list">
+                    <li>
+                        <strong>Bot joins your channel</strong> - ANSV connects to your Twitch chat via IRC
+                    </li>
+                    <li>
+                        <strong>Collects messages</strong> - Stores all chat messages in a SQLite database
+                    </li>
+                    <li>
+                        <strong>Builds the chain</strong> - Analyzes word patterns and builds probability tables
+                    </li>
+                    <li>
+                        <strong>Generates text</strong> - Walks through the chain to create new messages
+                    </li>
+                    <li>
+                        <strong>Posts to chat</strong> - Sends generated messages at intervals you configure
+                    </li>
+                </ol>
+
+                <div class="tech-note mt-4">
+                    <strong>Technical note:</strong> This uses a bigram/trigram model with markovify.
+                    The more chat data, the better the output. Channels with <1000 messages will produce mostly nonsense.
                 </div>
             </div>
         </div>
@@ -66,323 +95,58 @@
 </section>
 
 <!-- Features Section -->
-<section id="features" class="features-section py-5">
+<section class="features-section py-5">
     <div class="container">
-        <div class="text-center mb-5">
-            <h2 class="section-title">How ANSV Works</h2>
-            <p class="section-subtitle">Everything you need to add automated comedy to your stream</p>
-        </div>
-
-        <div class="row g-4">
-            <div class="col-md-6 col-lg-4">
-                <div class="feature-card">
-                    <div class="feature-icon">
-                        <i class="fas fa-brain"></i>
-                    </div>
-                    <h3>AI Chat Learning</h3>
-                    <p>Markov chain AI learns from your chat history to generate messages that sound just like your community.</p>
-                </div>
+        <div class="row">
+            <div class="col-lg-10 mx-auto">
+                <h2 class="mb-4">Features</h2>
+                <ul class="feature-list">
+                    <li><strong>Message collection:</strong> Bot stores all chat messages in SQLite</li>
+                    <li><strong>Markov chain generation:</strong> Uses markovify library for text generation</li>
+                    <li><strong>Auto-post mode:</strong> Configure message frequency and intervals</li>
+                    <li><strong>Web dashboard:</strong> View stats, manage settings, rebuild models</li>
+                    <li><strong>Command support:</strong> Generate messages on-demand with !ansv command</li>
+                    <li><strong>Optional TTS:</strong> Text-to-speech using Bark model (Premium, $2/mo)</li>
+                </ul>
             </div>
-
-            <div class="col-md-6 col-lg-4">
-                <div class="feature-card">
-                    <div class="feature-icon">
-                        <i class="fas fa-robot"></i>
-                    </div>
-                    <h3>Auto-Reply Mode</h3>
-                    <p>Bot automatically generates and posts messages to your chat at customizable intervals. Set it and forget it.</p>
-                </div>
-            </div>
-
-            <div class="col-md-6 col-lg-4">
-                <div class="feature-card featured">
-                    <div class="feature-icon">
-                        <i class="fas fa-volume-up"></i>
-                    </div>
-                    <h3>Janky TTS <span class="badge bg-warning">Premium</span></h3>
-                    <p>Intentionally lo-fi text-to-speech reads bot messages aloud. The jankiness is part of the charm!</p>
-                </div>
-            </div>
-
-            <div class="col-md-6 col-lg-4">
-                <div class="feature-card">
-                    <div class="feature-icon">
-                        <i class="fas fa-sliders-h"></i>
-                    </div>
-                    <h3>Full Control</h3>
-                    <p>Customize message frequency, generation length, voice presets, and more from the dashboard.</p>
-                </div>
-            </div>
-
-            <div class="col-md-6 col-lg-4">
-                <div class="feature-card">
-                    <div class="feature-icon">
-                        <i class="fas fa-user-shield"></i>
-                    </div>
-                    <h3>Twitch OAuth</h3>
-                    <p>Sign up instantly with your Twitch account. One click and you're ready to go.</p>
-                </div>
-            </div>
-
-            <div class="col-md-6 col-lg-4">
-                <div class="feature-card">
-                    <div class="feature-icon">
-                        <i class="fas fa-tachometer-alt"></i>
-                    </div>
-                    <h3>Real-time Dashboard</h3>
-                    <p>Monitor bot activity, view TTS history, and manage settings from a modern web interface.</p>
-                </div>
-            </div>
-        </div>
-    </div>
-</section>
-
-<!-- How It Works Section -->
-<section id="how-it-works" class="how-it-works-section py-5 bg-dark">
-    <div class="container">
-        <div class="text-center mb-5">
-            <h2 class="section-title">How It Works</h2>
-            <p class="section-subtitle">From signup to hilarious automated messages in 5 simple steps</p>
-        </div>
-
-        <div class="row g-4">
-            <!-- Step 1 -->
-            <div class="col-lg-12">
-                <div class="step-card">
-                    <div class="step-number">1</div>
-                    <div class="step-content">
-                        <div class="row align-items-center">
-                            <div class="col-md-8">
-                                <h3 class="step-title">
-                                    <i class="fab fa-twitch text-primary me-2"></i>
-                                    Sign Up with Twitch
-                                </h3>
-                                <p class="step-description">
-                                    Click "Get Started Free" and authorize with your Twitch account. We'll automatically
-                                    detect your channel name and set up your bot profile. No email, no passwords, no hassle.
-                                </p>
-                            </div>
-                            <div class="col-md-4 text-center">
-                                <div class="step-visual">
-                                    <i class="fas fa-user-plus fa-4x text-primary"></i>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Step 2 -->
-            <div class="col-lg-12">
-                <div class="step-card">
-                    <div class="step-number">2</div>
-                    <div class="step-content">
-                        <div class="row align-items-center">
-                            <div class="col-md-8">
-                                <h3 class="step-title">
-                                    <i class="fas fa-cog text-success me-2"></i>
-                                    Configure Your Bot
-                                </h3>
-                                <p class="step-description">
-                                    Complete the quick onboarding to set your preferences: message frequency, reply style,
-                                    and whether the bot should auto-post or wait for commands. You can change these anytime.
-                                </p>
-                            </div>
-                            <div class="col-md-4 text-center">
-                                <div class="step-visual">
-                                    <i class="fas fa-sliders-h fa-4x text-success"></i>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Step 3 -->
-            <div class="col-lg-12">
-                <div class="step-card">
-                    <div class="step-number">3</div>
-                    <div class="step-content">
-                        <div class="row align-items-center">
-                            <div class="col-md-8">
-                                <h3 class="step-title">
-                                    <i class="fas fa-robot text-info me-2"></i>
-                                    Bot Joins Your Channel
-                                </h3>
-                                <p class="step-description">
-                                    ANSV bot automatically joins your Twitch channel and starts monitoring chat. It stays
-                                    connected 24/7 (even when you're offline) to continuously learn from your community.
-                                </p>
-                            </div>
-                            <div class="col-md-4 text-center">
-                                <div class="step-visual">
-                                    <i class="fas fa-plug fa-4x text-info"></i>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Step 4 -->
-            <div class="col-lg-12">
-                <div class="step-card">
-                    <div class="step-number">4</div>
-                    <div class="step-content">
-                        <div class="row align-items-center">
-                            <div class="col-md-8">
-                                <h3 class="step-title">
-                                    <i class="fas fa-brain text-warning me-2"></i>
-                                    AI Learns From Your Chat
-                                </h3>
-                                <p class="step-description">
-                                    As your community chats, the Markov chain AI builds a model of their language patterns,
-                                    emotes, inside jokes, and common phrases. The more messages, the better it gets!
-                                </p>
-                            </div>
-                            <div class="col-md-4 text-center">
-                                <div class="step-visual">
-                                    <i class="fas fa-graduation-cap fa-4x text-warning"></i>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Step 5 -->
-            <div class="col-lg-12">
-                <div class="step-card">
-                    <div class="step-number">5</div>
-                    <div class="step-content">
-                        <div class="row align-items-center">
-                            <div class="col-md-8">
-                                <h3 class="step-title">
-                                    <i class="fas fa-comment-dots text-danger me-2"></i>
-                                    Bot Generates Hilarious Messages
-                                </h3>
-                                <p class="step-description">
-                                    The bot automatically posts messages that sound like they came from your chat. It mimics
-                                    your community's style perfectly - including broken grammar, random emotes, and inside jokes.
-                                    Optionally upgrade to Premium for janky TTS voices!
-                                </p>
-                            </div>
-                            <div class="col-md-4 text-center">
-                                <div class="step-visual">
-                                    <i class="fas fa-comments fa-4x text-danger"></i>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Quick Start CTA -->
-        <div class="text-center mt-5">
-            <p class="lead text-light mb-4">
-                <i class="fas fa-clock me-2"></i>
-                Setup takes less than 2 minutes. Bot starts learning immediately.
-            </p>
-            <a href="/auth/twitch" class="btn btn-hero btn-lg">
-                <i class="fab fa-twitch me-2"></i>
-                Get Started Free
-            </a>
         </div>
     </div>
 </section>
 
 <!-- Pricing Section -->
-<section id="pricing" class="pricing-section py-5">
+<section id="pricing" class="pricing-section py-5 bg-darker">
     <div class="container">
-        <div class="text-center mb-5">
-            <h2 class="section-title">Simple, Honest Pricing</h2>
-            <p class="section-subtitle">Free bot features forever. Only pay for TTS if you want it.</p>
-        </div>
+        <div class="row">
+            <div class="col-lg-10 mx-auto">
+                <h2 class="mb-4">Pricing</h2>
 
-        <div class="row g-4 justify-content-center">
-            <!-- Free Plan -->
-            <div class="col-lg-5">
-                <div class="pricing-card">
-                    <div class="pricing-header">
-                        <h3>Free</h3>
-                        <div class="pricing-amount">
-                            <span class="amount">$0</span>
-                            <span class="period">/forever</span>
-                        </div>
+                <div class="pricing-simple mb-4">
+                    <div class="price-tier">
+                        <h3>Free (forever)</h3>
+                        <ul>
+                            <li>All Markov chain features</li>
+                            <li>Web dashboard</li>
+                            <li>Message history</li>
+                            <li>Model customization</li>
+                        </ul>
                     </div>
-                    <ul class="pricing-features">
-                        <li><i class="fas fa-check text-success me-2"></i>Markov Chat Bot</li>
-                        <li><i class="fas fa-check text-success me-2"></i>Auto-Reply Mode</li>
-                        <li><i class="fas fa-check text-success me-2"></i>Unlimited Channels</li>
-                        <li><i class="fas fa-check text-success me-2"></i>Custom Commands</li>
-                        <li><i class="fas fa-check text-success me-2"></i>Web Dashboard</li>
-                        <li><i class="fas fa-check text-success me-2"></i>Model Customization</li>
-                        <li class="text-muted"><i class="fas fa-times me-2"></i>Text-to-Speech</li>
-                        <li class="text-muted"><i class="fas fa-times me-2"></i>Voice Presets</li>
-                    </ul>
-                    <a href="/auth/twitch" class="btn btn-outline-primary btn-lg w-100 mt-4">
-                        Get Started Free
-                    </a>
-                </div>
-            </div>
 
-            <!-- Premium Plan -->
-            <div class="col-lg-5">
-                <div class="pricing-card premium">
-                    <div class="pricing-badge">Most Popular</div>
-                    <div class="pricing-header">
-                        <h3>Premium</h3>
-                        <div class="pricing-amount">
-                            <span class="amount">$2</span>
-                            <span class="period">/month</span>
-                        </div>
+                    <div class="price-tier premium">
+                        <h3>Premium - $2/month</h3>
+                        <ul>
+                            <li>Everything in Free</li>
+                            <li>+ Text-to-Speech (Bark model)</li>
+                        </ul>
+                        <p class="text-muted mt-2">
+                            <small>TTS is a paid addon because running the Bark AI model is computationally expensive.
+                            The free tier covers all the core bot functionality.</small>
+                        </p>
                     </div>
-                    <ul class="pricing-features">
-                        <li><i class="fas fa-check text-success me-2"></i>Everything in Free</li>
-                        <li><i class="fas fa-check text-success me-2"></i><strong>Text-to-Speech</strong></li>
-                        <li><i class="fas fa-check text-success me-2"></i><strong>Multiple Voice Presets</strong></li>
-                        <li><i class="fas fa-check text-success me-2"></i><strong>TTS History & Playback</strong></li>
-                        <li><i class="fas fa-check text-success me-2"></i><strong>Auto-play TTS</strong></li>
-                        <li><i class="fas fa-check text-success me-2"></i><strong>Voice Customization</strong></li>
-                        <li class="text-muted fst-italic">More features coming soon</li>
-                    </ul>
-                    <a href="/auth/twitch" class="btn btn-primary btn-lg w-100 mt-4">
-                        <i class="fas fa-star me-2"></i>Start Premium Trial
-                    </a>
-                    <p class="text-center text-muted mt-2 small">Cancel anytime. No long-term commitment.</p>
                 </div>
-            </div>
-        </div>
 
-        <!-- Why TTS is Premium -->
-        <div class="row mt-5">
-            <div class="col-lg-8 mx-auto">
-                <div class="why-premium-box">
-                    <h4><i class="fas fa-question-circle me-2"></i>Why is TTS Premium?</h4>
-                    <p class="mb-0">
-                        Running AI text-to-speech models is computationally expensive. The $2/month helps cover server costs
-                        so we can keep the core bot features free for everyone. You get all the Markov chat features forever -
-                        TTS is just the cherry on top!
-                    </p>
-                </div>
-            </div>
-        </div>
-    </div>
-</section>
-
-<!-- CTA Section -->
-<section class="cta-section py-5">
-    <div class="container">
-        <div class="cta-box">
-            <div class="row align-items-center">
-                <div class="col-lg-8">
-                    <h2 class="cta-title">Ready to Make Your Chat Hilarious?</h2>
-                    <p class="cta-subtitle">Sign up with Twitch OAuth in seconds. No credit card required.</p>
-                </div>
-                <div class="col-lg-4 text-lg-end">
-                    <a href="/auth/twitch" class="btn btn-light btn-lg">
-                        <i class="fab fa-twitch me-2"></i>Get Started Now
+                <div class="text-center mt-5">
+                    <a href="/auth/twitch" class="btn btn-primary btn-lg">
+                        <i class="fab fa-twitch me-2"></i>Sign up
                     </a>
                 </div>
             </div>
