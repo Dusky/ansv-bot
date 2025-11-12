@@ -54,7 +54,7 @@ app.secret_key = ConfigManager.get_secret_key()
 app.config['SESSION_TYPE'] = 'filesystem'  # Store sessions on disk
 app.config['SESSION_FILE_DIR'] = ConfigManager.get_session_dir()  # Session storage directory
 app.config['SESSION_PERMANENT'] = True  # Make sessions permanent (persist on browser close)
-app.config['SESSION_USE_SIGNER'] = True  # Sign session cookies for extra security
+app.config['SESSION_USE_SIGNER'] = False  # Disabled due to Flask 2.3.3 compatibility issue
 app.config['SESSION_KEY_PREFIX'] = 'ansv_bot:'  # Prefix for session files
 
 # Security configuration for session cookies
