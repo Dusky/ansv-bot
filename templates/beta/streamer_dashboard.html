@@ -147,7 +147,7 @@
                         <div class="setting-item">
                             <div class="setting-info">
                                 <div class="setting-label">
-                                    <i class="fas fa-clock me-2 text-info"></i>
+                                    <i class="fas fa-list-ol me-2 text-info"></i>
                                     Lines Between Messages
                                 </div>
                                 <div class="setting-description">How many chat lines before bot responds</div>
@@ -160,6 +160,45 @@
                                 </button>
                             </div>
                         </div>
+
+                        <div class="setting-item">
+                            <div class="setting-info">
+                                <div class="setting-label">
+                                    <i class="fas fa-clock me-2 text-info"></i>
+                                    Time Between Messages
+                                </div>
+                                <div class="setting-description">Minutes before bot responds automatically</div>
+                            </div>
+                            <div class="input-group input-group-sm" style="max-width: 150px;">
+                                <input type="number" class="form-control" id="timeBetweenInput"
+                                       value="{{ channel.time_between_messages or 0 }}" min="0" max="60">
+                                <button class="btn btn-outline-primary" id="updateTimeBtn">
+                                    <i class="fas fa-check"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        {% if has_premium %}
+                        <div class="setting-item">
+                            <div class="setting-info">
+                                <div class="setting-label">
+                                    <i class="fas fa-microphone-alt me-2 text-warning"></i>
+                                    TTS Voice {% if has_premium %}(Premium){% endif %}
+                                </div>
+                                <div class="setting-description">Select your preferred TTS voice</div>
+                            </div>
+                            <div style="max-width: 150px;">
+                                <select class="form-select form-select-sm" id="voicePresetSelect">
+                                    {% for i in range(10) %}
+                                    <option value="v2/en_speaker_{{ i }}"
+                                            {% if channel.voice_preset == 'v2/en_speaker_' ~ i %}selected{% endif %}>
+                                        Voice {{ i }}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+                        {% endif %}
                     </div>
                 </div>
             </div>
@@ -185,6 +224,76 @@
                             </div>
                         </div>
                         <small class="text-muted">Rebuilding model...</small>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Command Reference Card -->
+            <div class="dashboard-panel mb-4">
+                <div class="panel-header">
+                    <h2 class="panel-title">
+                        <i class="fas fa-terminal me-2"></i>Chat Commands
+                    </h2>
+                </div>
+                <div class="panel-body">
+                    <p class="text-muted mb-3">
+                        <small>Commands you and trusted users can use in chat</small>
+                    </p>
+                    <div class="commands-list">
+                        <div class="command-item">
+                            <div class="command-syntax">
+                                <code>!ansv speak</code>
+                            </div>
+                            <div class="command-description">Generate and send a Markov message</div>
+                        </div>
+
+                        <div class="command-item">
+                            <div class="command-syntax">
+                                <code>!ansv start</code> / <code>!ansv stop</code>
+                            </div>
+                            <div class="command-description">Enable or disable auto-reply mode</div>
+                        </div>
+
+                        <div class="command-item">
+                            <div class="command-syntax">
+                                <code>!ansv lines [number]</code>
+                            </div>
+                            <div class="command-description">Set chat lines before auto-reply</div>
+                        </div>
+
+                        <div class="command-item">
+                            <div class="command-syntax">
+                                <code>!ansv time [minutes]</code>
+                            </div>
+                            <div class="command-description">Set time in minutes before auto-reply</div>
+                        </div>
+
+                        <div class="command-item">
+                            <div class="command-syntax">
+                                <code>!ansv trust [username]</code>
+                            </div>
+                            <div class="command-description">Add a trusted user (owner only)</div>
+                        </div>
+
+                        {% if has_premium %}
+                        <div class="command-item">
+                            <div class="command-syntax">
+                                <code>!ansv tts on</code> / <code>off</code>
+                            </div>
+                            <div class="command-description">Enable or disable TTS for your channel</div>
+                        </div>
+
+                        <div class="command-item">
+                            <div class="command-syntax">
+                                <code>!ansv voice_preset [code]</code>
+                            </div>
+                            <div class="command-description">Change TTS voice (see voice options in settings)</div>
+                        </div>
+                        {% endif %}
+                    </div>
+                    <div class="alert alert-info mt-3 mb-0" style="font-size: 0.85rem;">
+                        <i class="fas fa-info-circle me-1"></i>
+                        <strong>Tip:</strong> Use the dashboard settings above for easier configuration instead of chat commands
                     </div>
                 </div>
             </div>
@@ -462,6 +571,40 @@
 
 .trusted-user-badge .remove-btn:hover {
     opacity: 1;
+}
+
+.commands-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.command-item {
+    padding: 0.75rem;
+    background: var(--bs-secondary-bg);
+    border-radius: 8px;
+    border-left: 3px solid rgba(145, 70, 255, 0.5);
+}
+
+.command-syntax {
+    font-family: 'Courier New', monospace;
+    font-size: 0.9rem;
+    margin-bottom: 0.35rem;
+    font-weight: 600;
+    color: rgba(145, 70, 255, 0.9);
+}
+
+.command-syntax code {
+    background: rgba(145, 70, 255, 0.1);
+    padding: 0.2rem 0.4rem;
+    border-radius: 4px;
+    color: inherit;
+}
+
+.command-description {
+    font-size: 0.85rem;
+    color: var(--bs-secondary-color);
+    margin: 0;
 }
 
 @media (max-width: 768px) {
