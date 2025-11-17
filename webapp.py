@@ -3065,12 +3065,39 @@ def api_get_analytics():
         cursor.execute("SELECT * FROM channel_configs")
         channels = cursor.fetchall()
 
+        # Calculate stats
+        # Calculate actual week-over-week changes
+        cursor.execute("""
+            SELECT COUNT(*) as count FROM messages
+            WHERE timestamp >= datetime('now', '-7 days')
+        """)
+        messages_this_week = cursor.fetchone()['count']
+
+        cursor.execute("""
+            SELECT COUNT(*) as count FROM messages
+            WHERE timestamp >= datetime('now', '-14 days')
+            AND timestamp < datetime('now', '-7 days')
+        """)
+        messages_last_week = cursor.fetchone()['count']
+
+        cursor.execute("""
+            SELECT COUNT(*) as count FROM tts_logs
+            WHERE timestamp >= datetime('now', '-7 days')
+        """)
+        tts_this_week = cursor.fetchone()['count']
+
+        cursor.execute("""
+            SELECT COUNT(*) as count FROM tts_logs
+            WHERE timestamp >= datetime('now', '-14 days')
+            AND timestamp < datetime('now', '-7 days')
+        """)
+        tts_last_week = cursor.fetchone()['count']
+
         conn.close()
 
-        # Calculate stats
-        # Simple mock for changes (would need historical data)
-        messages_change = 15  # +15% this week
-        tts_change = 23  # +23% this week
+        # Calculate percentage changes
+        messages_change = round(((messages_this_week - messages_last_week) / messages_last_week * 100)) if messages_last_week > 0 else 0
+        tts_change = round(((tts_this_week - tts_last_week) / tts_last_week * 100)) if tts_last_week > 0 else 0
 
         # Find peak hour
         peak_hour = max(hourly_activity, key=lambda x: x['count'])['hour'] if hourly_activity else 0
@@ -3096,9 +3123,29 @@ def api_get_analytics():
         hourly_dict = {row['hour']: row['count'] for row in hourly_activity}
         hourly_values = [hourly_dict.get(h, 0) for h in range(24)]
 
-        # Model performance (mock data, would need actual metrics)
-        model_labels = ['Accuracy', 'Diversity', 'Relevance', 'Speed', 'Quality']
-        model_values = [85, 78, 92, 88, 80]
+        # Model performance - calculate based on actual model data
+        model_labels = []
+        model_values = []
+
+        # Get unique models from messages
+        conn = sqlite3.connect(db_file)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT DISTINCT model_used, COUNT(*) as usage_count
+            FROM messages
+            WHERE model_used IS NOT NULL
+            AND timestamp >= datetime('now', '-30 days')
+            GROUP BY model_used
+            ORDER BY usage_count DESC
+            LIMIT 5
+        """)
+        model_usage = cursor.fetchall()
+        conn.close()
+
+        if model_usage:
+            model_labels = [row['model_used'] for row in model_usage]
+            model_values = [row['usage_count'] for row in model_usage]
 
         # Get model count and size
         try:

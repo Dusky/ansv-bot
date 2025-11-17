@@ -397,8 +397,9 @@ cmd_setup() {
 
     echo -e "\n${GREEN}✓ Setup complete!${NC}\n"
     echo -e "${YELLOW}Next steps:${NC}"
+    local web_port=$(grep "^port" "$CONFIG_FILE" | grep -v "^#" | cut -d'=' -f2 | tr -d ' ' || echo "8347")
     echo -e "1. Create Twitch OAuth app at: ${BLUE}https://dev.twitch.tv/console${NC}"
-    echo -e "   - Set redirect URL: http://localhost:5001/auth/twitch/callback"
+    echo -e "   - Set redirect URL: http://localhost:${web_port}/auth/twitch/callback"
     echo -e "   - Copy Client ID and Client Secret"
     echo -e ""
     echo -e "2. Edit ${CYAN}$CONFIG_FILE${NC} and add in [oauth] section:"
@@ -754,7 +755,8 @@ cmd_dev() {
     run_migrations
 
     echo -e "${GREEN}Starting in development mode...${NC}"
-    echo -e "${BLUE}Web: http://localhost:5001${NC}"
+    local web_port=$(grep "^port" "$CONFIG_FILE" | grep -v "^#" | cut -d'=' -f2 | tr -d ' ' || echo "8347")
+    echo -e "${BLUE}Web: http://localhost:${web_port}${NC}"
     python ansv.py --web --verbose
 }
 
