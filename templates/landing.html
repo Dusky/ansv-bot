@@ -1,6 +1,6 @@
 {% extends "public_base.html" %}
 
-{% block title %}ANSV Bot - AI-Powered Twitch Chat Bot with TTS{% endblock %}
+{% block title %}ANSV Bot - Markov Chain Twitch Chat Bot with TTS{% endblock %}
 
 {% block content %}
 <!-- Hero Section -->
@@ -14,6 +14,22 @@
     </div>
 </section>
 
+<!-- What is a Markov Chain? -->
+<section class="section-alt">
+    <div class="container">
+        <h2>What is a Markov chain?</h2>
+        <p style="max-width: 800px; margin: 0 auto 2rem; font-size: 1.1rem; line-height: 1.6;">
+            A Markov chain is a simple statistical model that learns which words tend to follow other words.
+            It reads your chat history and builds a map of word patterns—like "pog" often comes after "that's so".
+            When generating messages, it randomly walks through these patterns to create new sentences that sound like your chat.
+        </p>
+        <p style="max-width: 800px; margin: 0 auto; font-size: 1rem; color: #888;">
+            <strong>This is not AI.</strong> It's a basic probability model invented in 1906. No neural networks, no machine learning,
+            just word pattern matching. Think of it like predictive text on your phone, but for whole messages.
+        </p>
+    </div>
+</section>
+
 <!-- What it does -->
 <section class="section">
     <div class="container">
@@ -21,15 +37,48 @@
         <div class="feature-list">
             <div class="feature-item">
                 <h3>Learns from chat</h3>
-                <p>Analyzes your chat history using Markov chains to generate messages that mimic your community's style.</p>
+                <p>Analyzes your chat history using Markov chains to map which words commonly follow each other, creating a statistical model of your community's speech patterns.</p>
             </div>
             <div class="feature-item">
                 <h3>Posts automatically</h3>
-                <p>Can send generated messages at configurable intervals. You control the frequency and message length.</p>
+                <p>Generates new messages by randomly walking through learned word patterns. You control the frequency and message length.</p>
             </div>
             <div class="feature-item">
                 <h3>Text-to-speech (optional)</h3>
-                <p>Reads messages aloud using TTS. Requires premium ($2/month) because inference costs money.</p>
+                <p>Reads messages aloud using TTS. Requires premium ($2/month) to cover server costs for voice synthesis.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Privacy & Data -->
+<section class="section">
+    <div class="container">
+        <h2>Privacy & Data</h2>
+        <div style="max-width: 900px; margin: 0 auto;">
+            <div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 1.5rem; margin-bottom: 1.5rem; border-radius: 4px;">
+                <h3 style="margin-top: 0; font-size: 1.2rem; color: #856404;">
+                    <i class="fas fa-database" style="margin-right: 0.5rem;"></i>Chat Log Retention
+                </h3>
+                <p style="margin-bottom: 0; color: #856404; line-height: 1.6;">
+                    <strong>Your chat messages are stored on our server.</strong> When you add the bot to your channel,
+                    it collects and retains your Twitch chat history to build the Markov chain model. This data is used
+                    exclusively to generate messages that match your chat's style. We do not share or sell this data.
+                </p>
+            </div>
+
+            <div style="background: #d1ecf1; border-left: 4px solid #17a2b8; padding: 1.5rem; border-radius: 4px;">
+                <h3 style="margin-top: 0; font-size: 1.2rem; color: #0c5460;">
+                    <i class="fas fa-microphone-alt" style="margin-right: 0.5rem;"></i>About Text-to-Speech
+                </h3>
+                <p style="margin-bottom: 0.5rem; color: #0c5460; line-height: 1.6;">
+                    <strong>TTS does use AI.</strong> Unlike the Markov chain bot (which is just statistics),
+                    our text-to-speech feature uses <a href="https://github.com/suno-ai/bark" target="_blank" rel="noopener noreferrer" style="color: #0c5460; text-decoration: underline;">Bark by Suno AI</a>,
+                    a transformer-based audio generation model. This requires GPU inference, which is why it costs $2/month.
+                </p>
+                <p style="margin-bottom: 0; color: #0c5460; font-size: 0.9rem;">
+                    Bark is open-source and runs on our servers. No data is sent to third parties for TTS generation.
+                </p>
             </div>
         </div>
     </div>
@@ -56,14 +105,14 @@
                 <p class="price">$2<span>/month</span></p>
                 <ul>
                     <li>Everything in Free</li>
-                    <li>Text-to-speech</li>
+                    <li>Text-to-speech (AI-powered)</li>
                     <li>Multiple voice presets</li>
                     <li>TTS history</li>
                 </ul>
                 <a href="/auth/twitch" class="btn-primary">Get started</a>
             </div>
         </div>
-        <p class="pricing-note">TTS costs $2/month because running inference is expensive. The free tier covers everything else.</p>
+        <p class="pricing-note">TTS uses <a href="https://github.com/suno-ai/bark" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: underline;">Bark AI</a> for voice synthesis and costs $2/month for GPU inference. The free tier covers everything else.</p>
     </div>
 </section>
 {% endblock %}

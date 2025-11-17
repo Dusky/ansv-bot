@@ -75,7 +75,9 @@ class TTSModelCache:
                 
                 try:
                     processor = AutoProcessor.from_pretrained(model_path)
-                    model = BarkModel.from_pretrained(model_path)
+                    # Force use of safetensors to bypass PyTorch 2.6+ requirement for torch.load
+                    # This allows PyTorch 2.4 (needed for Tesla P40 sm_61 support) to work
+                    model = BarkModel.from_pretrained(model_path, use_safetensors=True)
                 finally:
                     # Restore original torch.load function
                     torch.load = original_torch_load

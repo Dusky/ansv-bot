@@ -5749,6 +5749,16 @@ def api_channel_tts(channel_name):
         if not channel_config['tts_enabled']:
             return jsonify({"error": "TTS not enabled for this channel"}), 400
 
+        # Check if TTS is globally enabled (--tts flag at startup)
+        if not _enable_tts_webapp:
+            app.logger.warning(f"TTS request rejected - TTS not enabled globally (restart with --tts flag)")
+            return jsonify({
+                "success": False,
+                "error": "TTS not enabled",
+                "message": "TTS is disabled. Please restart the bot with --tts flag to enable TTS functionality.",
+                "details": "The service must be started with the --tts flag for TTS to work."
+            }), 503
+
         # Check if TTS dependencies are available before starting background processing
         try:
             import torch

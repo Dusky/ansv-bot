@@ -21,14 +21,14 @@ def run_webapp():
     # Import webapp modules inside the function to avoid circular dependencies
     # if webapp.py also imports things from ansv or utils that might depend on ansv's state.
     from webapp import app, socketio, set_enable_tts
-    
+
     # Pass TTS setting to webapp
     global enable_tts_global
     set_enable_tts(enable_tts_global) # Call the function in webapp.py
-    
+
     # Run the webapp using SocketIO's server
     # use_reloader=False is important when running in a thread managed by another script
-    socketio.run(app, host="0.0.0.0", port=5001, debug=False, use_reloader=False)
+    socketio.run(app, host="0.0.0.0", port=8347, debug=False, use_reloader=False)
 
 def graceful_shutdown(signum, frame):
     print("\n\n🌀 Received shutdown signal! Cleaning up...")

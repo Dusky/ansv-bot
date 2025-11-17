@@ -154,16 +154,18 @@ cmd_start() {
     export HF_HOME="${PWD}/.hf_cache"
     export HF_HUB_DISABLE_IMPLICIT_TOKEN=1
 
-    # Start both bot and web in background
-    nohup python ansv.py --web > "$LOG_DIR/ansv.log" 2>&1 &
+    # Start both bot and web in background (with TTS enabled)
+    nohup "$VENV_DIR/bin/python" ansv.py --web --tts > "$LOG_DIR/ansv.log" 2>&1 &
     echo $! > "$PID_FILE"
 
     sleep 2
 
     if is_running; then
+        # Read port from config
+        local web_port=$(grep "^port" "$CONFIG_FILE" | grep -v "^#" | cut -d'=' -f2 | tr -d ' ' || echo "5001")
         echo -e "${GREEN}✓ Service started successfully (PID: $(get_pid))${NC}"
         echo -e "${BLUE}Logs: $LOG_DIR/ansv.log${NC}"
-        echo -e "${BLUE}Web interface: http://localhost:5001${NC}"
+        echo -e "${BLUE}Web interface: http://localhost:${web_port}${NC}"
     else
         echo -e "${RED}Failed to start service${NC}"
         echo -e "${YELLOW}Check logs: tail -f $LOG_DIR/ansv.log${NC}"
@@ -482,13 +484,67 @@ cmd_setup_tts() {
     echo -e "\n${CYAN}Installing TTS dependencies...${NC}"
     echo -e "${BLUE}This may take 10-30 minutes depending on your internet speed${NC}\n"
 
-    # Install PyTorch (CPU version for compatibility)
+    # Detect GPU and select PyTorch CUDA variant
     if ! $has_torch; then
-        echo -e "${CYAN}[1/4] Installing PyTorch (CPU)...${NC}"
-        pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu || {
-            echo -e "${RED}Failed to install PyTorch${NC}"
-            exit 1
-        }
+        echo -e "${CYAN}[1/4] Detecting GPU and selecting PyTorch version...${NC}"
+
+        # Try to detect GPU compute capability
+        gpu_compute_cap=""
+        if command -v nvidia-smi &> /dev/null; then
+            gpu_name=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1)
+            echo -e "${BLUE}Detected GPU: ${gpu_name}${NC}"
+
+            # Check for older GPUs (sm_61 - Tesla P40, GTX 1080, etc.)
+            if echo "$gpu_name" | grep -qiE "P40|GTX 10[0-9]{2}|GTX 16[0-9]{2}"; then
+                gpu_compute_cap="sm_61"
+            fi
+        fi
+
+        # Prompt user for CUDA variant
+        echo ""
+        echo -e "${YELLOW}Select PyTorch CUDA variant:${NC}"
+        echo "  1) CUDA 11.8 (recommended for Tesla P40 / sm_61 GPUs)"
+        echo "  2) CUDA 12.1 (for newer GPUs - sm_70+)"
+        echo "  3) CPU only (slower, but works everywhere)"
+        echo ""
+
+        if [ "$gpu_compute_cap" = "sm_61" ]; then
+            echo -e "${BLUE}Auto-detected older GPU - option 1 (CUDA 11.8) recommended${NC}"
+        fi
+
+        read -p "Enter choice [1-3] (default: 1): " cuda_choice
+        cuda_choice=${cuda_choice:-1}
+
+        case $cuda_choice in
+            1)
+                echo -e "${CYAN}Installing PyTorch 2.4.0 with CUDA 11.8...${NC}"
+                pip install torch==2.4.0 torchvision==0.19.0 torchaudio==2.4.0 \
+                    --index-url https://download.pytorch.org/whl/cu118 || {
+                    echo -e "${RED}Failed to install PyTorch${NC}"
+                    exit 1
+                }
+                ;;
+            2)
+                echo -e "${CYAN}Installing PyTorch 2.4.0 with CUDA 12.1...${NC}"
+                pip install torch==2.4.0 torchvision==0.19.0 torchaudio==2.4.0 \
+                    --index-url https://download.pytorch.org/whl/cu121 || {
+                    echo -e "${RED}Failed to install PyTorch${NC}"
+                    exit 1
+                }
+                ;;
+            3)
+                echo -e "${CYAN}Installing PyTorch 2.4.0 (CPU only)...${NC}"
+                pip install torch==2.4.0 torchvision==0.19.0 torchaudio==2.4.0 \
+                    --index-url https://download.pytorch.org/whl/cpu || {
+                    echo -e "${RED}Failed to install PyTorch${NC}"
+                    exit 1
+                }
+                ;;
+            *)
+                echo -e "${RED}Invalid choice. Exiting.${NC}"
+                exit 1
+                ;;
+        esac
         echo -e "${GREEN}✓ PyTorch installed${NC}\n"
     fi
 
@@ -666,16 +722,14 @@ cmd_update_deps() {
         exit 1
     fi
 
-    source "$VENV_DIR/bin/activate"
-
     echo -e "${CYAN}Updating Python dependencies...${NC}"
-    pip install --upgrade pip
-    pip install -r requirements.txt --upgrade
+    "$VENV_DIR/bin/pip" install --upgrade pip
+    "$VENV_DIR/bin/pip" install -r requirements.txt --upgrade
 
     # Update TTS dependencies if available
     if [[ -f "requirements-tts.txt" ]]; then
         echo -e "${CYAN}Updating TTS dependencies...${NC}"
-        pip install -r requirements-tts.txt --upgrade || {
+        "$VENV_DIR/bin/pip" install -r requirements-tts.txt --upgrade || {
             echo -e "${YELLOW}Warning: Failed to update TTS dependencies${NC}"
         }
     fi
