@@ -3,14 +3,12 @@
 // ====================================================================
 
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('[Beta Channel] Initializing...');
-    
     if (!window.channelData || !window.channelData.name) {
         console.error('[Beta Channel] Channel data not found');
         showToast('Channel data not available', 'error');
         return;
     }
-    
+
     initializeChannelPage();
     initializeControls();
     initializeChatStream();
@@ -19,8 +17,6 @@ document.addEventListener('DOMContentLoaded', function() {
     initializeQuickSettings();
     initializeTTSAutoplay();
     initializeTooltips();
-    
-    console.log('[Beta Channel] Initialization complete for channel:', window.channelData.name);
 });
 
 // Global state
@@ -645,21 +641,9 @@ async function loadTTSHistory() {
     const channelName = window.channelData.name;
 
     try {
-        console.log('[Beta Channel] Loading TTS history for channel:', channelName);
         const response = await betaUtils.apiRequest(`/api/tts-logs?channel_filter=${encodeURIComponent(channelName)}&per_page=20&page=1&sort_by=timestamp&sort_order=desc`);
 
-        console.log('[Beta Channel] TTS history response:', response);
-
         if (response.logs) {
-            console.log(`[Beta Channel] Loaded ${response.logs.length} TTS entries`);
-            response.logs.forEach((entry, idx) => {
-                console.log(`[Beta Channel] TTS #${idx}:`, {
-                    id: entry.id,
-                    message: entry.message?.substring(0, 30),
-                    file_path: entry.file_path,
-                    voice: entry.voice_preset
-                });
-            });
             updateTTSDisplay(response.logs);
             updateVoiceFilter(response.logs);
         } else {
@@ -710,13 +694,6 @@ function createTTSItem(entry) {
     const timestamp = betaUtils.formatTimestamp(entry.timestamp);
     const voicePreset = entry.voice_preset || 'Unknown';
     const isPlaying = currentlyPlayingId === entry.id;
-
-    console.log('[Beta Channel] Creating TTS item:', {
-        id: entry.id,
-        hasFilePath: !!entry.file_path,
-        filePath: entry.file_path,
-        message: entry.message?.substring(0, 30)
-    });
 
     return `
         <div class="tts-item ${isPlaying ? 'playing' : ''}" data-tts-id="${entry.id}">
@@ -788,8 +765,6 @@ function filterTTSHistory() {
 function toggleTTSPlayback(ttsId, filePath) {
     const player = document.getElementById('ttsAudioPlayer');
 
-    console.log('[Beta Channel] toggleTTSPlayback called:', { ttsId, filePath, playerExists: !!player });
-
     if (!player) {
         console.error('[Beta Channel] TTS audio player element not found!');
         showToast('TTS player not found', 'error');
@@ -797,31 +772,25 @@ function toggleTTSPlayback(ttsId, filePath) {
     }
 
     if (!filePath) {
-        console.error('[Beta Channel] No file path provided for TTS playback');
         showToast('No TTS file available', 'warning');
         return;
     }
 
     // If this TTS is currently playing, pause it
     if (currentlyPlayingId === ttsId && !player.paused) {
-        console.log('[Beta Channel] Pausing currently playing TTS');
         player.pause();
         return;
     }
 
     // Otherwise, play this TTS
     const audioUrl = `/static/${filePath}`;
-    console.log('[Beta Channel] Playing TTS audio from:', audioUrl);
-
     player.src = audioUrl;
     currentlyPlayingId = ttsId;
 
     player.play().then(() => {
-        console.log('[Beta Channel] TTS playback started successfully');
         updatePlayingStates();
     }).catch(error => {
         console.error('[Beta Channel] TTS playback failed:', error);
-        console.error('[Beta Channel] Failed audio URL:', audioUrl);
         showToast(`TTS playback failed: ${error.message}`, 'error');
         currentlyPlayingId = null;
         updatePlayingStates();
@@ -829,7 +798,6 @@ function toggleTTSPlayback(ttsId, filePath) {
 
     // Handle audio end
     player.onended = () => {
-        console.log('[Beta Channel] TTS playback ended');
         currentlyPlayingId = null;
         updatePlayingStates();
     };
@@ -837,7 +805,6 @@ function toggleTTSPlayback(ttsId, filePath) {
     // Handle audio errors
     player.onerror = (e) => {
         console.error('[Beta Channel] TTS audio error:', e);
-        console.error('[Beta Channel] Player error code:', player.error?.code, player.error?.message);
         showToast('TTS audio file not found or cannot be played', 'error');
         currentlyPlayingId = null;
         updatePlayingStates();
@@ -884,18 +851,15 @@ async function generateTTS() {
     btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Generating...';
     
     try {
-        console.log('[Beta Channel] Sending TTS request:', { channel: channelName, text: text.substring(0, 50) + '...' });
-        
         const response = await betaUtils.apiRequest(`/api/channel/${channelName}/tts`, {
             method: 'POST',
             body: JSON.stringify({ text })
         });
-        
-        console.log('[Beta Channel] TTS response:', response);
-        showToast('TTS generated successfully!', 'success');
+
+        showToast('Generating TTS... (check history panel when complete)', 'info');
         textarea.value = '';
         document.getElementById('charCount').textContent = '0/500';
-        
+
         // Refresh TTS history
         setTimeout(loadTTSHistory, 1000);
         
@@ -1315,8 +1279,6 @@ function initializeModelSelector() {
                 resetModelSwitchButton();
             }
         });
-        
-        console.log('[Beta Channel] Model selector initialized');
     }
 }
 
@@ -1429,15 +1391,12 @@ function resetModelSwitchButton() {
 // ====================================================================
 
 function initializeTTSAutoplay() {
-    console.log('[Beta Channel] Initializing TTS autoplay...');
-
     // Initialize autoplay toggle
     const autoplayToggle = document.getElementById('ttsAutoplayToggle');
     if (autoplayToggle) {
         autoplayToggle.addEventListener('change', handleTTSAutoplayToggle);
         ttsAutoplayEnabled = autoplayToggle.checked;
         updateAutoplayStatus();
-        console.log(`[Beta Channel] Autoplay toggle found, initial state: ${ttsAutoplayEnabled}`);
     } else {
         console.error('[Beta Channel] Autoplay toggle element not found!');
     }
@@ -1447,7 +1406,6 @@ function initializeTTSAutoplay() {
     if (autoTTSPlayer) {
         autoTTSPlayer.addEventListener('ended', handleAutoTTSEnded);
         autoTTSPlayer.addEventListener('error', handleAutoTTSError);
-        console.log('[Beta Channel] Auto TTS player element found and initialized');
     } else {
         console.error('[Beta Channel] Auto TTS player element not found!');
     }
@@ -1460,20 +1418,16 @@ function initializeTTSAutoplay() {
 
     // Connect to WebSocket for real-time TTS notifications
     initializeTTSWebSocket();
-
-    console.log('[Beta Channel] TTS autoplay initialization complete');
 }
 
 function handleTTSAutoplayToggle() {
     const toggle = document.getElementById('ttsAutoplayToggle');
     ttsAutoplayEnabled = toggle.checked;
-    
-    console.log(`[Beta Channel] TTS autoplay ${ttsAutoplayEnabled ? 'enabled' : 'disabled'}`);
-    
+
     if (!ttsAutoplayEnabled) {
         stopAutoTTS();
     }
-    
+
     updateAutoplayStatus();
     showToast(`TTS autoplay ${ttsAutoplayEnabled ? 'enabled' : 'disabled'}`, 'info');
 }
@@ -1493,109 +1447,62 @@ function initializeTTSWebSocket() {
     }
 
     const channelName = window.channelData.name;
-    console.log(`[Beta Channel] Initializing WebSocket for channel: ${channelName}`);
-
-    // Connect to the Socket.IO server
     const socket = io();
-    console.log('[Beta Channel] Socket.IO connection initiated');
 
     // Subscribe to channel-specific notifications
     socket.on('connect', () => {
-        console.log('[Beta Channel] ✅ Connected to TTS WebSocket, SID:', socket.id);
         socket.emit('subscribe_channel', { channel: channelName });
-        console.log(`[Beta Channel] ✅ Emitted subscribe_channel for: ${channelName}`);
     });
 
     // Listen for new TTS notifications
     socket.on('new_tts_entry', (data) => {
-        console.log('[Beta Channel] 🔔 RECEIVED new_tts_entry event:', data);
-        console.log('[Beta Channel] Autoplay enabled:', ttsAutoplayEnabled);
-        console.log('[Beta Channel] Data ID:', data.id);
-        console.log('[Beta Channel] Data channel:', data.channel);
-        console.log('[Beta Channel] Current channel:', channelName);
-        console.log('[Beta Channel] autoTTSPlayer exists:', !!autoTTSPlayer);
-
         if (ttsAutoplayEnabled && data.id && data.channel === channelName) {
-            console.log('[Beta Channel] ✅ Conditions met, calling playNewTTS with ID:', data.id);
             playNewTTS(data.id);
-        } else {
-            console.warn('[Beta Channel] ❌ Autoplay conditions not met:', {
-                autoplayEnabled: ttsAutoplayEnabled,
-                hasId: !!data.id,
-                channelMatch: data.channel === channelName
-            });
         }
     });
 
     socket.on('disconnect', () => {
-        console.warn('[Beta Channel] ⚠️ Disconnected from TTS WebSocket');
+        console.warn('[Beta Channel] Disconnected from TTS WebSocket');
     });
 
     socket.on('connect_error', (error) => {
-        console.error('[Beta Channel] ❌ Socket.IO connection error:', error);
+        console.error('[Beta Channel] Socket.IO connection error:', error);
     });
-
-    console.log('[Beta Channel] TTS WebSocket initialization complete');
 }
 
 async function playNewTTS(ttsId) {
-    console.log('[Beta Channel] 🎵 playNewTTS called with ID:', ttsId);
-    console.log('[Beta Channel] Checking preconditions - autoplayEnabled:', ttsAutoplayEnabled, 'autoTTSPlayer:', !!autoTTSPlayer);
-
-    if (!ttsAutoplayEnabled) {
-        console.warn('[Beta Channel] ❌ Autoplay is disabled, exiting');
+    if (!ttsAutoplayEnabled || !autoTTSPlayer) {
         return;
     }
-
-    if (!autoTTSPlayer) {
-        console.error('[Beta Channel] ❌ autoTTSPlayer element not found, exiting');
-        return;
-    }
-
-    console.log('[Beta Channel] ✅ Preconditions met, fetching TTS details...');
 
     try {
         // Fetch TTS details
         const channelName = window.channelData.name;
         const apiUrl = `/api/tts-logs?channel_filter=${encodeURIComponent(channelName)}&per_page=1&page=1&sort_by=timestamp&sort_order=desc&id=${ttsId}`;
-        console.log('[Beta Channel] Fetching from API:', apiUrl);
-
         const response = await betaUtils.apiRequest(apiUrl);
-        console.log('[Beta Channel] API response:', response);
 
         if (response.logs && response.logs.length > 0) {
             const ttsEntry = response.logs[0];
-            console.log('[Beta Channel] TTS entry found:', ttsEntry);
 
             if (ttsEntry.file_path) {
-                console.log('[Beta Channel] File path exists:', ttsEntry.file_path);
-
                 // Update auto player UI
                 updateAutoPlayerUI(ttsEntry);
-                console.log('[Beta Channel] UI updated');
 
                 // Play the audio
                 const audioUrl = `/static/${ttsEntry.file_path}`;
-                console.log('[Beta Channel] Setting audio source:', audioUrl);
                 autoTTSPlayer.src = audioUrl;
 
                 try {
-                    console.log('[Beta Channel] Attempting to play audio...');
                     await autoTTSPlayer.play();
-                    console.log(`[Beta Channel] ✅ Successfully auto-playing TTS: ${ttsEntry.message.substring(0, 50)}...`);
                 } catch (playError) {
-                    console.error('[Beta Channel] ❌ Auto TTS playback failed:', playError);
+                    console.error('[Beta Channel] Auto TTS playback failed:', playError);
                     showToast('TTS autoplay failed - check browser permissions', 'warning');
                 }
-            } else {
-                console.warn('[Beta Channel] ⚠️ TTS entry has no file_path');
             }
-        } else {
-            console.warn('[Beta Channel] ⚠️ No TTS logs found in API response');
         }
 
     } catch (error) {
-        console.error('[Beta Channel] ❌ Error fetching new TTS for autoplay:', error);
+        console.error('[Beta Channel] Error fetching new TTS for autoplay:', error);
     }
 }
 
@@ -1643,18 +1550,14 @@ function stopAutoTTS() {
         autoTTSPlayer.pause();
         autoTTSPlayer.src = '';
     }
-    
+
     const playerContainer = document.getElementById('autoTTSPlayerContainer');
     if (playerContainer) {
         playerContainer.style.display = 'none';
     }
-    
-    console.log('[Beta Channel] Auto TTS stopped');
 }
 
 function handleAutoTTSEnded() {
-    console.log('[Beta Channel] Auto TTS playback ended');
-    
     // Hide player after a short delay
     setTimeout(() => {
         const playerContainer = document.getElementById('autoTTSPlayerContainer');
@@ -1696,8 +1599,6 @@ function initializeTooltips() {
         interactive: false,
         hideOnClick: true
     });
-    
-    console.log('[Beta Channel] Tooltips initialized');
 }
 
 // Make functions available globally for inline onclick handlers
