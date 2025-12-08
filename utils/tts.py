@@ -15,6 +15,7 @@ from nltk.tokenize import sent_tokenize
 from functools import lru_cache
 import weakref
 from concurrent.futures import ThreadPoolExecutor
+import configparser
 
 VOICES_DIRECTORY = './voices'
 db_file = 'messages.db'
@@ -685,8 +686,13 @@ def start_tts_processing(input_text, channel_name, db_file='./messages.db', mess
     # logging.info(f"TTS processing thread dispatched for original message_id {message_id} in channel {channel_name}.")
 
 def notify_new_audio_available(channel_name, message_id):
+    # Read webapp port from config
+    config = configparser.ConfigParser()
+    config.read('settings.conf')
+    webapp_port = config.get('webapp', 'port', fallback='8347')
+
     # Define the URL of the Flask endpoint
-    url = 'http://localhost:5001/new-audio-notification'  # Update with the correct URL if needed
+    url = f'http://localhost:{webapp_port}/new-audio-notification'
 
     # Data to send (optional, you can customize this)
     data = {
