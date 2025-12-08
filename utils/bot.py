@@ -818,15 +818,20 @@ class Bot(commands.Bot):
     async def ansv_wrapper(self, ctx, setting=None, *args):
         """Enhanced command handler for ansv commands"""
         channel_name = ctx.channel.name
-        
-        # If no setting provided, show help
+
+        # If no setting provided, show description
         if not setting:
-            await ctx.send("Usage: !ansv [setting] [value]. Available settings: trusted, voice, tts, lines, time")
+            await ctx.send("ANSV utilizes Markov chain modeling to generate text. It learns from the channel's conversation history, mapping how words connect to each other, then creates new messages using those probability distributions.")
             return
-        
+
         # Convert setting to lowercase for easier comparison
         setting = setting.lower()
-        
+
+        # Show settings help
+        if setting == "settings":
+            await ctx.send("Usage: !ansv [setting] [value]. Available settings: trusted, voice, tts, lines, time")
+            return
+
         if setting == "trusted":
             # Handle trusted users
             if not args:
