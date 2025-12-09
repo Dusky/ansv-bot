@@ -1329,7 +1329,10 @@ class UserDatabase:
         conn = self.get_connection()
         try:
             logs = conn.execute("""
-                SELECT al.*, u.username
+                SELECT al.id, al.user_id, al.action, al.resource,
+                       al.resource_id, al.details, al.ip_address,
+                       al.user_agent, al.created_at as timestamp,
+                       u.username
                 FROM audit_log al
                 LEFT JOIN users u ON al.user_id = u.id
                 ORDER BY al.created_at DESC
