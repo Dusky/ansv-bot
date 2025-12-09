@@ -1332,7 +1332,7 @@ class UserDatabase:
                 SELECT al.*, u.username
                 FROM audit_log al
                 LEFT JOIN users u ON al.user_id = u.id
-                ORDER BY al.timestamp DESC
+                ORDER BY al.created_at DESC
                 LIMIT ?
             """, (limit,)).fetchall()
             return [dict(log) for log in logs]
