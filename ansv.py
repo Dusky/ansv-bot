@@ -31,7 +31,7 @@ def run_webapp():
 
     # Run the webapp using SocketIO's server
     # use_reloader=False is important when running in a thread managed by another script
-    socketio.run(app, host="0.0.0.0", port=8347, debug=False, use_reloader=False)
+    socketio.run(app, host="0.0.0.0", port=8347, debug=False, use_reloader=False, allow_unsafe_werkzeug=True)
 
 def graceful_shutdown(signum, frame):
     print("\n\n🌀 Received shutdown signal! Cleaning up...")

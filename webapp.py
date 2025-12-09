@@ -54,7 +54,16 @@ app.config['SESSION_COOKIE_HTTPONLY'] = True  # Prevent XSS
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'  # CSRF protection
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(minutes=SecurityConfig.SESSION_TIMEOUT_MINUTES)
 
-socketio = SocketIO(app) # Initialize SocketIO with the Flask app
+# Initialize SocketIO with CORS and async_mode for proper WebSocket support
+socketio = SocketIO(
+    app,
+    cors_allowed_origins="*",  # Allow all origins (or restrict to your domain)
+    async_mode='threading',     # Use threading mode
+    logger=False,               # Reduce verbosity
+    engineio_logger=False,      # Reduce verbosity
+    ping_timeout=60,            # Increase ping timeout
+    ping_interval=25            # Ping interval
+)
 
 # Setup logging
 logger = Logger()
@@ -2229,8 +2238,8 @@ def api_admin_generate_message():
         if not channel:
             return jsonify({'success': False, 'error': 'Channel is required'}), 400
 
-        # Generate message
-        markov_handler = MarkovHandler(db_file)
+        # Generate message using global markov_handler instance
+        global markov_handler
 
         if channel == 'general':
             message = markov_handler.generate_message(None, attempts)
@@ -2261,6 +2270,7 @@ def api_admin_send_message():
 
         # Write message request to JSON file for bot to pick up
         message_request = {
+            'action': 'send_message',
             'channel': channel,
             'message': message,
             'generate_tts': generate_tts,
@@ -2298,7 +2308,7 @@ def api_admin_generate_tts():
             return jsonify({'success': False, 'error': 'Text is required'}), 400
 
         # Generate TTS (async, won't block)
-        start_tts_processing(text, voice_preset, channel or 'admin', db_file)
+        start_tts_processing(text, channel or 'admin', db_file, voice_preset_override=voice_preset)
 
         # Log action
         current_user = get_current_user()
@@ -2308,12 +2318,52 @@ def api_admin_generate_tts():
             request.remote_addr, request.headers.get('User-Agent', 'Unknown')
         )
 
-        # Note: TTS is generated asynchronously, so we can't return the exact file path
-        # The file will be available in the TTS logs table once complete
+        # Wait for TTS file to be created (with timeout)
+        import time
+        import os
+
+        clean_channel = (channel or 'admin').lstrip('#')
+        max_wait = 30  # Maximum 30 seconds
+        check_interval = 0.5  # Check every 0.5 seconds
+        waited = 0
+        file_path = None
+
+        while waited < max_wait:
+            time.sleep(check_interval)
+            waited += check_interval
+
+            # Check database for most recent TTS entry
+            conn = sqlite3.connect(db_file)
+            c = conn.cursor()
+            c.execute("""
+                SELECT file_path FROM tts_log
+                WHERE channel = ?
+                ORDER BY id DESC
+                LIMIT 1
+            """, (clean_channel,))
+            result = c.fetchone()
+            conn.close()
+
+            if result and result[0]:
+                potential_path = result[0]
+                # Check if file actually exists
+                if os.path.exists(potential_path):
+                    file_path = '/' + potential_path
+                    break
+
+        if not file_path:
+            # Fallback if timeout or no file found
+            return jsonify({
+                'success': True,
+                'message': 'TTS generation started but file not ready yet',
+                'file_path': '/static/outputs/' + clean_channel + '/processing.wav',
+                'pending': True
+            })
+
         return jsonify({
             'success': True,
-            'message': 'TTS generation started - check recent TTS files',
-            'file_path': '/static/outputs/' + (channel or 'admin') + '/latest.wav'
+            'message': 'TTS generated successfully',
+            'file_path': file_path
         })
     except Exception as e:
         app.logger.error(f"Error generating TTS: {e}")
