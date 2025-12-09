@@ -5,22 +5,50 @@
 
 class HealthMonitor {
     constructor() {
-        this.socket = io();
-        this.charts = {};
-        this.notificationsEnabled = false;
-        this.pollingInterval = null;
-        this.connectionChart = null;
-        this.errorChart = null;
-        this.init();
+        try {
+            if (typeof io === 'undefined') {
+                throw new Error('Socket.IO library not loaded');
+            }
+            this.socket = io();
+            this.charts = {};
+            this.notificationsEnabled = false;
+            this.pollingInterval = null;
+            this.connectionChart = null;
+            this.errorChart = null;
+            this.init();
+        } catch (error) {
+            this.showFatalError('Initialization Error: ' + error.message);
+            throw error;
+        }
     }
 
     init() {
         console.log('Initializing Health Monitor...');
-        this.setupSocketListeners();
-        this.loadInitialData();
-        this.setupNotifications();
-        this.startPolling();
-        this.setupEventListeners();
+        try {
+            this.setupSocketListeners();
+            this.loadInitialData();
+            this.setupNotifications();
+            this.startPolling();
+            this.setupEventListeners();
+        } catch (error) {
+            this.showFatalError('Setup Error: ' + error.message);
+            console.error('Health Monitor initialization error:', error);
+        }
+    }
+
+    showFatalError(message) {
+        // Display error prominently on the page
+        const div = document.createElement('div');
+        div.className = 'alert alert-danger';
+        div.role = 'alert';
+        div.innerHTML = `
+            <h4 class="alert-heading"><i class="fas fa-exclamation-triangle"></i> Error</h4>
+            <p>${message.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>
+            <hr>
+            <p class="mb-0">Please check the browser console (F12) for more details.</p>
+        `;
+        const container = document.querySelector('.container') || document.body;
+        container.insertBefore(div, container.firstChild);
     }
 
     setupSocketListeners() {
