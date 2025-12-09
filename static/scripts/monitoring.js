@@ -24,6 +24,14 @@ class HealthMonitor {
 
     init() {
         console.log('Initializing Health Monitor...');
+
+        // IMMEDIATE TEST - prove JavaScript is running
+        const testEl = document.getElementById('connectionStatus');
+        if (testEl) {
+            testEl.textContent = 'JS RUNNING';
+            testEl.style.color = 'blue';
+        }
+
         try {
             this.setupSocketListeners();
             this.loadInitialData();
