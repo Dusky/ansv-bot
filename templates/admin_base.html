@@ -600,6 +600,12 @@
 
                 <li class="nav-section-title">System</li>
                 <li class="nav-item">
+                    <a href="/admin/monitoring" class="nav-link {% if 'monitoring' in request.path %}active{% endif %}">
+                        <i class="fas fa-heartbeat"></i>
+                        <span class="nav-link-text">Health Monitor</span>
+                    </a>
+                </li>
+                <li class="nav-item">
                     <a href="/admin/audit-logs" class="nav-link {% if 'audit-logs' in request.path %}active{% endif %}">
                         <i class="fas fa-clipboard-list"></i>
                         <span class="nav-link-text">Audit Logs</span>
