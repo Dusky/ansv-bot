@@ -20,11 +20,14 @@ enable_tts_global = False
 def run_webapp():
     # Import webapp modules inside the function to avoid circular dependencies
     # if webapp.py also imports things from ansv or utils that might depend on ansv's state.
-    from webapp import app, socketio, set_enable_tts
+    from webapp import app, socketio, set_enable_tts, set_bot_socketio_emitter
 
     # Pass TTS setting to webapp
     global enable_tts_global
     set_enable_tts(enable_tts_global) # Call the function in webapp.py
+
+    # Attach SocketIO emitter to bot instance for real-time dashboard updates
+    set_bot_socketio_emitter()
 
     # Run the webapp using SocketIO's server
     # use_reloader=False is important when running in a thread managed by another script

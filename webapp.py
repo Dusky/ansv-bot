@@ -119,6 +119,23 @@ markov_handler = MarkovHandler(cache_directory="cache")
 # Global variable to hold the bot instance (can be set by ansv.py if needed, though direct coupling is not ideal)
 bot_instance = None
 
+def set_bot_socketio_emitter():
+    """Set SocketIO emitter on bot instance for real-time updates to admin dashboard."""
+    global bot_instance
+    if bot_instance and hasattr(socketio, 'emit'):
+        def emitter(data):
+            try:
+                event_type = data.pop('event', 'generic_update')
+                socketio.emit(event_type, data)
+                app.logger.debug(f"Emitted SocketIO event: {event_type}")
+            except Exception as e:
+                app.logger.error(f"Failed to emit SocketIO event: {e}")
+
+        bot_instance.socketio_emitter = emitter
+        app.logger.info("SocketIO emitter attached to bot instance for real-time dashboard updates")
+    else:
+        app.logger.warning("Cannot attach SocketIO emitter: bot_instance not available or socketio not initialized")
+
 # Initialize configuration
 config = configparser.ConfigParser()
 config.read("settings.conf")
@@ -1865,6 +1882,171 @@ def api_bot_status():
     except Exception as e:
         app.logger.error(f"Error getting bot status: {e}")
         return jsonify({'success': False, 'error': 'Error getting bot status'}), 500
+
+@app.route('/api/admin/health')
+@require_role('admin')
+def api_admin_health():
+    """
+    Comprehensive health monitoring endpoint.
+    Returns connection status, error rates, performance metrics, and background tasks.
+    """
+    try:
+        conn = sqlite3.connect(db_file)
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+
+        # 1. Connection Status
+        bot_running = is_bot_actually_running()
+        connection_state = "unknown"
+        last_heartbeat = None
+        reconnect_attempts = 0
+
+        if bot_running:
+            # Get connection state from bot_status
+            c.execute("SELECT value FROM bot_status WHERE key = ?", ('connection_state',))
+            state_row = c.fetchone()
+            connection_state = state_row['value'] if state_row else "connected"
+
+            c.execute("SELECT value FROM bot_status WHERE key = ?", ('last_heartbeat',))
+            hb_row = c.fetchone()
+            last_heartbeat = hb_row['value'] if hb_row else None
+
+            c.execute("SELECT value FROM bot_status WHERE key = ?", ('reconnect_count',))
+            rc_row = c.fetchone()
+            reconnect_attempts = int(rc_row['value']) if rc_row else 0
+
+        # 2. Last Message Sent
+        c.execute("""
+            SELECT timestamp, channel, message
+            FROM messages
+            WHERE is_bot_response = 1
+            ORDER BY timestamp DESC
+            LIMIT 1
+        """)
+        last_message_row = c.fetchone()
+        last_message_sent = {
+            'timestamp': last_message_row['timestamp'],
+            'channel': last_message_row['channel'],
+            'preview': last_message_row['message'][:50] + '...' if len(last_message_row['message']) > 50 else last_message_row['message']
+        } if last_message_row else None
+
+        # 3. Error Rates (last 1 hour and 24 hours)
+        c.execute("""
+            SELECT COUNT(*) as count
+            FROM error_log
+            WHERE timestamp >= datetime('now', '-1 hour')
+        """)
+        errors_1h_row = c.fetchone()
+        errors_1h = errors_1h_row['count'] if errors_1h_row else 0
+
+        c.execute("""
+            SELECT COUNT(*) as count
+            FROM error_log
+            WHERE timestamp >= datetime('now', '-24 hours')
+        """)
+        errors_24h_row = c.fetchone()
+        errors_24h = errors_24h_row['count'] if errors_24h_row else 0
+
+        # 4. Recent Errors (last 10)
+        c.execute("""
+            SELECT timestamp, level, message, source
+            FROM error_log
+            ORDER BY timestamp DESC
+            LIMIT 10
+        """)
+        recent_errors = [dict(row) for row in c.fetchall()]
+
+        # 5. Background Task Status
+        # Check if heartbeat file exists and is recent
+        message_checker_healthy = False
+        heartbeat_healthy = False
+
+        if os.path.exists('bot_heartbeat.json'):
+            try:
+                with open('bot_heartbeat.json', 'r') as f:
+                    hb_data = json.load(f)
+                    hb_time = hb_data.get('timestamp', 0)
+                    heartbeat_healthy = (time.time() - hb_time) < 120  # Last 2 minutes
+                    message_checker_healthy = True  # If heartbeat exists, checker is working
+            except:
+                pass
+
+        background_tasks = {
+            'heartbeat': 'healthy' if heartbeat_healthy else 'unhealthy',
+            'message_request_checker': 'healthy' if message_checker_healthy else 'unknown'
+        }
+
+        # 6. Performance Metrics (using psutil)
+        performance = {}
+        if bot_running:
+            pid_file = 'bot.pid'
+            if os.path.exists(pid_file):
+                try:
+                    with open(pid_file, 'r') as f:
+                        pid = int(f.read().strip())
+                        process = psutil.Process(pid)
+                        performance = {
+                            'cpu_percent': round(process.cpu_percent(interval=0.1), 2),
+                            'memory_mb': round(process.memory_info().rss / 1024 / 1024, 2),
+                            'memory_percent': round(process.memory_percent(), 2)
+                        }
+                except Exception as e:
+                    app.logger.error(f"Failed to get performance metrics: {e}")
+
+        # 7. Service Uptime
+        uptime_seconds = 0
+        if bot_running and last_heartbeat:
+            try:
+                c.execute("SELECT value FROM bot_status WHERE key = ?", ('start_time',))
+                start_row = c.fetchone()
+                if start_row:
+                    start_dt = datetime.fromisoformat(start_row['value'])
+                    uptime_seconds = (datetime.now() - start_dt).total_seconds()
+                else:
+                    # Fallback: use current time minus some estimate
+                    # Read PID file modification time as rough start time
+                    if os.path.exists('bot.pid'):
+                        pid_mtime = os.path.getmtime('bot.pid')
+                        uptime_seconds = time.time() - pid_mtime
+            except Exception as e:
+                app.logger.error(f"Failed to calculate uptime: {e}")
+
+        # 8. Reconnection History (last 20 events)
+        c.execute("""
+            SELECT timestamp, event_type, details, attempt_number
+            FROM connection_history
+            ORDER BY timestamp DESC
+            LIMIT 20
+        """)
+        connection_history = [dict(row) for row in c.fetchall()]
+
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'timestamp': datetime.now().isoformat(),
+            'connection': {
+                'state': connection_state,
+                'bot_running': bot_running,
+                'last_heartbeat': last_heartbeat,
+                'reconnect_attempts': reconnect_attempts
+            },
+            'last_message_sent': last_message_sent,
+            'errors': {
+                'last_hour': errors_1h,
+                'last_24_hours': errors_24h,
+                'recent': recent_errors
+            },
+            'background_tasks': background_tasks,
+            'performance': performance,
+            'uptime_seconds': uptime_seconds,
+            'connection_history': connection_history
+        })
+
+    except Exception as e:
+        app.logger.error(f"Error in /api/admin/health: {e}")
+        app.logger.error(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/bot/start', methods=['POST'])
 @require_role('admin')
@@ -6049,6 +6231,28 @@ class EventBroadcaster:
             'stats': model_stats
         })
         logging.info(f"Broadcasted model rebuild completion for {channel_name}")
+
+    @staticmethod
+    def health_update(health_data):
+        """Broadcast health status changes."""
+        socketio.emit('health_update', health_data)
+        logging.debug(f"Broadcasted health update")
+
+    @staticmethod
+    def connection_state_changed(state_data):
+        """Broadcast connection state changes."""
+        socketio.emit('connection_state_changed', state_data)
+        logging.info(f"Connection state changed: {state_data.get('state')}")
+
+    @staticmethod
+    def error_logged(error_data):
+        """Broadcast new errors."""
+        socketio.emit('error_logged', error_data)
+
+    @staticmethod
+    def task_status_changed(task_data):
+        """Broadcast background task status changes."""
+        socketio.emit('task_status_changed', task_data)
 
 # Global event broadcaster instance
 events = EventBroadcaster()

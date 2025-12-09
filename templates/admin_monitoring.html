@@ -1,32 +1,226 @@
 {% extends "admin_base.html" %}
 
-{% block title %}System Monitoring - Admin Panel{% endblock %}
-{% block page_title %}System Monitoring{% endblock %}
+{% block title %}Health Monitoring - Admin Panel{% endblock %}
+{% block page_title %}Health Monitoring Dashboard{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+    .status-card {
+        padding: 1.5rem;
+        border-radius: 8px;
+        border: 2px solid #dee2e6;
+        transition: all 0.3s ease;
+    }
+
+    .status-card.status-success {
+        border-color: #28a745;
+        background: linear-gradient(135deg, #f8fff9 0%, #e8f5e9 100%);
+    }
+
+    .status-card.status-warning {
+        border-color: #ffc107;
+        background: linear-gradient(135deg, #fffef8 0%, #fff9e6 100%);
+    }
+
+    .status-card.status-error {
+        border-color: #dc3545;
+        background: linear-gradient(135deg, #fff8f8 0%, #ffe6e6 100%);
+    }
+
+    .status-card.status-unknown {
+        border-color: #6c757d;
+        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+    }
+
+    .status-icon {
+        font-size: 2rem;
+        margin-bottom: 0.5rem;
+        opacity: 0.7;
+    }
+
+    .status-title {
+        font-size: 0.875rem;
+        color: #6c757d;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-bottom: 0.5rem;
+    }
+
+    .status-value {
+        font-size: 1.75rem;
+        font-weight: bold;
+        margin-bottom: 0.25rem;
+    }
+
+    .status-value.status-success {
+        color: #28a745;
+    }
+
+    .status-value.status-warning {
+        color: #ffc107;
+    }
+
+    .status-value.status-error {
+        color: #dc3545;
+    }
+
+    .status-value.status-unknown {
+        color: #6c757d;
+    }
+
+    .status-detail {
+        font-size: 0.75rem;
+        color: #6c757d;
+    }
+
+    .chart-container {
+        position: relative;
+        height: 250px;
+    }
+
+    .table-responsive {
+        max-height: 400px;
+        overflow-y: auto;
+    }
+
+    .pulse {
+        animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+    }
+</style>
+{% endblock %}
 
 {% block content %}
-<div class="alert alert-info">
-    <i class="fas fa-info-circle me-2"></i>
-    <strong>Note:</strong> Advanced monitoring features are under development.
+<div class="mb-4 d-flex justify-content-between align-items-center">
+    <div>
+        <p class="text-muted mb-0">Real-time health monitoring with automatic updates</p>
+    </div>
+    <div class="btn-group">
+        <button id="enableNotifications" class="btn btn-outline-primary btn-sm">
+            <i class="fas fa-bell me-1"></i> Enable Notifications
+        </button>
+        <button id="manualRefresh" class="btn btn-outline-secondary btn-sm">
+            <i class="fas fa-sync me-1"></i> Refresh
+        </button>
+        <button id="toggleAutoRefresh" class="btn btn-secondary btn-sm">
+            <i class="fas fa-pause me-1"></i> Disable Auto-Refresh
+        </button>
+    </div>
 </div>
 
-<div class="row g-4">
+<!-- Status Cards Grid -->
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="status-card" id="connectionCard">
+            <i class="fas fa-wifi status-icon"></i>
+            <h5 class="status-title">Connection</h5>
+            <div class="status-value" id="connectionStatus">Checking...</div>
+            <small class="status-detail" id="connectionDetail"></small>
+        </div>
+    </div>
+
+    <div class="col-md-3">
+        <div class="status-card" id="errorsCard">
+            <i class="fas fa-exclamation-triangle status-icon"></i>
+            <h5 class="status-title">Errors (1h)</h5>
+            <div class="status-value" id="errorsStatus">-</div>
+            <small class="status-detail" id="errorsDetail"></small>
+        </div>
+    </div>
+
+    <div class="col-md-3">
+        <div class="status-card" id="performanceCard">
+            <i class="fas fa-tachometer-alt status-icon"></i>
+            <h5 class="status-title">CPU Usage</h5>
+            <div class="status-value" id="performanceStatus">-</div>
+            <small class="status-detail" id="performanceDetail"></small>
+        </div>
+    </div>
+
+    <div class="col-md-3">
+        <div class="status-card" id="tasksCard">
+            <i class="fas fa-tasks status-icon"></i>
+            <h5 class="status-title">Background Tasks</h5>
+            <div class="status-value" id="tasksStatus">-</div>
+            <small class="status-detail" id="tasksDetail"></small>
+        </div>
+    </div>
+</div>
+
+<!-- Connection Timeline Chart -->
+<div class="card mb-4">
+    <div class="card-body">
+        <h5><i class="fas fa-chart-line me-2"></i>Connection Timeline</h5>
+        <div class="chart-container">
+            <canvas id="connectionChart"></canvas>
+        </div>
+    </div>
+</div>
+
+<!-- Error Rate Chart -->
+<div class="card mb-4">
+    <div class="card-body">
+        <h5><i class="fas fa-exclamation-triangle me-2"></i>Error Rate</h5>
+        <div class="chart-container">
+            <canvas id="errorChart"></canvas>
+        </div>
+    </div>
+</div>
+
+<!-- System Information Row -->
+<div class="row g-4 mb-4">
     <div class="col-md-6">
         <div class="card">
             <div class="card-body">
-                <h5 class="card-title"><i class="fas fa-server me-2"></i>System Status</h5>
-                <p>System is operational</p>
-                <a href="/admin/bot-control" class="btn btn-primary">View Bot Control</a>
+                <h5><i class="fas fa-comment me-2"></i>Last Message Sent</h5>
+                <div id="lastMessageInfo">
+                    <p class="text-muted">Loading...</p>
+                </div>
             </div>
         </div>
     </div>
+
     <div class="col-md-6">
         <div class="card">
             <div class="card-body">
-                <h5 class="card-title"><i class="fas fa-chart-line me-2"></i>Statistics</h5>
-                <p>View detailed statistics on the dashboard</p>
-                <a href="/admin" class="btn btn-primary">View Dashboard</a>
+                <h5><i class="fas fa-clock me-2"></i>Service Uptime</h5>
+                <div>
+                    <p class="mb-0"><strong>Uptime:</strong> <span id="uptimeInfo">Loading...</span></p>
+                </div>
             </div>
         </div>
     </div>
 </div>
+
+<!-- Recent Errors Table -->
+<div class="card">
+    <div class="card-body">
+        <h5><i class="fas fa-list me-2"></i>Recent Errors</h5>
+        <div id="errorsTable">
+            <p class="text-muted">Loading...</p>
+        </div>
+    </div>
+</div>
+
+<!-- Help Section -->
+<div class="card mt-4 border-info">
+    <div class="card-body">
+        <h6 class="card-title"><i class="fas fa-info-circle me-2"></i>About Health Monitoring</h6>
+        <p class="mb-2"><strong>Connection Status:</strong> Shows whether the bot is connected to Twitch. Automatic reconnection attempts will be displayed in real-time.</p>
+        <p class="mb-2"><strong>Errors:</strong> Tracks system errors over the last hour and 24 hours. Critical errors trigger browser notifications.</p>
+        <p class="mb-2"><strong>Performance:</strong> Real-time CPU and memory usage of the bot process.</p>
+        <p class="mb-2"><strong>Background Tasks:</strong> Health status of heartbeat and message request checker tasks.</p>
+        <p class="mb-0"><strong>Auto-Updates:</strong> This dashboard updates automatically via WebSocket and polls every 30 seconds as a fallback.</p>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='scripts/monitoring.js') }}"></script>
 {% endblock %}

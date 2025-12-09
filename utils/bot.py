@@ -8,6 +8,7 @@ import sqlite3
 from datetime import datetime, timezone
 import os
 import math
+import json
 from functools import lru_cache
 from collections import OrderedDict
 
@@ -85,6 +86,131 @@ class LRUCache:
             return self[key]
         except KeyError:
             return default
+
+
+class ConnectionStateManager:
+    """Manages WebSocket connection state and reconnection logic with exponential backoff."""
+
+    def __init__(self, bot_instance):
+        self.bot = bot_instance
+        self.state = "disconnected"  # disconnected, connecting, connected, reconnecting
+        self.reconnect_attempts = 0
+        self.last_attempt_time = None
+        self.current_delay = 5  # Start at 5 seconds
+        self.max_delay = 300  # Cap at 5 minutes
+        self.base_delay = 5
+        self.reconnect_task = None
+        self.logger = logging.getLogger("connection_manager")
+
+    def calculate_backoff_delay(self):
+        """Exponential backoff: 5s, 10s, 20s, 40s, 80s, 160s, 300s (max)."""
+        delay = min(self.base_delay * (2 ** self.reconnect_attempts), self.max_delay)
+        return delay
+
+    async def attempt_reconnect(self):
+        """Attempt to reconnect with exponential backoff."""
+        self.state = "reconnecting"
+        self.reconnect_attempts += 1
+        self.last_attempt_time = time.time()
+        self.current_delay = self.calculate_backoff_delay()
+
+        self.logger.warning(
+            f"{YELLOW}Reconnection attempt #{self.reconnect_attempts}, "
+            f"waiting {self.current_delay}s before retry...{RESET}"
+        )
+
+        # Log to database
+        self._log_connection_event("reconnect_attempt", {
+            "attempt": self.reconnect_attempts,
+            "delay": self.current_delay
+        })
+
+        # Emit to admin dashboard
+        if hasattr(self.bot, 'socketio_emitter') and self.bot.socketio_emitter:
+            try:
+                self.bot.socketio_emitter({
+                    'event': 'connection_state_changed',
+                    'state': 'reconnecting',
+                    'attempts': self.reconnect_attempts,
+                    'next_delay': self.current_delay
+                })
+            except Exception as e:
+                self.logger.error(f"Failed to emit reconnection state: {e}")
+
+        try:
+            # Wait for backoff delay
+            await asyncio.sleep(self.current_delay)
+
+            # Close existing connection if still open
+            if hasattr(self.bot, '_ws') and self.bot._ws and not self.bot._ws.is_closed:
+                await self.bot._ws.close()
+
+            # Attempt reconnection
+            self.logger.info(f"{GREEN}Attempting to reconnect to Twitch...{RESET}")
+            await self.bot.connect()
+
+            # Success!
+            self.state = "connected"
+            total_attempts = self.reconnect_attempts
+            self.reconnect_attempts = 0
+            self.current_delay = self.base_delay
+
+            self.logger.info(
+                f"{GREEN}Successfully reconnected after {total_attempts} attempt(s)!{RESET}"
+            )
+
+            self._log_connection_event("reconnect_success", {
+                "total_attempts": total_attempts
+            })
+
+            if hasattr(self.bot, 'socketio_emitter') and self.bot.socketio_emitter:
+                try:
+                    self.bot.socketio_emitter({
+                        'event': 'connection_state_changed',
+                        'state': 'connected',
+                        'attempts': 0
+                    })
+                except Exception as e:
+                    self.logger.error(f"Failed to emit connected state: {e}")
+
+        except Exception as e:
+            self.logger.error(
+                f"{RED}Reconnection attempt #{self.reconnect_attempts} failed: {e}{RESET}"
+            )
+
+            self._log_connection_event("reconnect_failed", {
+                "error": str(e),
+                "attempt": self.reconnect_attempts
+            })
+
+            # Schedule next attempt (recursive)
+            self.reconnect_task = asyncio.create_task(self.attempt_reconnect())
+
+    def _log_connection_event(self, event_type, details):
+        """Log connection events to database."""
+        try:
+            conn = sqlite3.connect(self.bot.db_file)
+            c = conn.cursor()
+            c.execute("""
+                INSERT INTO connection_history (timestamp, event_type, details, attempt_number)
+                VALUES (?, ?, ?, ?)
+            """, (
+                datetime.now().isoformat(),
+                event_type,
+                json.dumps(details),
+                self.reconnect_attempts
+            ))
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            self.logger.error(f"Failed to log connection event to database: {e}")
+
+    def mark_connected(self):
+        """Mark connection as successful and reset counters."""
+        self.state = "connected"
+        self.reconnect_attempts = 0
+        self.current_delay = self.base_delay
+        self._log_connection_event("connected", {"channels": list(self.bot._joined_channels)})
 
 
 class Bot(commands.Bot):
@@ -165,11 +291,15 @@ class Bot(commands.Bot):
             print(f"{YELLOW}Warning: 'verbose_heartbeat_log' not found in settings.conf, defaulting to False.{RESET}")
 
         self._joined_channels = set()
-        
+
         self.start_time = time.time()
-        
+
+        # Initialize connection state manager for automatic reconnection
+        self.connection_manager = ConnectionStateManager(self)
+        self.socketio_emitter = None  # Will be set by webapp for real-time updates
+
         self.message_request_check = None
-        
+
         self.message_request_check = self.loop.create_task(self.message_request_checker())
         
     async def send_message_to_channel(self, channel_name, message):
@@ -1157,6 +1287,97 @@ class Bot(commands.Bot):
                 except Exception as e:
                     if verbose:
                         print(f"Error updating channel connection status in DB: {e}")
+
+        # Mark connection as successful for reconnection manager
+        self.connection_manager.mark_connected()
+
+    async def event_error(self, error, data=None):
+        """Handle TwitchIO errors and initiate reconnection if needed."""
+        error_msg = str(error)
+        self.logger.error(f"{RED}TwitchIO Error: {error_msg}{RESET}")
+
+        # Log to error_log table
+        self._log_error("twitchio_error", error_msg, data)
+
+        # Check if it's a connection error
+        if any(keyword in error_msg.lower() for keyword in ["websocket", "connection", "disconnect", "network"]):
+            self.logger.warning(f"{YELLOW}Connection error detected, initiating reconnection...{RESET}")
+            self.connection_manager.state = "disconnected"
+
+            # Start reconnection if not already reconnecting
+            if not self.connection_manager.reconnect_task or self.connection_manager.reconnect_task.done():
+                self.connection_manager.reconnect_task = asyncio.create_task(
+                    self.connection_manager.attempt_reconnect()
+                )
+
+    async def event_disconnect(self):
+        """Handle WebSocket disconnection and initiate automatic reconnection."""
+        self.logger.warning(f"{YELLOW}WebSocket disconnected!{RESET}")
+        self.connection_manager.state = "disconnected"
+
+        # Log disconnection
+        self.connection_manager._log_connection_event("disconnected", {
+            "channels": list(self._joined_channels)
+        })
+
+        # Emit to admin dashboard
+        if self.socketio_emitter:
+            try:
+                self.socketio_emitter({
+                    'event': 'connection_state_changed',
+                    'state': 'disconnected'
+                })
+            except Exception as e:
+                self.logger.error(f"Failed to emit disconnection state: {e}")
+
+        # Update database to mark channels as disconnected
+        try:
+            conn = sqlite3.connect(self.db_file)
+            c = conn.cursor()
+            c.execute("UPDATE channel_configs SET currently_connected = 0")
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            self.logger.error(f"Failed to update channel connection status: {e}")
+
+        # Start reconnection
+        if not self.connection_manager.reconnect_task or self.connection_manager.reconnect_task.done():
+            self.logger.info(f"{GREEN}Starting automatic reconnection...{RESET}")
+            self.connection_manager.reconnect_task = asyncio.create_task(
+                self.connection_manager.attempt_reconnect()
+            )
+
+    def _log_error(self, level, message, extra_data=None):
+        """Log errors to error_log table and emit to admin dashboard."""
+        try:
+            conn = sqlite3.connect(self.db_file)
+            c = conn.cursor()
+            c.execute("""
+                INSERT INTO error_log (timestamp, level, message, source, stack_trace)
+                VALUES (?, ?, ?, ?, ?)
+            """, (
+                datetime.now().isoformat(),
+                level,
+                message,
+                'bot',
+                json.dumps(extra_data) if extra_data else None
+            ))
+            conn.commit()
+            conn.close()
+
+            # Emit to admin dashboard
+            if self.socketio_emitter:
+                try:
+                    self.socketio_emitter({
+                        'event': 'error_logged',
+                        'level': level,
+                        'message': message,
+                        'timestamp': datetime.now().isoformat()
+                    })
+                except Exception as e:
+                    self.logger.error(f"Failed to emit error to dashboard: {e}")
+        except Exception as e:
+            self.logger.error(f"Failed to log error to database: {e}")
 
     def get_user_color(self, username):
         """Get a consistent color number for a user."""

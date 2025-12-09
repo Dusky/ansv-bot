@@ -104,6 +104,32 @@ def ensure_db_setup(db_file):
                     )''')
         conn.commit() # Explicit commit
 
+        # Create 'connection_history' table for WebSocket reconnection tracking
+        c.execute('''CREATE TABLE IF NOT EXISTS connection_history (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        timestamp TEXT NOT NULL,
+                        event_type TEXT NOT NULL,
+                        details TEXT,
+                        attempt_number INTEGER,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )''')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_connection_timestamp ON connection_history(timestamp)')
+        conn.commit()
+
+        # Create 'error_log' table for centralized error tracking
+        c.execute('''CREATE TABLE IF NOT EXISTS error_log (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        timestamp TEXT NOT NULL,
+                        level TEXT NOT NULL,
+                        message TEXT NOT NULL,
+                        source TEXT,
+                        stack_trace TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )''')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_error_timestamp ON error_log(timestamp)')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_error_level ON error_log(level)')
+        conn.commit()
+
         # Check and migrate tts_logs table if needed
         c.execute("PRAGMA table_info(tts_logs)")
         tts_logs_columns = {row[1]: row[2] for row in c.fetchall()}  # {column_name: data_type}
