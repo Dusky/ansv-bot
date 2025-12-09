@@ -86,6 +86,12 @@ class HealthMonitor {
     async loadInitialData() {
         try {
             const response = await fetch('/api/admin/health');
+
+            if (!response.ok) {
+                this.showError(`API Error: ${response.status} ${response.statusText}`);
+                return;
+            }
+
             const data = await response.json();
 
             if (data.success) {
@@ -95,7 +101,7 @@ class HealthMonitor {
             }
         } catch (error) {
             console.error('Error loading initial data:', error);
-            this.showError('Failed to connect to health API');
+            this.showError('Failed to connect to health API: ' + error.message);
         }
     }
 
@@ -539,7 +545,8 @@ class HealthMonitor {
 
     showError(message) {
         console.error(message);
-        // You could show a toast or alert here
+        // Display error on the page
+        this.showFatalError(message);
     }
 
     updateAllCards(data) {
